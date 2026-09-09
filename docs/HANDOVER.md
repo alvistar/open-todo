@@ -342,11 +342,15 @@ verified per-view float `position` semantics.
    login screen, API client, read-only Inbox/Today/project lists at the
    measured layout, `PollingSource` behind `LiveSource`, static build. Notes
    for whoever continues:
-   - It has **not** been run against `pinguino` — the session that built it had
-     no credentials. It was verified against a stand-in server implementing the
-     same API surface. Run it against the real instance first, and run the
-     read-only integration test (`VIKUNJA_TEST_URL` + `VIKUNJA_TEST_TOKEN`,
-     see the README) to confirm the filter forms still hold.
+   - **Verified against `pinguino` on 2026-09-09**, both at the API level and
+     with the rendered app driven in a browser. The integration test
+     (`VIKUNJA_TEST_URL` + `VIKUNJA_TEST_TOKEN`, see the README) doubles as the
+     probe for the assumptions that were open; re-run it after a server
+     upgrade. Answers recorded in `docs/data-model-mapping.md` §6 items 7-12.
+   - Two defects only real data exposed: the toolbar collapsed from 56px to 36
+     because it was a shrinkable flex item (five fixture rows never overflowed),
+     and times were rendered in Vikunja's `settings.timezone`, which on this
+     instance is an untouched `GMT` while the owner is in Italy.
    - The incremental poll deliberately does **not** apply the view's filter;
      only `updated >= mark`. Scoping it makes the poll blind to tasks that
      *leave* the view (completed, moved), which is the change users most want

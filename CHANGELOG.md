@@ -57,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that does not send `Access-Control-Expose-Headers`.
 - `frontend_settings.default_due_time` is absent on 2.5.0, so D-map-2's 20:00
   fallback is the live behaviour.
+- The rendered app was driven against the live instance: geometry matches the
+  spec with real content (toolbar 56, title tier 84, rows 59 and 79, sidebar
+  280, column 800, no horizontal overflow), the incremental poll really does
+  send `updated >= now-<n>s` with the browser's timezone, D-map-1 maps a stored
+  priority of 3 to P2 on screen, and a task created externally appeared within
+  one 20s interval, sorted into its place by due date, while a deletion cleared
+  within ~40s on the next full fetch.
 
 ### Fixed
 - The page walk ended on the `x-pagination-total-pages` header, which a
@@ -110,6 +117,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deletions are found by reconciling the id set of a full fetch, because
   `deleted_at` is not filterable; a deletion can take up to five poll
   intervals to appear.
-- The UI has been exercised against a live instance only at the API level; the
-  rendered app has not yet been driven against real data by its author.
-- Read-only still: no task creation, editing, completion or reordering.
+- Read-only still: no task creation, editing, completion or reordering. The
+  checkboxes render priority but do not toggle.
