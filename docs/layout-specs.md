@@ -8,7 +8,9 @@ font 13px). Nothing is estimated.
 
 These are **specification**, not assets (see HANDOVER §6). Colours are cited by
 Todoist's semantic token name so our own palette (D3) can be substituted by
-role; the hex values are only there to make the tables readable.
+role; the hex values are only there to make the tables readable. **The accent
+role is already substituted: teal `#0f766e` light / `#2dd4bf` dark (D3,
+2026-09-09)** — wherever a table below says "accent", read teal, not `#d33322`.
 
 Reproduce with `research/measure-dom.js` — see the end of this file.
 

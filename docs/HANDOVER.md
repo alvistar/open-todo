@@ -1,8 +1,8 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA behind a thin proxy), D3 (own brand), D4 (slice order). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: pick the D3 accent hue (needs candidate sketches), then product code (§7 step 5).
+**Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA behind a thin proxy), D3 (own brand, teal accent), D4 (slice order). D2 is a per-screen call during measuring.
+**Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: product code, §7 step 6 (foundation slice).
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -145,8 +145,16 @@ per-screen call, made during the measuring pass.
 ### D3 — Brand identity — **DECIDED 2026-09-09: distinct accent, original icons, name stays `open-todo`**
 
 Open-todo uses its own accent colour (not Todoist's `#d33322` or its family)
-and an original SVG icon set. The exact hue is chosen during the first
-design-sketch pass (§7 step 3), not in the abstract. The name `open-todo` stays:
+and an original SVG icon set. **Hue decided 2026-09-09: teal — `#0f766e` in
+light, `#2dd4bf` in dark (dark text `#062a26` on filled dark-accent buttons).**
+Chosen on the full-layout mockup (`docs/sketches/mockup-accent-20260909.html`)
+against indigo (collides with p3 blue and the next-week purple) and burnt
+orange (collides with p2 and tomorrow, and reads Todoist-adjacent). Teal
+collides with none of the eight meaning-bearing priority/date colours and
+passes WCAG AA on filled buttons in both themes (5.5:1 light, 8.3:1 dark).
+Derived tints used in the mockup: light secondary fill `#d1ebe7`, selected
+row `#e1f0ed` / text `#0b5c56`; dark secondary fill `#1f4a44`, selected row
+`#233f3b` / text `#8ee6da`. Icons are still to be drawn. The name `open-todo` stays:
 it is generic enough on its own, which is exactly why the other two elements
 must carry the distance from Todoist's trade dress (§6). The token dump's
 *structure* (semantic names: actionable-primary / hover / on-dark) is reused;
@@ -288,9 +296,11 @@ verified per-view float `position` semantics.
    verified against `pinguino` the same day; D-map-2 (all-day dates) follows
    Vikunja's own `default_due_time` setting with Veyrn's 20:00 fallback; only
    webhooks remain open.
-5. Pick the D3 accent hue: draw 3–4 candidates in the reference sketch's
-   token slots (`docs/sketches/`), side by side, light and dark, and decide.
-6. Only then start product code: foundation slice first, then D4's order.
+5. ~~Pick the D3 accent hue~~ — teal, decided 2026-09-09 on
+   `docs/sketches/mockup-accent-20260909.html`.
+6. Start product code: foundation slice (proxy, login, read-only list at the
+   measured layout), then D4's order. First call inside it: proxy language
+   (Go single binary vs Node), an implementation detail left open by D5.
 
 ---
 
