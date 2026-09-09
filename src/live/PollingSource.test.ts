@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Task } from "../api/types";
 import type { LiveEvent } from "./LiveSource";
-import { createPollingSource, type PollingSourceOptions } from "./PollingSource";
+import {
+  createPollingSource,
+  type PollingSourceOptions,
+  type PollWindow,
+} from "./PollingSource";
 
 const task = (id: number, updated = "2026-09-09T10:00:00Z"): Task =>
   ({
@@ -20,7 +24,7 @@ function harness(over: Partial<PollingSourceOptions> = {}) {
   const events: LiveEvent[] = [];
   const listeners = new Map<string, Set<() => void>>();
 
-  const fetchSince = vi.fn(async (_since: Date) => [] as Task[]);
+  const fetchSince = vi.fn(async (_window: PollWindow) => [] as Task[]);
   const fetchAll = vi.fn(async () => current);
 
   const source = createPollingSource({
@@ -54,6 +58,14 @@ function harness(over: Partial<PollingSourceOptions> = {}) {
       for (const listener of listeners.get(type) ?? []) listener();
     },
   };
+}
+
+/** Unwraps a timestamp poll window, failing loudly if it is the wrong kind. */
+function timestampWindow(window: PollWindow | undefined): Date {
+  if (window?.kind !== "timestamp") {
+    throw new Error(`expected a timestamp window, got ${JSON.stringify(window)}`);
+  }
+  return window.since;
 }
 
 /** Advances fake timers and lets the awaited fetches settle. */
@@ -163,13 +175,13 @@ describe("PollingSource", () => {
   });
 
   it("derives the mark from the newest SERVER timestamp, not the browser clock", async () => {
-    const h = harness();
+    const h = harness({ serverRelativeWindow: false });
     h.source.start();
     h.fetchAll.mockResolvedValueOnce([task(1, "2026-09-09T11:30:00Z")]);
     await advance(20_000); // full fetch
     await advance(20_000); // incremental
 
-    const since = h.fetchSince.mock.calls[0]?.[0] as Date;
+    const since = timestampWindow(h.fetchSince.mock.calls[0]?.[0]);
     // 11:30:00 is the newest `updated` the server reported, minus the 2s
     // overlap - NOT the browser's 12:00:xx.
     expect(since.toISOString()).toBe("2026-09-09T11:29:58.000Z");
@@ -179,13 +191,13 @@ describe("PollingSource", () => {
     // A browser an hour fast used to kill incremental polling outright: every
     // request asked for changes in the future and returned nothing, forever.
     vi.setSystemTime(new Date("2026-09-09T13:00:00Z")); // an hour ahead
-    const h = harness();
+    const h = harness({ serverRelativeWindow: false });
     h.source.start();
     h.fetchAll.mockResolvedValueOnce([task(1, "2026-09-09T12:00:00Z")]);
     await advance(20_000);
     await advance(20_000);
 
-    const since = h.fetchSince.mock.calls[0]?.[0] as Date;
+    const since = timestampWindow(h.fetchSince.mock.calls[0]?.[0]);
     expect(since.toISOString()).toBe("2026-09-09T11:59:58.000Z");
     // The window must not be in the future relative to real server time.
     expect(since.getTime()).toBeLessThan(Date.parse("2026-09-09T12:00:01Z"));
@@ -194,29 +206,73 @@ describe("PollingSource", () => {
   it("does not advance the mark past the newest timestamp the server reported", async () => {
     // A task edited while the page walk was in progress must be re-read, so
     // the mark may not jump to "now".
-    const h = harness();
+    const h = harness({ serverRelativeWindow: false });
     h.source.start();
     h.fetchAll.mockResolvedValueOnce([task(1, "2026-09-09T12:00:05Z")]);
     await advance(20_000);
     await advance(20_000);
-    const first = h.fetchSince.mock.calls[0]?.[0] as Date;
+    const first = timestampWindow(h.fetchSince.mock.calls[0]?.[0]);
 
     // An incremental tick that returns nothing must NOT push the mark forward.
     await advance(20_000);
-    const second = h.fetchSince.mock.calls[1]?.[0] as Date;
+    const second = timestampWindow(h.fetchSince.mock.calls[1]?.[0]);
     expect(second.toISOString()).toBe(first.toISOString());
   });
 
   it("falls back to a bounded lookback before any server timestamp is known", async () => {
-    const h = harness();
+    const h = harness({ serverRelativeWindow: false });
     h.source.start();
     h.fetchAll.mockResolvedValueOnce([]); // empty view: no server timestamp
     await advance(20_000);
     await advance(20_000);
 
-    const since = h.fetchSince.mock.calls[0]?.[0] as Date;
+    const since = timestampWindow(h.fetchSince.mock.calls[0]?.[0]);
     // start() at 12:00:00 minus the 60s bootstrap lookback, minus 2s overlap.
     expect(since.toISOString()).toBe("2026-09-09T11:58:58.000Z");
+  });
+
+  it("asks the SERVER to evaluate the window by default", async () => {
+    // `updated >= now-<n>s` is evaluated server-side (verified on Vikunja
+    // 2.5.0), so the browser clock never enters the comparison.
+    const h = harness();
+    h.source.start();
+    await advance(20_000); // full
+    await advance(20_000); // incremental
+
+    const window = h.fetchSince.mock.calls[0]?.[0] as PollWindow;
+    expect(window.kind).toBe("server-relative");
+  });
+
+  it("sizes the window by elapsed time, so a wrong browser clock cannot shrink it", async () => {
+    // Only a duration crosses the wire. Durations stay correct however wrong
+    // the absolute clock is.
+    const h = harness();
+    h.source.start();
+    await advance(20_000);
+    await advance(20_000);
+
+    const window = h.fetchSince.mock.calls[0]?.[0] as PollWindow;
+    if (window.kind !== "server-relative") throw new Error("expected a relative window");
+    // 20s between ticks plus the 2s overlap.
+    expect(window.seconds).toBe(22);
+  });
+
+  it("escalates to a full fetch after a long hidden stretch", async () => {
+    // An incremental window that wide is no cheaper than the full fetch, and
+    // only the full one finds deletions.
+    const h = harness();
+    h.source.start();
+    await advance(20_000); // full fetch, sets the baseline
+    expect(h.fetchAll).toHaveBeenCalledTimes(1);
+
+    h.setVisible(false);
+    await advance(20_000 * 8); // hidden well past the full-fetch cadence
+    h.setVisible(true);
+    h.fire("focus");
+    await advance(400);
+
+    expect(h.fetchAll).toHaveBeenCalledTimes(2);
+    expect(h.fetchSince).not.toHaveBeenCalled();
   });
 
   it("refreshNow forces a full fetch even when hidden", async () => {

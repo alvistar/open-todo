@@ -2,9 +2,29 @@ import type { Task } from "../api/types";
 import type { LiveEvent, LiveSource } from "./LiveSource";
 import { diffDeleted, latestUpdated } from "./reconcile";
 
+/**
+ * How to express "what changed since last time" to the server.
+ *
+ * `server-relative` is preferred and is what this instance family supports
+ * (`updated >= now-30s`, verified against Vikunja 2.5.0): the server evaluates
+ * the window, so the browser's clock never enters the comparison. The number of
+ * seconds is a *duration* measured by the browser, and durations are reliable
+ * even when the absolute clock is wrong.
+ *
+ * `timestamp` is the fallback for a server that rejects `now-<n>s`.
+ */
+export type PollWindow =
+  | { kind: "server-relative"; seconds: number }
+  | { kind: "timestamp"; since: Date };
+
 export interface PollingSourceOptions {
-  /** Incremental fetch: tasks whose `updated` is at or after `since`. */
-  fetchSince: (since: Date, signal?: AbortSignal) => Promise<Task[]>;
+  /** Incremental fetch of everything that changed within the window. */
+  fetchSince: (window: PollWindow, signal?: AbortSignal) => Promise<Task[]>;
+  /**
+   * Ask the server to evaluate the window. Set false only when the instance
+   * rejects `updated >= now-<n>s`.
+   */
+  serverRelativeWindow?: boolean;
   /** Full fetch of the open view, used to find deletions. */
   fetchAll: (signal?: AbortSignal) => Promise<Task[]>;
   /** What the view currently holds, for the id-set diff. */
@@ -57,6 +77,7 @@ export function createPollingSource(options: PollingSourceOptions): LiveSource {
   const overlapMs = options.overlapMs ?? DEFAULTS.overlapMs;
   const debounceMs = options.debounceMs ?? DEFAULTS.debounceMs;
   const bootstrapLookbackMs = options.bootstrapLookbackMs ?? DEFAULTS.bootstrapLookbackMs;
+  const serverRelativeWindow = options.serverRelativeWindow ?? true;
 
   const now = options.now ?? (() => new Date());
   const isVisible = options.isVisible ?? (() => document.visibilityState === "visible");
@@ -92,6 +113,8 @@ export function createPollingSource(options: PollingSourceOptions): LiveSource {
    */
   let mark = now();
   let markIsFromServer = false;
+  /** When the last successful fetch completed, for measuring elapsed time. */
+  let lastFetchAt: Date | null = null;
   let tickCount = 0;
   let inFlight = false;
   /** A refreshNow() that arrived while a tick was running. */
@@ -101,6 +124,26 @@ export function createPollingSource(options: PollingSourceOptions): LiveSource {
 
   function emit(event: LiveEvent): void {
     for (const listener of listeners) listener(event);
+  }
+
+  /**
+   * The incremental window. Server-relative uses the elapsed time since the
+   * last successful fetch — a browser *duration*, which stays correct however
+   * wrong the browser's absolute clock is.
+   */
+  function incrementalWindow(): PollWindow {
+    if (!serverRelativeWindow) {
+      return { kind: "timestamp", since: new Date(mark.getTime() - overlapMs) };
+    }
+    const elapsedMs = lastFetchAt ? now().getTime() - lastFetchAt.getTime() : intervalMs;
+    const seconds = Math.ceil((Math.max(elapsedMs, 0) + overlapMs) / 1000);
+    return { kind: "server-relative", seconds };
+  }
+
+  /** True when the gap since the last fetch is too wide for an incremental one. */
+  function gapTooWide(): boolean {
+    if (!lastFetchAt) return false;
+    return now().getTime() - lastFetchAt.getTime() > intervalMs * fullFetchEvery;
   }
 
   async function runTick(force: boolean): Promise<void> {
@@ -115,7 +158,9 @@ export function createPollingSource(options: PollingSourceOptions): LiveSource {
 
     inFlight = true;
     controller = new AbortController();
-    const full = force || retryFull || tickCount % fullFetchEvery === 0;
+    // A long hidden stretch is reconciled in full: an incremental window that
+    // wide is no cheaper than the full fetch, and the full one finds deletions.
+    const full = force || retryFull || gapTooWide() || tickCount % fullFetchEvery === 0;
     tickCount += 1;
 
     try {
@@ -127,11 +172,11 @@ export function createPollingSource(options: PollingSourceOptions): LiveSource {
         emit({ type: "reset", tasks: fetched });
         if (removed.length > 0) emit({ type: "delete", ids: removed });
       } else {
-        const since = new Date(mark.getTime() - overlapMs);
-        fetched = await options.fetchSince(since, controller.signal);
+        fetched = await options.fetchSince(incrementalWindow(), controller.signal);
         if (fetched.length > 0) emit({ type: "upsert", tasks: fetched });
       }
       retryFull = false;
+      lastFetchAt = now();
 
       // Advance ONLY on a server-produced timestamp. Never on the browser
       // clock, and never past the newest thing the server actually reported:
@@ -176,6 +221,7 @@ export function createPollingSource(options: PollingSourceOptions): LiveSource {
       started = true;
       mark = new Date(now().getTime() - bootstrapLookbackMs);
       markIsFromServer = false;
+      lastFetchAt = null;
       tickCount = 0;
       intervalHandle = setIntervalFn(() => {
         void runTick(false);

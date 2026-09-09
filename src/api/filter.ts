@@ -52,3 +52,14 @@ export function toFilterTimestamp(date: Date): string {
 export function updatedSince(date: Date): string {
   return `updated >= ${quote(toFilterTimestamp(date))}`;
 }
+
+/**
+ * Tasks touched in the last `seconds`, evaluated by the SERVER.
+ *
+ * Verified accepted on Vikunja 2.5.0. This keeps the browser's clock out of the
+ * comparison entirely: only a duration crosses the wire, and durations survive
+ * a wrong clock where an absolute timestamp does not.
+ */
+export function updatedWithinSeconds(seconds: number): string {
+  return `updated >= now-${Math.max(1, Math.ceil(seconds))}s`;
+}

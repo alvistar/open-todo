@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { http } from "../api/client";
 import { listTasks } from "../api/endpoints";
-import { updatedSince } from "../api/filter";
+import { updatedSince, updatedWithinSeconds } from "../api/filter";
 import type { Task } from "../api/types";
 import { compareByDueDateThenId, type ViewDef } from "../model/views";
 import { queryKeys } from "../queries/keys";
@@ -54,9 +54,12 @@ export function useLiveSource({
       // mergeUpserts asks view.belongs() which of them to add and which to
       // drop. Verified: without this, completing a task elsewhere took a full
       // fetch to disappear; with it, one interval.
-      fetchSince: (since, signal) =>
+      fetchSince: (window, signal) =>
         listTasks(http, {
-          filter: updatedSince(since),
+          filter:
+            window.kind === "server-relative"
+              ? updatedWithinSeconds(window.seconds)
+              : updatedSince(window.since),
           timezone: timeZone,
           ...(signal ? { signal } : {}),
         }),

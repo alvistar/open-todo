@@ -16,7 +16,7 @@ import { ViewTitle, ViewToolbar } from "../ui/ViewHeader";
 import styles from "./AppScreen.module.css";
 
 function browserTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
 }
 
 export function AppScreen() {
@@ -27,8 +27,19 @@ export function AppScreen() {
   const userQuery = useUser();
   const projectsQuery = useProjects();
 
-  // The user's own zone when the server knows it, else the browser's.
-  const timeZone = userQuery.data?.settings?.timezone || browserTimeZone();
+  /*
+   * The BROWSER's zone, not Vikunja's `settings.timezone`.
+   *
+   * That setting is frequently left at an install default — on the reference
+   * instance it reads "GMT" while the user is in Italy — and honouring it
+   * would shift every displayed time by an hour or two. It also has to agree
+   * with `filter_timezone`, which decides what the server puts in Today:
+   * filtering in one zone and labelling in another can show a task under
+   * "Today" that reads as tomorrow. One zone, and it is the one the person is
+   * actually in. The server setting is only a fallback for a runtime whose
+   * Intl cannot resolve a zone.
+   */
+  const timeZone = browserTimeZone() || userQuery.data?.settings?.timezone || "UTC";
   const defaultDueTime =
     userQuery.data?.settings?.frontend_settings?.default_due_time ?? null;
 

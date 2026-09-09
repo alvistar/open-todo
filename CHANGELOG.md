@@ -45,6 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/data-model-mapping.md` — the Todoist to Vikunja mapping, the priority
   and all-day conventions, and the refresh strategy.
 
+### Verified against a live Vikunja 2.5.0 (2026-09-09)
+- `updated >= now-30s` is accepted, so the incremental poll window is now
+  evaluated by the server and the browser clock is out of the loop entirely.
+- `filter_timezone` is honoured (13 tasks for `Europe/Rome` against 15 for
+  `Pacific/Auckland` on the same filter).
+- Subtask relations carry a boolean `done`, so the "0 / N" badge is correct;
+  `related_tasks` was present on all 49 open tasks without `expand`.
+- The instance exposes the pagination headers, so the truncation bug fixed
+  below was latent there rather than active — it remains real for any instance
+  that does not send `Access-Control-Expose-Headers`.
+- `frontend_settings.default_due_time` is absent on 2.5.0, so D-map-2's 20:00
+  fallback is the live behaviour.
+
 ### Fixed
 - The page walk ended on the `x-pagination-total-pages` header, which a
   cross-origin browser cannot read unless the instance sends
@@ -67,6 +80,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   created or rescheduled elsewhere sat at the bottom of the list.
 - Sidebar Inbox and Today counts never refetched while another view was open.
 - `stop()` discarded subscribers, leaving a later `start()` deaf.
+- Times were rendered in Vikunja's `settings.timezone`, which on the reference
+  instance is an untouched `GMT` while the user is in Italy — every displayed
+  time would have been an hour or two out, and filtering in one zone while
+  labelling in another can show a task under "Today" that reads as tomorrow.
+  The browser's zone is now used for both.
 
 ### Decided
 - D1 (platform): open-todo is a **web app** in this repository, targeting
@@ -92,18 +110,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deletions are found by reconciling the id set of a full fetch, because
   `deleted_at` is not filterable; a deletion can take up to five poll
   intervals to appear.
-- The subtask "0 / N" badge relies on `related_tasks.subtask[]` carrying
-  `done`: every view filters `done = false`, so a completed child is never in
-  the listing. If the relation omits it, the badge under-reports as 0/N. The
-  integration test reports the answer against a real server.
-- `filter_timezone` and `filter_include_nulls` are sent but were not part of
-  the verified filter set; if the server ignores the former, Today's boundary
-  becomes the server's midnight rather than the user's.
-- The incremental poll compares a mark against the server's `updated`. It is
-  now derived from server timestamps, but a browser clock more than the
-  bootstrap lookback ahead can still widen the first window on an empty view.
-  A server-evaluated `updated >= now-30s` would remove the browser clock
-  entirely and is the next thing worth verifying.
-- Not yet exercised against a live Vikunja instance by the author of this
-  slice — verified against a stand-in server implementing the same API, plus
-  the read-only integration test that runs on demand.
+- The UI has been exercised against a live instance only at the API level; the
+  rendered app has not yet been driven against real data by its author.
+- Read-only still: no task creation, editing, completion or reordering.
