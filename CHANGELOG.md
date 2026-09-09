@@ -15,7 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the live Todoist web app in light theme, as reference material for deriving an
   original palette.
 
+### Decided
+- D1 (platform): open-todo is a **web app** in this repository, targeting
+  self-hosted Vikunja. Apple platforms stay with Veyrn (`Vikunja-Tasks`).
+
 ### Known gaps
-- No platform/stack decision yet (handover D1); all product work is blocked on it.
+- Web stack undecided (handover D5): framework, rendering model, and the
+  auth/CORS approach against a self-hosted Vikunja.
 - Dark-theme token set not captured.
 - Vikunja↔Todoist data-model mapping not written.

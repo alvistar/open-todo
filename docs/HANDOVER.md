@@ -1,7 +1,7 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** empty repo, research only. No product code yet.
+**Status:** research only. No product code yet. Platform decided (D1): web app.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -72,32 +72,31 @@ const o={};props.forEach(p=>{const v=s.getPropertyValue(p).trim();if(v)o[p]=v});
 
 ## 4. Open decisions — settle these before writing product code
 
-Each needs an answer from the owner. Recommendations given, none are decided.
+Each needs an answer from the owner. Decided items keep their rationale here
+rather than being deleted, so the reasoning survives.
 
-### D1 — Platform and stack
+### D1 — Platform and stack — **DECIDED 2026-09-09: web app in this repo**
 
-The single biggest fork. Options:
+open-todo is a **web application** living in this repository, targeting
+self-hosted Vikunja instances (the owner's runs on `pinguino`). Rationale: this
+is where Vikunja's users actually are — Linux and self-hosting — and the Apple
+platforms are already covered by Veyrn (`github.com/alvistar/Vikunja-Tasks`,
+SwiftUI/AppKit).
 
-- **D1-a — Contribute into the existing native app.** `Vikunja-Tasks`
-  (github.com/alvistar/Vikunja-Tasks, SwiftUI/AppKit, ships as "Veyrn" on
-  macOS/iOS/watchOS). Already has API client, offline outbox, widgets. This repo
-  then holds only research + design specs.
-- **D1-b — New web app in this repo.** Reaches Linux and the self-hosting
-  crowd, which is where Vikunja's users actually are. Nothing exists yet.
-- **D1-c — Both:** research/spec here, consumed by two clients.
+Consequences:
 
-*Recommendation: D1-b*, on the grounds that a repo named `open-todo` scoped to
-"a cool UI for Vikunja" is most useful to the Vikunja community as a web client,
-and Veyrn already covers Apple platforms. **But this contradicts the fact that
-the conversation that produced this repo was about improving Veyrn** — confirm
-with the owner before acting.
+- Starting from zero: no API client, no offline layer, no auth. Veyrn's Swift
+  code is a useful reference for the Vikunja API surface but is not portable.
+- Being web-to-web with the reference product, the measured Todoist layout
+  transfers directly instead of needing translation to native idioms.
+- Veyrn is unaffected. Nothing here is a prerequisite for it.
 
 ### D2 — How faithfully to copy the layout
 
-A 1:1 copy of a web layout fights native platform conventions (sidebars, context
-menus, sheets, swipe actions). *Recommendation:* take layout structure,
-information hierarchy and measured spacing; translate platform-specific
-affordances rather than cloning them pixel for pixel. Moot if D1-b wins.
+Now that D1 is web, the platform-translation problem is gone: measured spacing,
+type scale and layout structure can be applied as measured. Remaining judgement
+is about where Todoist is actually *bad* and should not be copied — that is a
+per-screen call, made during the measuring pass.
 
 ### D3 — Brand identity
 
@@ -144,13 +143,23 @@ This mapping table should be written into `docs/` before UI work starts.
 
 ## 7. Immediate next steps
 
-1. Answer **D1**. Everything else is blocked on it.
+1. Settle the web stack (**D5**, below): framework, rendering model, and how the
+   browser authenticates against a self-hosted Vikunja (Vikunja's API is
+   token-based; CORS on a self-hosted instance is a real constraint to check
+   before choosing a pure-SPA shape).
 2. Capture the dark-theme token set (same method, theme switched).
 3. Measure and record layout specs for the three core screens — inbox list, task
    detail, sidebar — as numeric specs plus hand-written HTML sketches
    (see the owner's `design-sketch` skill; never AI-generated mockup images).
 4. Write the Vikunja↔Todoist data-model mapping table (§5).
 5. Only then start product code.
+
+### D5 — Web stack (open)
+
+Undecided. Needs: framework, SSR vs pure SPA, offline story (if any), and the
+auth/CORS approach against a self-hosted Vikunja. Deployment target is a
+self-hosted box, so a single static bundle plus a thin proxy is the shape to
+beat.
 
 ---
 
