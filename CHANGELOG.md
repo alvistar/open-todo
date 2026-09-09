@@ -45,6 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/data-model-mapping.md` — the Todoist to Vikunja mapping, the priority
   and all-day conventions, and the refresh strategy.
 
+### Added (quick-add, D4 slice 1)
+- Quick-add with natural-language parsing, in English and Italian: `#project`,
+  `@label` / `*label`, `p1`-`p4`, `!1`-`!5`, dates, times and recurrence, per
+  D-map-3. Opened from the affordance under the list, the sidebar button, or
+  the `a` key.
+- Task creation, so the app is no longer read-only, including labels and
+  recurrence. The list reconciles immediately rather than waiting for a poll.
+- Recognised text is highlighted inline as you type, and the composer's chips
+  show what the phrase resolved to.
+- A recurrence Vikunja cannot express is reported and left in the task name
+  rather than approximated, and it is not re-read as a one-off date either.
+- Discarding a composer with text in it asks for confirmation.
+
 ### Verified against a live Vikunja 2.5.0 (2026-09-09)
 - `updated >= now-30s` is accepted, so the incremental poll window is now
   evaluated by the server and the browser clock is out of the loop entirely.
@@ -117,5 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deletions are found by reconciling the id set of a full fetch, because
   `deleted_at` is not filterable; a deletion can take up to five poll
   intervals to appear.
-- Read-only still: no task creation, editing, completion or reordering. The
-  checkboxes render priority but do not toggle.
+- Editing is still missing: tasks can be created but not renamed, completed,
+  rescheduled or reordered. The checkboxes render priority but do not toggle.
+- Quick-add cannot create a label that does not exist yet; an unknown `@label`
+  stays in the task name, as it does in Todoist.

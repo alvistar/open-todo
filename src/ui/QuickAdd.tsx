@@ -4,6 +4,7 @@ import { classifySchedule, formatDueLabel } from "../model/dates";
 import { scheduleColorVar } from "../model/display";
 import { priorityFromVikunja, priorityLabel } from "../model/priority";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { Icon } from "./icons/Icon";
 import styles from "./QuickAdd.module.css";
 
@@ -35,6 +36,7 @@ function runs(text: string, spans: { start: number; end: number }[]) {
 export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const parsed = useMemo(() => parseQuickAdd(text, context), [text, context]);
@@ -51,6 +53,12 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
     : null;
 
   const canSubmit = parsed.title.trim().length > 0 && !busy;
+
+  /** Discarding typed text asks first (layout-specs §5); an empty box does not. */
+  const requestCancel = () => {
+    if (text.trim().length === 0) onCancel();
+    else setConfirmingDiscard(true);
+  };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -87,7 +95,7 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault();
-              onCancel();
+              requestCancel();
             }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -137,7 +145,7 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
           <button
             type="button"
             className={styles.iconButton}
-            onClick={onCancel}
+            onClick={requestCancel}
             aria-label="Cancel"
           >
             <Icon name="close" size={16} />
@@ -159,6 +167,24 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
         </p>
       ))}
       {error ? <p className={styles.error}>{error}</p> : null}
+
+      {confirmingDiscard ? (
+        <ConfirmDialog
+          title="Discard this task?"
+          body="The text you typed will be lost."
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          onConfirm={() => {
+            setConfirmingDiscard(false);
+            setText("");
+            onCancel();
+          }}
+          onCancel={() => {
+            setConfirmingDiscard(false);
+            inputRef.current?.focus();
+          }}
+        />
+      ) : null}
     </form>
   );
 }

@@ -1,0 +1,67 @@
+/* layout-specs §5: 448 wide, r10, top at y=114 over a 40% overlay. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  z-index: 10;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  cursor: default;
+}
+
+.dialog {
+  position: relative;
+  width: 448px;
+  max-width: calc(100vw - 32px);
+  margin-top: 114px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+
+.header {
+  padding: 16px 16px 8px;
+}
+
+.title {
+  margin: 0;
+  font: 600 16px / 23px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.body {
+  padding: 0 16px;
+  margin: 0;
+  font: 400 14px / 21px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 24px 16px 16px;
+}
+
+.button {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-base);
+  font: 600 13px / 32px var(--font-sans);
+}
+
+.secondary {
+  background: var(--hover-fill);
+  color: var(--text-on-secondary-button);
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}

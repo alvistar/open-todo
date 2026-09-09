@@ -359,10 +359,11 @@ verified per-view float `position` semantics.
    - D4 step 3's open question about position semantics is already answered in
      `docs/data-model-mapping.md` §3; Veyrn is not a reference (it never writes
      positions).
-7. Next: D4 slice 1 (quick-add with natural-language parsing), then keyboard
-   navigation, drag reorder, undo. The grammar is in
-   `docs/data-model-mapping.md` §5; the composer's geometry is in
-   `docs/layout-specs.md` §3.
+7. ~~D4 slice 1 (quick-add)~~ — done 2026-09-09: parser, composer at the §3
+   geometry, task creation with labels and recurrence, confirmation on
+   discard. `!1`-`!5` is taken literally rather than through D-map-1, because
+   it is Vikunja's own syntax and forcing it through would write 4 for `!5`.
+   Next: keyboard navigation, then drag reorder, then undo.
 8. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
    WebSocket events (D6). Start from `pkg/websocket/listener.go` and
    `validEvents` in `connection.go`; the open question is how to resolve the
