@@ -76,13 +76,20 @@ permanent maintenance. **Do not revisit this without a new reason.**
 
 ## 3. What is already in this repo
 
-- `research/todoist-tokens-light.json` — 712 resolved CSS custom properties
-  captured from the live app in **light theme**. Includes the `-on-dark-`
-  variants but **not** a full dark-theme resolution; capturing that requires
-  switching Todoist's theme and re-running the extraction.
+- `research/todoist-tokens-light.json` — 713 resolved CSS custom properties
+  captured from the live app in **light theme** (`theme_todoist`, the default).
+- `research/todoist-tokens-dark.json` — the same 713 properties resolved under
+  **dark theme** (`theme_dark`), captured 2026-09-09. 336 values differ from
+  light; the key sets are identical, so the two files diff cleanly by key.
+
+How Todoist themes: a class on `<html>` (`theme_todoist`, `theme_dark`,
+`theme_tangerine`, …) selects override rules already present in the loaded
+CSS; `.theme_dark` carries 439 overrides. The dark capture therefore swapped
+the class locally, resolved, and restored `theme_todoist` — no account setting
+was changed. Same trick works for any other theme name listed above.
 
 Extraction method (reproducible; requires an authenticated Todoist tab in the
-Orca browser):
+Orca browser — find its `browserPageId` with `orca tab list --json`):
 
 ```bash
 orca eval --expression "(()=>{const s=getComputedStyle(document.documentElement);\
@@ -252,8 +259,8 @@ This mapping table should be written into `docs/` before UI work starts.
 ## 7. Immediate next steps
 
 1. ~~Settle D3, D4, D5~~ — done 2026-09-09.
-2. Capture the dark-theme token set (same method, theme switched; needs an
-   authenticated Todoist tab in the Orca browser).
+2. ~~Capture the dark-theme token set~~ — done 2026-09-09
+   (`research/todoist-tokens-dark.json`).
 3. Measure and record layout specs for the three core screens — inbox list, task
    detail, sidebar — as numeric specs plus hand-written HTML sketches
    (see the owner's `design-sketch` skill; never AI-generated mockup images).
