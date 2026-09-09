@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { Project, Task } from "../api/types";
 import { projectIdFromRoute, useRoute } from "../app/route";
 import { logOut } from "../auth/authStore";
+import { useLiveSource } from "../live/useLiveSource";
 import { groupTasksForView } from "../model/grouping";
 import { resolveInboxProjectId, sidebarProjects } from "../model/inbox";
 import { type RowContext, toTaskRow } from "../model/taskRow";
@@ -58,6 +59,9 @@ export function AppScreen() {
   const todayTasksQuery = useViewTasks(todayCountView, timeZone);
 
   const tasksQuery = useViewTasks(view, timeZone);
+
+  // Live refresh for the open view (D6): polls while visible, wakes on focus.
+  useLiveSource({ view, timeZone, enabled: !tasksQuery.isPending });
   const tasks: Task[] = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
 
   const rowContext: RowContext = useMemo(() => {
