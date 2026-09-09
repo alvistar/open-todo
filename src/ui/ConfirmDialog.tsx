@@ -20,18 +20,33 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const confirmRef = useRef<HTMLButtonElement>(null);
+  // Read through a ref so the effects below do not depend on a callback the
+  // parent recreates on every render.
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  /*
+   * Focus on mount, once. With `onCancel` in the dependency list this re-ran on
+   * every parent render - and the 20s poll tick renders the parent - so focus
+   * jumped back to Discard while the user was on Keep editing. Pressing Enter
+   * then destroyed the text they had just chosen to keep.
+   */
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    confirmRef.current?.focus();
+    return () => previous?.focus?.();
+  }, []);
 
   useEffect(() => {
-    confirmRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onCancel();
+        onCancelRef.current();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  }, []);
 
   return (
     <div className={styles.overlay}>
@@ -41,6 +56,9 @@ export function ConfirmDialog({
         type="button"
         className={styles.backdrop}
         aria-label={cancelLabel}
+        // Out of the tab order: a full-viewport button would otherwise take a
+        // tab stop and draw the focus ring around the whole window.
+        tabIndex={-1}
         onClick={onCancel}
       />
       <div

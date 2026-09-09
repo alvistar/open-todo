@@ -40,6 +40,7 @@
   display: block;
   width: 100%;
   min-height: 23px;
+  height: 23px;
   color: var(--text-primary);
   background: transparent;
   outline: none;
@@ -51,9 +52,13 @@
   color: var(--text-secondary);
 }
 
+/* Sized by the same content as the textarea, which is auto-grown to match, so
+   the two boxes stay the same height instead of the overlay spilling over the
+   toolbar once the text wraps. */
 .highlight {
   position: absolute;
   inset: 0;
+  height: auto;
   z-index: 0;
   color: transparent;
   pointer-events: none;
@@ -61,12 +66,20 @@
 }
 
 /* layout-specs §3: inline-block, padding 0 4px, r3, accent secondary fill. */
+/*
+ * Inline, not inline-block: an inline-block box is atomic and can never split
+ * across lines, so a multi-word match that straddles a wrap point moved whole
+ * to the next line in the overlay while the textarea broke it between words -
+ * and everything after it drifted. box-decoration-break keeps the padding and
+ * radius on both halves.
+ */
 .mark {
-  display: inline-block;
   padding: 0 4px;
   margin: 0 -4px;
   border-radius: 3px;
   background: var(--accent-secondary-fill);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .toolbar {

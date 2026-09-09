@@ -31,23 +31,41 @@ const WEEKDAY =
   "monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun|" +
   "luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica";
 
+/** Word-form ordinals, which are as calendar-shaped as the digit ones. */
+const ORDINAL_WORD = "second|third|fourth|fifth|last|first|other|next";
+
 /**
  * Shapes that are clearly recurrence but that Vikunja cannot store. Checked
  * BEFORE the accepted forms, because "every last day of month" also contains
  * the substring "month".
+ *
+ * Every weekday alternation here carries `(?!\p{L})`. Without it the bare
+ * alternative "mon" matched the start of "month", so `every 2 months` — an
+ * accepted form — was rejected outright, and the user was told Vikunja could
+ * not do something it does.
  */
+const WD = `(?:${WEEKDAY})(?!\\p{L})`;
+
 const REJECTED: RegExp[] = [
   // A list of weekdays: "every mon, wed"
+  new RegExp(`\\b(?:every|ogni)\\s+${WD}\\s*(?:,|and|e)\\s*${WD}`, "iu"),
+  // An ordinal weekday, in digits or words: "every 2nd tuesday",
+  // "every second tuesday", "every other monday". The trailing
+  // `(?:\s+of\s+(?:the\s+)?month)?` keeps the whole phrase in one span so
+  // none of it survives to be re-read as a one-off date.
   new RegExp(
-    `\\b(?:every|ogni)\\s+(?:${WEEKDAY})\\s*(?:,|and|e)\\s*(?:${WEEKDAY})`,
+    `\\b(?:every|ogni)\\s+(?:\\d+(?:st|nd|rd|th|°)?|${ORDINAL_WORD})\\s+${WD}(?:\\s+of\\s+(?:the\\s+)?month)?`,
     "iu",
   ),
-  // An ordinal weekday: "every 2nd tuesday"
-  new RegExp(`\\b(?:every|ogni)\\s+\\d+(?:st|nd|rd|th|°)?\\s+(?:${WEEKDAY})`, "iu"),
   // "every last/first day of month"
   /\b(?:every|ogni)\s+(?:last|first|ultimo|primo)\s+\w+\s+(?:of|del)\s+(?:month|mese)/iu,
-  // "every workday at 9 starting monday"
-  /\b(?:every|ogni)\s+\w+.*\bstarting\b/iu,
+  // "every workday at 9 starting monday" — the span must reach past
+  // "starting" to the weekday, or the date matcher picks the weekday up and
+  // schedules a one-off, which is exactly what rejecting is meant to prevent.
+  new RegExp(`\\b(?:every|ogni)\\s+\\w+.*?\\bstarting\\b(?:\\s+${WD})?`, "iu"),
+  // "every month on the 3rd" — calendar-shaped, and silently rounded to
+  // monthly before this rule existed.
+  /\b(?:every|ogni)\s+(?:month|mese)\s+on\s+the\s+\d+(?:st|nd|rd|th)?/iu,
 ];
 
 export function matchRecurrence(text: string): RecurrenceMatch | null {

@@ -93,6 +93,17 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
     rest = blank(rest, start, end);
   };
 
+  /*
+   * Hides a range from every later matcher WITHOUT removing it from the title.
+   * Used for text that is recognised as one thing but not usable as it - an
+   * unknown "@label", an unsupported repeat. Leaving it visible to the later
+   * rules is how "@monday" became next Monday and "every 2nd tuesday" became a
+   * one-off date: recognised, rejected, then silently reinterpreted.
+   */
+  const mask = (start: number, end: number) => {
+    rest = blank(rest, start, end);
+  };
+
   // Recurrence FIRST: "every monday" must not be eaten by the weekday date
   // matcher, which would schedule it once instead of repeating it.
   let repeatAfter: number | undefined;
@@ -105,7 +116,7 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
       // date matcher reads the weekday out of "every 2nd tuesday" and quietly
       // schedules it for next Tuesday, which is the silent approximation this
       // whole path exists to avoid.
-      rest = blank(rest, recurrence.start, recurrence.end);
+      mask(recurrence.start, recurrence.end);
       warnings.push(
         `"${recurrence.text.trim()}" is not supported by Vikunja and was kept in the task name.`,
       );
@@ -114,6 +125,70 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
       repeatMode = recurrence.repeatMode;
       if (recurrence.warning) warnings.push(recurrence.warning);
       consume(recurrence.start, recurrence.end, "recurrence");
+    }
+  }
+
+  /*
+   * Sigils are extracted BEFORE dates. A project or label whose name is a date
+   * word - "@monday", "#Lunedi", '#"Domani cose"' - was otherwise eaten from
+   * the inside by the date matcher, leaving a bare "@" in the title and a due
+   * date the user never asked for.
+   */
+  // #project — quoted for names with spaces, else a bare prefix.
+  let projectId: number | null = null;
+  const projectMatch = rest.match(/#"([^"]+)"/) ?? rest.match(/#([\p{L}\p{N}_-]+)/u);
+  if (projectMatch) {
+    const needle = (projectMatch[1] ?? "").toLowerCase();
+    const candidates = context.projects.filter((p) =>
+      p.title.toLowerCase().startsWith(needle),
+    );
+    // An exact title beats a longer project that merely starts the same way.
+    const exact = candidates.find((p) => p.title.toLowerCase() === needle);
+    const chosen = exact ?? candidates[0];
+    if (chosen) {
+      projectId = chosen.id;
+      const start = projectMatch.index ?? 0;
+      consume(start, start + projectMatch[0].length, "project");
+    } else {
+      // Unknown project: stays in the title verbatim (rule 1), but must not be
+      // re-read as something else.
+      const start = projectMatch.index ?? 0;
+      mask(start, start + projectMatch[0].length);
+    }
+  }
+
+  // @label / *label — existing labels only.
+  const labelIds: number[] = [];
+  // The lookbehind keeps "bob@work.com" from donating a "work" label, the same
+  // guard the priority patterns already use.
+  for (const m of [...rest.matchAll(/(?<![\p{L}\p{N}])[@*]([\p{L}\p{N}_-]+)/gu)]) {
+    const needle = (m[1] ?? "").toLowerCase();
+    const start = m.index ?? 0;
+    const label = context.labels.find((l) => l.title.toLowerCase() === needle);
+    if (!label) {
+      // Unknown label stays as plain text, and is hidden from the date matcher
+      // so "@monday" does not quietly become next Monday.
+      mask(start, start + m[0].length);
+      continue;
+    }
+    if (!labelIds.includes(label.id)) labelIds.push(label.id);
+    consume(start, start + m[0].length, "label");
+  }
+
+  // p1..p4 through D-map-1; !1..!5 literally, because it is Vikunja's own
+  // syntax and forcing it through D-map-1 would write 4 for !5.
+  let priority: number | null = null;
+  const pMatch = rest.match(/(?<![\p{L}\p{N}])p([1-4])(?![\p{L}\p{N}])/iu);
+  if (pMatch) {
+    priority = priorityToVikunja(Number(pMatch[1]) as Priority);
+    const start = pMatch.index ?? 0;
+    consume(start, start + pMatch[0].length, "priority");
+  } else {
+    const bangMatch = rest.match(/(?<![\p{L}\p{N}])!([1-5])(?![\p{L}\p{N}])/u);
+    if (bangMatch) {
+      priority = Number(bangMatch[1]);
+      const start = bangMatch.index ?? 0;
+      consume(start, start + bangMatch[0].length, "priority");
     }
   }
 
@@ -147,53 +222,6 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
         context.timeZone,
       );
       allDay = true;
-    }
-  }
-
-  // #project — quoted for names with spaces, else a bare prefix.
-  let projectId: number | null = null;
-  const projectMatch = rest.match(/#"([^"]+)"/) ?? rest.match(/#([\p{L}\p{N}_-]+)/u);
-  if (projectMatch) {
-    const needle = (projectMatch[1] ?? "").toLowerCase();
-    const candidates = context.projects.filter((p) =>
-      p.title.toLowerCase().startsWith(needle),
-    );
-    // An exact title beats a longer project that merely starts the same way.
-    const exact = candidates.find((p) => p.title.toLowerCase() === needle);
-    const chosen = exact ?? candidates[0];
-    if (chosen) {
-      projectId = chosen.id;
-      const start = projectMatch.index ?? 0;
-      consume(start, start + projectMatch[0].length, "project");
-    }
-    // Unknown project: left in the title, per rule 1.
-  }
-
-  // @label / *label — existing labels only.
-  const labelIds: number[] = [];
-  for (const m of [...rest.matchAll(/[@*]([\p{L}\p{N}_-]+)/gu)]) {
-    const needle = (m[1] ?? "").toLowerCase();
-    const label = context.labels.find((l) => l.title.toLowerCase() === needle);
-    if (!label) continue; // unknown label stays as plain text
-    if (!labelIds.includes(label.id)) labelIds.push(label.id);
-    const start = m.index ?? 0;
-    consume(start, start + m[0].length, "label");
-  }
-
-  // p1..p4 through D-map-1; !1..!5 literally, because it is Vikunja's own
-  // syntax and forcing it through D-map-1 would write 4 for !5.
-  let priority: number | null = null;
-  const pMatch = rest.match(/(?<![\p{L}\p{N}])p([1-4])(?![\p{L}\p{N}])/iu);
-  if (pMatch) {
-    priority = priorityToVikunja(Number(pMatch[1]) as Priority);
-    const start = pMatch.index ?? 0;
-    consume(start, start + pMatch[0].length, "priority");
-  } else {
-    const bangMatch = rest.match(/(?<![\p{L}\p{N}])!([1-5])(?![\p{L}\p{N}])/u);
-    if (bangMatch) {
-      priority = Number(bangMatch[1]);
-      const start = bangMatch.index ?? 0;
-      consume(start, start + bangMatch[0].length, "priority");
     }
   }
 

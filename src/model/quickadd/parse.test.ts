@@ -214,3 +214,73 @@ describe("parseQuickAdd — highlight spans", () => {
     }, 0);
   });
 });
+
+describe("parseQuickAdd — R2: an unsupported repeat never becomes a date", () => {
+  it.each([
+    "shift every workday at 9 starting monday",
+    "board every second tuesday",
+    "board every third monday of the month",
+    "board every other monday",
+  ])("keeps %s intact with no invented due date", (text) => {
+    const r = parse(text);
+    expect(r.dueDate).toBeNull();
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.title).toBe(text);
+    expect(r.warnings.join(" ")).toMatch(/not supported/i);
+  });
+});
+
+describe("parseQuickAdd — R1: a sigil is never eaten from the inside", () => {
+  it("treats @monday as a label token, not a date", () => {
+    const r = parse("ping @monday");
+    expect(r.dueDate).toBeNull();
+    expect(r.title).toBe("ping @monday"); // unknown label stays verbatim
+  });
+
+  it("resolves a project whose name is a date word", () => {
+    const r = parse("ping #Lunedi", {
+      projects: [{ id: 7, title: "Lunedi" }],
+    });
+    expect(r.projectId).toBe(7);
+    expect(r.dueDate).toBeNull();
+    expect(r.title).toBe("ping");
+  });
+
+  it("does not swallow a label out of an email address", () => {
+    const r = parse("send report to bob@work.com tomorrow", {
+      labels: [{ id: 12, title: "work" }],
+    });
+    expect(r.title).toBe("send report to bob@work.com");
+    expect(r.labelIds).toEqual([]);
+  });
+});
+
+describe("parseQuickAdd — invalid dates are refused, not rolled over", () => {
+  it.each(["deadline 2026-13-45", "x 2026-02-30", "party 31/2", "x 31 feb"])(
+    "leaves %s alone",
+    (text) => {
+      const r = parse(text);
+      expect(r.dueDate).toBeNull();
+      expect(r.title).toBe(text);
+    },
+  );
+
+  it("rolls 29 feb to the next leap year rather than to 1 March", () => {
+    const r = parse("party 29 feb");
+    const iso = new Intl.DateTimeFormat("en-CA", {
+      timeZone: TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(due(r));
+    expect(iso).toBe("2028-02-29");
+  });
+});
+
+describe("parseQuickAdd — the title reads cleanly", () => {
+  it("absorbs the preposition along with the time", () => {
+    expect(parse("call mom tomorrow at 10:30").title).toBe("call mom");
+    expect(parse("call tomorrow at 3pm").title).toBe("call");
+    expect(parse("cena domani alle 20:30").title).toBe("cena");
+  });
+});

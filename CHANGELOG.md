@@ -58,6 +58,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than approximated, and it is not re-read as a one-off date either.
 - Discarding a composer with text in it asks for confirmation.
 
+### Fixed (quick-add review)
+- `every 2 months` and every other English "every N months" phrase was
+  rejected as unsupported: the weekday list's bare `mon` matched the start of
+  `month` in an unanchored reject pattern, killing a whole accepted grammar row
+  and telling the user Vikunja could not do something it does.
+- An unsupported recurrence could still become a silent one-off due date —
+  `every second tuesday`, `every other monday` were not rejected at all, and the
+  `… starting monday` rejection stopped short of the weekday, which the date
+  matcher then read. Both are the exact failure the rejection exists to prevent.
+- `@monday` and `#Lunedi` were eaten from the inside by the date matcher,
+  leaving a bare sigil in the task name and inventing a due date. Sigils are now
+  extracted before dates, and an unrecognised one is hidden from later matchers
+  while staying visible in the title.
+- `bob@work.com` donated a `work` label to the task and lost the address.
+- Impossible dates rolled over into confident wrong ones: `2026-13-45` became
+  14 Feb 2027, `31/2` became 3 Mar. They are refused now, and `29 feb` lands on
+  the next leap year instead of 1 March.
+- The title kept a dangling `at` / `alle` whenever the time was written as a
+  clock face or with am/pm.
+- Relative dates were a day early in timezones whose DST changeover skips
+  midnight (America/Havana, Santiago, Asuncion).
+- Text typed while a create was in flight was wiped when the request returned.
+- Discarding during a create told the user the text was lost while the task was
+  created anyway, and a create that failed after the composer closed was
+  entirely silent.
+- Two Enters in the same turn could create the task twice.
+- A label that failed to attach was swallowed; it is now reported.
+- The confirmation dialog re-took focus on every parent render — including the
+  20s poll tick — so focus jumped from "Keep editing" back to "Discard".
+- The highlight overlay drifted from the text once it wrapped or exceeded one
+  line, and painted over the toolbar. The composer grows with its content now.
+
 ### Verified against a live Vikunja 2.5.0 (2026-09-09)
 - Quick-add end to end: "… domani alle 9 #Lavoro p2" created a task whose
   stored fields were exactly the parse — a clean title with the sigils removed,

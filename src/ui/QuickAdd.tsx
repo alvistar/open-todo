@@ -10,8 +10,11 @@ import styles from "./QuickAdd.module.css";
 
 export interface QuickAddProps {
   context: QuickAddContext;
-  /** Rejects to show the message inline; resolves when the task is created. */
-  onSubmit: (text: string) => Promise<void>;
+  /**
+   * Rejects to show the message inline; resolves with any non-fatal warnings
+   * (a label that could not be attached, say) once the task is created.
+   */
+  onSubmit: (text: string) => Promise<string[]>;
   onCancel: () => void;
   busy?: boolean;
 }
@@ -37,6 +40,11 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [postWarnings, setPostWarnings] = useState<string[]>([]);
+  /* Set synchronously, unlike `busy`, which arrives a render later: two Enters
+     in the same turn would otherwise both read canSubmit === true and create
+     the task twice. */
+  const submittingRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const parsed = useMemo(() => parseQuickAdd(text, context), [text, context]);
@@ -47,6 +55,19 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
     inputRef.current?.focus();
   }, []);
 
+  /*
+   * Grow the textarea to its content. Left at rows={1} with overflow hidden it
+   * scrolled internally to follow the caret while the overlay did not, so past
+   * about one line the marks sat under unrelated glyphs and the overlay painted
+   * over the toolbar.
+   */
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
+
   const project = context.projects.find((p) => p.id === parsed.effectiveProjectId);
   const dueKind = parsed.dueDate
     ? classifySchedule(parsed.dueDate, context.now, context.timeZone)
@@ -56,25 +77,47 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
 
   /** Discarding typed text asks first (layout-specs §5); an empty box does not. */
   const requestCancel = () => {
+    // Never while a create is in flight: the request is not aborted, so the
+    // task would be created moments after telling the user it was discarded.
+    if (busy || submittingRef.current) return;
     if (text.trim().length === 0) onCancel();
     else setConfirmingDiscard(true);
   };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || submittingRef.current) return;
+    submittingRef.current = true;
+    const submitted = text;
     setError(null);
+    setPostWarnings([]);
     try {
-      await onSubmit(text);
-      setText("");
+      const warnings = await onSubmit(submitted);
+      // Clear only what was actually sent. Anything typed while the request
+      // was in flight is the user's next task, not ours to throw away.
+      setText((current) => (current === submitted ? "" : current));
+      setPostWarnings(warnings);
       inputRef.current?.focus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not add the task.");
+    } finally {
+      submittingRef.current = false;
     }
   }
 
   return (
-    <form className={styles.wrapper} onSubmit={submit}>
+    <form
+      className={styles.wrapper}
+      onSubmit={submit}
+      onKeyDown={(event) => {
+        // On the form, not the textarea: Escape has to work with the focus on
+        // the Cancel or Add button too.
+        if (event.key === "Escape") {
+          event.preventDefault();
+          requestCancel();
+        }
+      }}
+    >
       <div className={styles.inputStack}>
         {/* Sits under the textarea and paints the recognised runs. */}
         <div className={styles.highlight} aria-hidden="true">
@@ -93,10 +136,6 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              requestCancel();
-            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               void submit(e);
@@ -161,7 +200,7 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
         </div>
       </div>
 
-      {parsed.warnings.map((warning) => (
+      {[...parsed.warnings, ...postWarnings].map((warning) => (
         <p key={warning} className={styles.warning}>
           {warning}
         </p>

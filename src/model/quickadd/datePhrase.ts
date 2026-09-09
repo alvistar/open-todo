@@ -168,8 +168,21 @@ export function zonedDate(
   return instant;
 }
 
+/** True when the day actually exists in that month of that year. */
+function isRealDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1) return false;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return day <= lastDay;
+}
+
 function midnight(year: number, month: number, day: number, timeZone: string): Date {
-  return zonedDate(year, month, day, 0, 0, timeZone);
+  const atMidnight = zonedDate(year, month, day, 0, 0, timeZone);
+  // Some zones skip midnight itself on their DST changeover (America/Havana,
+  // Santiago, Asuncion), and 00:00 then resolves to 23:00 the previous day -
+  // shifting every relative date a day early. Noon always exists, so when the
+  // midnight anchor lands on the wrong calendar day, use noon instead.
+  if (partsIn(atMidnight, timeZone).day === day) return atMidnight;
+  return zonedDate(year, month, day, 12, 0, timeZone);
 }
 
 function addDays(base: Date, days: number, timeZone: string): Date {
@@ -225,7 +238,12 @@ export function matchDatePhrase(
   const rules: { re: RegExp; run: (m: RegExpMatchArray) => DateMatch | null }[] = [
     {
       re: /\b(\d{4})-(\d{2})-(\d{2})\b/,
-      run: (m) => hit(m, midnight(Number(m[1]), Number(m[2]), Number(m[3]), timeZone)),
+      run: (m) => {
+        const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+        // 2026-13-45 used to roll over into a confident, wrong date.
+        if (!isRealDate(y, mo, d)) return null;
+        return hit(m, midnight(y, mo, d, timeZone));
+      },
     },
     {
       re: /\b(today|oggi|tonight|stasera|stanotte)\b/i,
@@ -286,14 +304,16 @@ export function matchDatePhrase(
       re: new RegExp(`\\b(\\d{1,2})\\s+(${mo})\\b`, "i"),
       run: (m) => {
         const month = MONTHS[(m[2] ?? "").toLowerCase()];
-        return month ? hit(m, rollForward(Number(m[1]), month, today, timeZone)) : null;
+        if (!month) return null;
+        return rollForwardOrNull(Number(m[1]), month, today, timeZone, hit, m);
       },
     },
     {
       re: new RegExp(`\\b(${mo})\\s+(\\d{1,2})\\b`, "i"),
       run: (m) => {
         const month = MONTHS[(m[1] ?? "").toLowerCase()];
-        return month ? hit(m, rollForward(Number(m[2]), month, today, timeZone)) : null;
+        if (!month) return null;
+        return rollForwardOrNull(Number(m[2]), month, today, timeZone, hit, m);
       },
     },
     {
@@ -303,7 +323,7 @@ export function matchDatePhrase(
         const a = Number(m[1]);
         const b = Number(m[2]);
         if (b < 1 || b > 12 || a < 1 || a > 31) return null;
-        return hit(m, rollForward(a, b, today, timeZone));
+        return rollForwardOrNull(a, b, today, timeZone, hit, m);
       },
     },
   ];
@@ -318,17 +338,37 @@ export function matchDatePhrase(
   return null;
 }
 
-/** A bare day+month with no year means the next time it comes round. */
+/**
+ * A bare day+month with no year means the next time it comes round — skipping
+ * years in which it does not exist, so "29 feb" lands on the next leap year
+ * rather than silently becoming 1 March.
+ */
 function rollForward(
   day: number,
   month: number,
   today: { year: number; month: number; day: number },
   timeZone: string,
-): Date {
-  const thisYear = midnight(today.year, month, day, timeZone);
+): Date | null {
   const todayMidnight = midnight(today.year, today.month, today.day, timeZone);
-  if (thisYear.getTime() >= todayMidnight.getTime()) return thisYear;
-  return midnight(today.year + 1, month, day, timeZone);
+  for (let year = today.year; year <= today.year + 8; year += 1) {
+    if (!isRealDate(year, month, day)) continue;
+    const candidate = midnight(year, month, day, timeZone);
+    if (candidate.getTime() >= todayMidnight.getTime()) return candidate;
+  }
+  return null;
+}
+
+/** rollForward, wrapped so a rule can decline cleanly. */
+function rollForwardOrNull(
+  day: number,
+  month: number,
+  today: { year: number; month: number; day: number },
+  timeZone: string,
+  hit: (m: RegExpMatchArray, date: Date) => DateMatch,
+  m: RegExpMatchArray,
+): DateMatch | null {
+  const date = rollForward(day, month, today, timeZone);
+  return date ? hit(m, date) : null;
 }
 
 /** Finds the first time phrase in `text`. */
@@ -354,7 +394,7 @@ export function matchTimePhrase(text: string): TimeMatch | null {
 
   const rules: { re: RegExp; run: (m: RegExpMatchArray) => TimeMatch | null }[] = [
     {
-      re: /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i,
+      re: /\b(?:(?:at|alle|ore)\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i,
       run: (m) => {
         let h = Number(m[1]);
         const min = Number(m[2] ?? 0);
@@ -366,7 +406,12 @@ export function matchTimePhrase(text: string): TimeMatch | null {
       },
     },
     // A bare clock face.
-    { re: /\b(\d{1,2}):(\d{2})\b/, run: (m) => build(m, Number(m[1]), Number(m[2])) },
+    {
+      // The preposition is consumed with the clock face, or the title is left
+      // with a dangling "at" / "alle".
+      re: /\b(?:(?:at|alle(?:\s+ore)?|ore)\s+)?(\d{1,2}):(\d{2})\b/i,
+      run: (m) => build(m, Number(m[1]), Number(m[2])),
+    },
     // A bare number only counts with the preposition.
     {
       re: /\b(?:at|alle|alle\s+ore|ore)\s+(\d{1,2})\b/i,

@@ -108,6 +108,13 @@ export function AppScreen() {
   const createTask = useCreateTask();
   const [composerOpen, setComposerOpen] = useState(false);
 
+  /*
+   * `now` here is only for the composer's live preview. The value written to
+   * Vikunja is taken at submit time instead: none of this memo's dependencies
+   * change with the clock, so a tab left open overnight would keep parsing
+   * "tomorrow" against yesterday's date - and the row display, which the poll
+   * refreshes, would look right while the stored due_date was a day out.
+   */
   const quickAddContext: QuickAddContext = useMemo(
     () => ({
       now: new Date(),
@@ -130,8 +137,16 @@ export function AppScreen() {
   );
 
   const submitQuickAdd = useCallback(
-    async (text: string) => {
-      await createTask.mutateAsync(parseQuickAdd(text, quickAddContext));
+    async (text: string): Promise<string[]> => {
+      // Re-read the clock here, not from the memo above.
+      const parsed = parseQuickAdd(text, { ...quickAddContext, now: new Date() });
+      const labelNames = Object.fromEntries(
+        quickAddContext.labels.map((l) => [l.id, l.title]),
+      );
+      const result = await createTask.mutateAsync({ parsed, labelNames });
+      return result.failedLabels.map(
+        (name) => `Task added, but the label "${name}" could not be attached.`,
+      );
     },
     [createTask, quickAddContext],
   );
