@@ -133,10 +133,15 @@ function LoginStep({
     setError(null);
     const candidate = apiToken.trim();
     try {
-      // Store first so the shared client picks it up, then verify; a bad token
-      // is rolled back rather than left behind.
+      // Verify with a throwaway client BEFORE storing. Storing first would
+      // flip the App gate, remount this screen, and lose the error message on
+      // the way back — the user would see the form reset with no explanation.
+      const probe = createHttp({
+        getBaseUrl: () => baseUrl,
+        getToken: () => candidate,
+      });
+      await getUser(probe);
       setToken(candidate);
-      await getUser(http);
     } catch (e) {
       setError(errorMessage(e));
     } finally {

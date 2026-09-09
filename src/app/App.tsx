@@ -1,5 +1,5 @@
 import { useToken } from "../auth/authStore";
-import { FixtureScreen } from "../screens/FixtureScreen";
+import { AppScreen } from "../screens/AppScreen";
 import { SetupScreen } from "../screens/SetupScreen";
 import { useBaseUrl } from "../settings/settingsStore";
 
@@ -12,5 +12,5 @@ export function App() {
   const token = useToken();
 
   if (!baseUrl || !token) return <SetupScreen />;
-  return <FixtureScreen />;
+  return <AppScreen />;
 }

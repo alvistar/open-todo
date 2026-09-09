@@ -1,0 +1,14 @@
+.error {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: 640px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-base);
+  background: color-mix(in srgb, var(--schedule-overdue) 14%, var(--bg-primary));
+  color: var(--schedule-overdue);
+  font: 400 13px / 19px var(--font-sans);
+  box-shadow: var(--shadow-modal);
+}

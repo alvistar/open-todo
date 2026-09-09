@@ -23,6 +23,9 @@ export function TaskRow({ task, onToggleDone, onOpen }: TaskRowProps) {
       <div
         className={`${styles.row} ${task.done ? styles.done : ""}`}
         role="button"
+        // Without this the row's accessible name is every scrap of text it
+        // contains, including the checkbox's own label.
+        aria-label={task.title}
         tabIndex={0}
         onClick={() => onOpen?.(task)}
         onKeyDown={(event) => {
