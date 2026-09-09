@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     fifth tick to catch deletions, and an immediate refresh on focus.
   - Theme tokens in light and dark with open-todo's teal accent (D3), an
     original icon set, and a theme toggle that respects the system setting.
+- `DESIGN.md` — the design system in the open DESIGN.md format (tokens in front
+  matter, the eight canonical sections, Motion and a Decisions Log), so gstack's
+  design skills and impeccable read the same file. Its token block is generated
+  from `src/theme/tokens.css` by `scripts/sync-design-tokens.mjs` and `pnpm
+  check` fails on drift, so the design doc cannot quietly disagree with the
+  shipped stylesheet.
 - `VERSION` is the single source of truth: `scripts/sync-version.mjs` derives
   `package.json` from it and the build fails on drift.
 - Handover document (`docs/HANDOVER.md`) stating the project's purpose, the

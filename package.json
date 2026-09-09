@@ -10,9 +10,11 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "typecheck": "tsc -b",
-    "check": "biome check . && tsc -b",
+    "check": "biome check . && tsc -b && node scripts/sync-design-tokens.mjs --check",
     "test": "vitest run",
     "test:watch": "vitest",
+    "design:sync": "node scripts/sync-design-tokens.mjs",
+    "design:check": "node scripts/sync-design-tokens.mjs --check",
     "version:sync": "node scripts/sync-version.mjs",
     "version:check": "node scripts/sync-version.mjs --check"
   },

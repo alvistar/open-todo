@@ -25,6 +25,12 @@ pnpm test       # vitest
 pnpm build      # -> dist/
 ```
 
+`DESIGN.md` is the design system, in the open DESIGN.md format that gstack's
+design skills and impeccable read. Its front matter is **generated** from
+`src/theme/tokens.css` by `scripts/sync-design-tokens.mjs`; `pnpm check` fails
+on drift. Edit the CSS and run `pnpm design:sync` — never hand-edit the token
+block. The prose sections are authored.
+
 `VERSION` at the repo root is the single source of truth for the version:
 `package.json` is derived from it by `scripts/sync-version.mjs`, the build
 fails on drift, and the bundle reads the same file. Never edit the version in
@@ -84,5 +90,6 @@ Two more things worth knowing before you deploy it:
 | `src/model` | The conventions — priority (D-map-1), all-day dates (D-map-2), view definitions, grouping |
 | `src/live` | `LiveSource` and the polling implementation (D6) |
 | `src/ui` | Components at the geometry in `docs/layout-specs.md` |
+| `DESIGN.md` | The design system: tokens (generated), layout rules, components, do's and don'ts |
 | `docs/` | The specification: layout measurements, data-model mapping, handover |
 | `research/` | Reference material captured from Todoist; not shipped |
