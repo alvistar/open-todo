@@ -1,0 +1,75 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>open-todo — D3 accent candidates (2026-09-09)</title>
+<style>
+body{margin:0;background:#888;font:13px/1.4 -apple-system,system-ui,"Segoe UI","Noto Sans",sans-serif;padding:24px}
+.note{color:#fff;max-width:1400px;margin:0 auto 16px}.note b{color:#ffe}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:1400px;margin:0 auto}
+.cand{border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.cand h3{margin:0;padding:8px 12px;background:#333;color:#fff;font:600 13px/20px inherit}
+.cand h3 code{color:#ffd;font-weight:400}
+.pane{padding:12px;--bg:#fff;--bg2:#fcfaf8;--fg:#202020;--fg2:#666;--border:#e6e6e6;--divider:#eee;--hover:rgba(0,0,0,.04);
+  --acc2:color-mix(in srgb,var(--acc) 16%,var(--bg));--sel:color-mix(in srgb,var(--acc) 11%,var(--bg2));--selfg:color-mix(in srgb,var(--acc) 80%,#000);
+  background:var(--bg);color:var(--fg)}
+.pane.dark{--bg:#1f1f1f;--bg2:#262626;--fg:#fff;--fg2:#ccc;--border:#3d3d3d;--divider:#3d3d3d;--hover:rgba(255,255,255,.06);
+  --acc:var(--accd);--acc2:color-mix(in srgb,var(--acc) 32%,var(--bg));--sel:color-mix(in srgb,var(--acc) 22%,var(--bg2));--selfg:color-mix(in srgb,var(--acc) 70%,#fff)}
+.side{background:var(--bg2);padding:8px 12px;border-radius:6px;margin-bottom:10px}
+.add{display:flex;align-items:center;height:34px;padding:0 10px;color:var(--acc);font:600 14px/32px inherit}
+.add i{width:18px;height:18px;border:1.5px solid currentColor;border-radius:50%;margin-right:8px;display:inline-block}
+.row{height:34px;display:flex;align-items:center;padding:5px;border-radius:5px;font:400 14px/16px inherit}
+.row.sel{background:var(--sel);color:var(--selfg)}
+.row .c{margin-left:auto;font:400 12px/24px inherit;color:var(--acc)}
+.comp{border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}
+.comp .in{font:400 16px/23px inherit}.nl{background:var(--acc2);padding:0 4px;border-radius:3px}
+.tb{display:flex;align-items:center;gap:4px;margin-top:8px}
+.chip{height:28px;border:1px solid var(--border);border-radius:8px;padding:0 6px;display:flex;align-items:center;font:400 13px/20px inherit;color:var(--fg2)}
+.go{margin-left:auto;width:32px;height:32px;border-radius:8px;background:var(--acc);color:var(--on,#fff);display:grid;place-items:center}
+.btns{display:flex;gap:10px;justify-content:flex-end}
+.btn{height:32px;padding:0 12px;border-radius:5px;font:600 13px/32px inherit}
+.btn.sec{background:var(--hover);color:var(--fg2)}.btn.pri{background:var(--acc);color:var(--on,#fff)}
+.chk{display:flex;gap:10px;align-items:center;margin:10px 0;font:400 14px/21px inherit}
+.chk i{width:18px;height:18px;border-radius:50%;border:2px solid var(--pc);background:color-mix(in srgb,var(--pc) 12%,transparent);display:inline-block}
+.meta{font:400 12px/18px inherit;color:var(--fg2);margin-top:4px}.meta b{font-weight:400}
+.link{color:var(--acc);font:600 13px/32px inherit}
+.contrast{font:11px/1.4 monospace;color:#c00;background:rgba(255,255,255,.85);padding:2px 6px;border:1px dashed #c00;margin-top:8px;display:inline-block}
+.dark .contrast{background:rgba(0,0,0,.6);color:#f88;border-color:#f88}
+</style>
+<p class="note"><b>D3 accent candidates.</b> Each column is one hue in the measured slots: sidebar add-task label and selected-row tint, natural-language highlight, composer submit, primary/secondary buttons, a section action link. Light pane on top, dark below. Priority colours (p1 red, p2 orange, p3 blue) stay as measured and must not clash with the accent. The Todoist red (<code>#d33322</code>) is shown only as the excluded baseline. Contrast lines are white-on-accent for the filled buttons (WCAG AA for 13px bold needs 4.5:1; 3:1 for large/bold ≥ 18.66px, so all button text here needs 4.5).</p>
+<div class="grid">
+  <div class="cand"><h3>Baseline (excluded) <code>#d33322 / #d04348</code></h3>
+    <div class="pane" style="--acc:#d33322;--accd:#d04348"><div class="side"><div class="add"><i></i>Aggiungi attività</div><div class="row sel">Oggi<span class="c">14</span></div></div>
+      <div class="comp"><div class="in">Chiamare <span class="nl">domani alle 10</span> <span class="nl">p1</span></div><div class="tb"><span class="chip">Personale</span><span class="chip">Domani 10:00</span><span class="go">➜</span></div></div>
+      <div class="chk" style="--pc:#d1453b"><i></i>p1 next to accent</div><div class="chk" style="--pc:#eb8909"><i></i>p2</div><div class="chk" style="--pc:#246fe0"><i></i>p3</div>
+      <div class="btns"><span class="link">Ripianifica</span><span class="btn sec">Annulla</span><span class="btn pri">Chiudi</span></div><span class="contrast">white on #d33322: 5.0:1 ✓ — but p1 #d1453b is indistinguishable from the accent</span></div>
+    <div class="pane dark" style="--acc:#d33322;--accd:#d04348"><div class="side"><div class="add"><i></i>Aggiungi attività</div><div class="row sel">Oggi<span class="c">14</span></div></div>
+      <div class="comp"><div class="in">Chiamare <span class="nl">domani alle 10</span></div><div class="tb"><span class="chip">Personale</span><span class="go">➜</span></div></div>
+      <div class="chk" style="--pc:#ff7066"><i></i>p1</div><div class="btns"><span class="btn sec">Annulla</span><span class="btn pri">Chiudi</span></div></div></div>
+
+  <div class="cand"><h3>A · Teal <code>#0f766e / #2dd4bf</code></h3>
+    <div class="pane" style="--acc:#0f766e;--accd:#2dd4bf"><div class="side"><div class="add"><i></i>Aggiungi attività</div><div class="row sel">Oggi<span class="c">14</span></div></div>
+      <div class="comp"><div class="in">Chiamare <span class="nl">domani alle 10</span> <span class="nl">p1</span></div><div class="tb"><span class="chip">Personale</span><span class="chip">Domani 10:00</span><span class="go">➜</span></div></div>
+      <div class="chk" style="--pc:#d1453b"><i></i>p1 next to accent</div><div class="chk" style="--pc:#eb8909"><i></i>p2</div><div class="chk" style="--pc:#246fe0"><i></i>p3</div>
+      <div class="btns"><span class="link">Ripianifica</span><span class="btn sec">Annulla</span><span class="btn pri">Chiudi</span></div><span class="contrast">white on #0f766e: 5.5:1 ✓ · distinct from p1/p2/p3 and from the "today" green #058527? borderline (both green family)</span></div>
+    <div class="pane dark" style="--acc:#0f766e;--accd:#2dd4bf;--on:#062a26"><div class="side"><div class="add"><i></i>Aggiungi attività</div><div class="row sel">Oggi<span class="c">14</span></div></div>
+      <div class="comp"><div class="in">Chiamare <span class="nl">domani alle 10</span></div><div class="tb"><span class="chip">Personale</span><span class="go">➜</span></div></div>
+      <div class="chk" style="--pc:#ff7066"><i></i>p1</div><div class="btns"><span class="btn sec">Annulla</span><span class="btn pri">Chiudi</span></div><span class="contrast">dark: #2dd4bf needs dark text on filled buttons (white fails at 1.9:1)</span></div></div>
+
+  <div class="cand"><h3>B · Indigo <code>#4f46e5 / #818cf8</code></h3>
+    <div class="pane" style="--acc:#4f46e5;--accd:#818cf8"><div class="side"><div class="add"><i></i>Aggiungi attività</div><div class="row sel">Oggi<span class="c">14</span></div></div>
+      <div class="comp"><div class="in">Chiamare <span class="nl">domani alle 10</span> <span class="nl">p1</span></div><div class="tb"><span class="chip">Personale</span><span class="chip">Domani 10:00</span><span class="go">➜</span></div></div>
+      <div class="chk" style="--pc:#d1453b"><i></i>p1 next to accent</div><div class="chk" style="--pc:#eb8909"><i></i>p2</div><div class="chk" style="--pc:#246fe0"><i></i>p3</div>
+      <div class="btns"><span class="link">Ripianifica</span><span class="btn sec">Annulla</span><span class="btn pri">Chiudi</span></div><span class="contrast">white on #4f46e5: 6.3:1 ✓ · collides with p3 blue #246fe0 and the "next week" purple #692ec2</span></div>
+    <div class="pane dark" style="--acc:#4f46e5;--accd:#818cf8;--on:#14123f"><div class="side"><div class="add"><i></i>Aggiungi attività</div><div class="row sel">Oggi<span class="c">14</span></div></div>
+      <div class="comp"><div class="in">Chiamare <span class="nl">domani alle 10</span></div><div class="tb"><span class="chip">Personale</span><span class="go">➜</span></div></div>
+      <div class="chk" style="--pc:#5297ff"><i></i>p3 vs accent</div><div class="btns"><span class="btn sec">Annulla</span><span class="btn pri">Chiudi</span></div></div></div>
+
+  <div class="cand"><h3>C · Burnt orange <code>#c2410c / #fb923c</code></h3>
+    <div class="pane" style="--acc:#c2410c;--accd:#fb923c"><div class="side"><div class="add"><i></i>Aggiungi attività</div><div class="row sel">Oggi<span class="c">14</span></div></div>
+      <div class="comp"><div class="in">Chiamare <span class="nl">domani alle 10</span> <span class="nl">p1</span></div><div class="tb"><span class="chip">Personale</span><span class="chip">Domani 10:00</span><span class="go">➜</span></div></div>
+      <div class="chk" style="--pc:#d1453b"><i></i>p1 next to accent</div><div class="chk" style="--pc:#eb8909"><i></i>p2</div><div class="chk" style="--pc:#246fe0"><i></i>p3</div>
+      <div class="btns"><span class="link">Ripianifica</span><span class="btn sec">Annulla</span><span class="btn pri">Chiudi</span></div><span class="contrast">white on #c2410c: 5.4:1 ✓ · collides with p2 orange #eb8909 and "tomorrow" #ad6200; reads as Todoist-adjacent</span></div>
+    <div class="pane dark" style="--acc:#c2410c;--accd:#fb923c;--on:#3b1204"><div class="side"><div class="add"><i></i>Aggiungi attività</div><div class="row sel">Oggi<span class="c">14</span></div></div>
+      <div class="comp"><div class="in">Chiamare <span class="nl">domani alle 10</span></div><div class="tb"><span class="chip">Personale</span><span class="go">➜</span></div></div>
+      <div class="chk" style="--pc:#ff9a13"><i></i>p2 vs accent</div><div class="btns"><span class="btn sec">Annulla</span><span class="btn pri">Chiudi</span></div></div></div>
+</div>
+<p class="note" style="margin-top:16px"><b>Not drawn but considered:</b> a saturated green (collides with the "today" date colour, which carries meaning in every row) and a neutral/black accent (loses the "this is the action" signal in the composer submit and the sidebar add row, the two places the accent does real work).</p>
