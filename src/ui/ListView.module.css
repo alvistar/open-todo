@@ -29,3 +29,8 @@
   font: 400 14px / 21px var(--font-sans);
   color: var(--text-secondary);
 }
+
+/* layout-specs §2.4: the add-task affordance sits just under the last row. */
+.footer {
+  margin-top: 4px;
+}

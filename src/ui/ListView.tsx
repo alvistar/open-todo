@@ -12,6 +12,8 @@ export interface TaskSection {
 
 export interface ListViewProps {
   sections: TaskSection[];
+  /** Rendered under the last section: the quick-add affordance or composer. */
+  footer?: React.ReactNode;
   emptyMessage?: string;
   onToggleDone?: (task: TaskRowModel) => void;
   onOpenTask?: (task: TaskRowModel) => void;
@@ -25,6 +27,7 @@ export function ListView({
   onToggleDone,
   onOpenTask,
   header,
+  footer,
 }: ListViewProps) {
   const total = sections.reduce((n, section) => n + section.tasks.length, 0);
 
@@ -57,6 +60,7 @@ export function ListView({
             </section>
           ))
         )}
+        {footer ? <div className={styles.footer}>{footer}</div> : null}
       </div>
     </div>
   );

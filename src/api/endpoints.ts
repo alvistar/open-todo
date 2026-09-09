@@ -85,6 +85,40 @@ export function listLabels(http: Http, signal?: AbortSignal): Promise<Label[]> {
   return fetchAllPages<Label>(http, "/labels", signal ? { signal } : {});
 }
 
+export interface CreateTaskInput {
+  title: string;
+  /** RFC 3339. Vikunja has no all-day flag; see D-map-2. */
+  due_date?: string;
+  priority?: number;
+  repeat_after?: number;
+  repeat_mode?: number;
+}
+
+/**
+ * Creates a task in a project. Vikunja's create verb is PUT, not POST.
+ *
+ * Labels are NOT part of this call: they are a sub-resource on the task
+ * (mapping §2), so a task with labels is a create followed by addLabel.
+ */
+export function createTask(
+  http: Http,
+  projectId: number,
+  input: CreateTaskInput,
+): Promise<Task> {
+  return http.request<Task>(`/projects/${projectId}/tasks`, {
+    method: "PUT",
+    body: input,
+  });
+}
+
+/** Attaches an existing label to a task (`PUT /tasks/{id}/labels`). */
+export function addLabel(http: Http, taskId: number, labelId: number): Promise<unknown> {
+  return http.request(`/tasks/${taskId}/labels`, {
+    method: "PUT",
+    body: { label_id: labelId },
+  });
+}
+
 export interface ListTasksParams {
   /** A Vikunja filter expression; see ./filter.ts. */
   filter?: string;

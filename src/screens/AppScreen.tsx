@@ -1,15 +1,18 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Project, Task } from "../api/types";
 import { projectIdFromRoute, useRoute } from "../app/route";
 import { logOut } from "../auth/authStore";
 import { useLiveSource } from "../live/useLiveSource";
 import { groupTasksForView } from "../model/grouping";
 import { resolveInboxProjectId, sidebarProjects } from "../model/inbox";
+import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
 import { type RowContext, toTaskRow } from "../model/taskRow";
 import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
-import { useProjects, useUser, useViewTasks } from "../queries/useVikunja";
+import { useCreateTask } from "../queries/useCreateTask";
+import { useLabels, useProjects, useUser, useViewTasks } from "../queries/useVikunja";
 import { readThemePreference, resolveTheme, setTheme } from "../theme/theme";
 import { ListView } from "../ui/ListView";
+import { AddTaskAffordance, QuickAdd } from "../ui/QuickAdd";
 import { Shell } from "../ui/Shell";
 import { Sidebar } from "../ui/Sidebar";
 import { ViewTitle, ViewToolbar } from "../ui/ViewHeader";
@@ -101,6 +104,54 @@ export function AppScreen() {
     [view, tasks, rowContext],
   );
 
+  const labelsQuery = useLabels();
+  const createTask = useCreateTask();
+  const [composerOpen, setComposerOpen] = useState(false);
+
+  const quickAddContext: QuickAddContext = useMemo(
+    () => ({
+      now: new Date(),
+      timeZone,
+      defaultDueTime,
+      // A task typed inside a project view belongs to that project unless the
+      // phrase says otherwise.
+      defaultProjectId: projectIdFromRoute(route) ?? inboxProjectId,
+      projects: (projectsQuery.data ?? []).map((p) => ({ id: p.id, title: p.title })),
+      labels: (labelsQuery.data ?? []).map((l) => ({ id: l.id, title: l.title })),
+    }),
+    [
+      timeZone,
+      defaultDueTime,
+      route,
+      inboxProjectId,
+      projectsQuery.data,
+      labelsQuery.data,
+    ],
+  );
+
+  const submitQuickAdd = useCallback(
+    async (text: string) => {
+      await createTask.mutateAsync(parseQuickAdd(text, quickAddContext));
+    },
+    [createTask, quickAddContext],
+  );
+
+  // "a" opens the composer, the way Todoist does; ignored while typing.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (composerOpen || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      if (target?.isContentEditable) return;
+      if (event.key === "a") {
+        event.preventDefault();
+        setComposerOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [composerOpen]);
+
   const error = tasksQuery.error ?? projectsQuery.error;
 
   return (
@@ -118,6 +169,7 @@ export function AppScreen() {
           }))}
           onSelect={navigate}
           onLogOut={logOut}
+          onAddTask={() => setComposerOpen(true)}
         />
       }
     >
@@ -139,6 +191,18 @@ export function AppScreen() {
           />
         }
         sections={sections}
+        footer={
+          composerOpen ? (
+            <QuickAdd
+              context={quickAddContext}
+              onSubmit={submitQuickAdd}
+              onCancel={() => setComposerOpen(false)}
+              busy={createTask.isPending}
+            />
+          ) : (
+            <AddTaskAffordance onOpen={() => setComposerOpen(true)} />
+          )
+        }
         emptyMessage={
           error
             ? `Could not load tasks: ${error.message}`

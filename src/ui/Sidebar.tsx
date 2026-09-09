@@ -18,6 +18,7 @@ export interface SidebarProps {
   projects: SidebarProject[];
   onSelect: (route: string) => void;
   onLogOut?: () => void;
+  onAddTask?: () => void;
 }
 
 export function Sidebar({
@@ -28,6 +29,7 @@ export function Sidebar({
   projects,
   onSelect,
   onLogOut,
+  onAddTask,
 }: SidebarProps) {
   return (
     <nav className={styles.root} aria-label="Views and projects">
@@ -40,7 +42,12 @@ export function Sidebar({
         </div>
       </div>
 
-      <button type="button" className={styles.addTask} disabled>
+      <button
+        type="button"
+        className={styles.addTask}
+        onClick={onAddTask}
+        disabled={!onAddTask}
+      >
         <Icon name="plus" size={24} className={styles.addTaskIcon} />
         <span className={styles.addTaskLabel}>Add task</span>
       </button>
