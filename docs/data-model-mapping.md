@@ -87,6 +87,11 @@ Consequences for open-todo:
 | Inbox | default project, list view | Sections from its kanban view (§1). |
 | Today | Saved filter `done = false && due_date < now/d+1d` with **one list view** | Grouping into "Scadute" / today is client-side (`due_date < now/d`). Persisted manual order via the filter view's positions. `now/d` date-math verified (§6 item 4). |
 | Upcoming | Saved filter `done = false && due_date > now/d` grouped by day client-side | Drag between days = due-date change, not a position write. |
+
+**Status in the foundation slice:** Today is issued as an *ad-hoc*
+`GET /tasks?filter=…`, not as a SavedFilter. That is enough for a read-only
+view, but the saved filter and its view must exist before D4 step 3 — the
+per-view `position` that makes a manually ordered Today persist lives on it.
 | Project list / board | The project's `list` / `kanban` view | Board columns = buckets. |
 | Custom filter (`p1 & #Work`, `today \| overdue`) | `SavedFilter.filters.filter` in Vikunja syntax (`priority = 4 && project = 12`) | **No automatic translation** of Todoist query strings; open-todo's filter editor speaks Vikunja syntax, with a picker UI on top. |
 | Labels view (`@label`) | `GET /tasks?filter=labels in [id]` | |
@@ -130,6 +135,8 @@ owner's `vja` config is client-side only.
 | 5 | Positions independent per view | **Verified read-only.** Project "Personale": list view (id 5) positions `0.2, 8, 128, 256, 512, 32768…` with `bucket_id 0`; kanban view (id 8) positions `1, 16, 128…` inside bucket "To-Do" and `196608…` in "Done". Same tasks, different position spaces. The bucket-move-then-list-order case was not exercised (it writes). |
 | 6 | Webhooks as push channel | Dropped with the proxy (D5 revision): a browser cannot receive them. |
 | — | Default project for sigil-less quick-add | **Verified.** `GET /user` → `settings.default_project_id = 1` ("Inbox"). |
+| 7 | `filter_timezone` and `filter_include_nulls` | **Used but NOT verified.** The foundation slice sends both — `filter_timezone` so `now/d` lands on the user's midnight rather than the server's, and `filter_include_nulls=true` so undated tasks survive a `due_date` sort. The §6 item 4 check was made without them. If the server ignores `filter_timezone`, Today's boundary silently becomes the server's midnight. Confirm on the next run against a real instance. |
+| 8 | Do subtask relations carry `done`? | **Open.** The "0 / 3" badge needs it: every view filters `done = false`, so a *completed* child is never in the listing and item 2's "children are themselves in the listing" does not cover it. Vikunja types `related_tasks` as full `Task` objects, so it should be present. `src/api/integration.test.ts` reports the answer when run against a real server; until then the badge can under-report as 0/N. |
 
 ## 7. Refresh strategy — decided 2026-09-09 (D6 in the handover)
 

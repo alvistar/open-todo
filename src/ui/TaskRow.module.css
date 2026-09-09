@@ -4,11 +4,16 @@
  *   8 pad + 23 title block + 3 meta gap + 16 meta + 8 pad + 1 border = 59
  *   ... + 18 description + 2 description margin                      = 79
  */
+/* The hit area bleeds 8px each side of the 800px column (816 wide, §2.3), so
+   hover and focus extend past the text; the negative margin plus equal padding
+   keeps the content itself starting exactly at the column edge. */
 .row {
   position: relative;
   display: flex;
   align-items: flex-start;
-  width: 100%;
+  width: calc(100% + 16px);
+  margin-left: -8px;
+  padding: 0 8px;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--divider);
   text-align: left;
@@ -68,10 +73,6 @@
   height: 16px;
   margin-top: 3px;
   color: var(--text-secondary);
-}
-
-.meta:empty {
-  display: none;
 }
 
 .metaItem {

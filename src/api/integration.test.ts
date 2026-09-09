@@ -70,6 +70,24 @@ describe.skipIf(!enabled)("live Vikunja instance (read-only)", () => {
     for (const t of withRelations) expect(typeof t.related_tasks).toBe("object");
   });
 
+  it("reports whether subtask relations carry done (the 0/N badge needs it)", async () => {
+    // Under a `done = false` filter a completed child is never in the listing,
+    // so the badge's done-count relies on the relation object itself carrying
+    // `done`. This asserts nothing - it reports, so the assumption in
+    // src/model/taskRow.ts can be confirmed or corrected against a real server.
+    const tasks = await listTasks(http, { filter: notDone() });
+    const relations = tasks.flatMap((t) => t.related_tasks?.subtask ?? []);
+    const withDone = relations.filter((r) => typeof r.done === "boolean");
+    console.log(
+      `  subtask relations: ${relations.length}; carrying a boolean done: ${withDone.length}`,
+    );
+    if (relations.length > 0 && withDone.length === 0) {
+      console.warn(
+        "  WARNING: no subtask relation carries done - the 0/N badge will under-report.",
+      );
+    }
+  });
+
   it("confirms deleted_at is still not filterable (mapping §6 item 3)", async () => {
     await expect(
       listTasks(http, { filter: "deleted_at > '2026-01-01T00:00:00Z'" }),

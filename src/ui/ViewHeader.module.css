@@ -28,17 +28,24 @@
   align-items: center;
 }
 
+/* Icon-only buttons are 32x32 (layout-specs §0 "Standard hit target"). A
+   labelled toolbar button uses .toolbarButtonWide instead. */
 .toolbarButton {
+  width: 32px;
   height: 32px;
-  min-width: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+  border-radius: var(--radius-base);
+  color: var(--text-secondary);
+}
+
+.toolbarButtonWide {
+  width: auto;
   gap: 2px;
   padding: 0 6px;
-  border-radius: var(--radius-base);
   font: 600 13px / 32px var(--font-sans);
-  color: var(--text-secondary);
 }
 
 .toolbarButton:hover {

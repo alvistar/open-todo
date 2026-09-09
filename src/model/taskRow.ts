@@ -17,8 +17,17 @@ export interface RowContext {
 /**
  * Builds the row view-model. Sub-task counts come from `related_tasks.subtask`,
  * which mapping §6 item 2 verified arrives on a plain GET /tasks with no
- * `expand`; the done-count needs a client-side lookup because the relation
- * carries only id and title reliably.
+ * `expand`.
+ *
+ * The done-half of the "0/3" badge is the delicate part. Mapping §6 item 2
+ * says "children are themselves in the listing", but that only holds for
+ * children matching the view's filter — and every view here filters
+ * `done = false`, so a COMPLETED child is exactly the one that is absent. The
+ * in-fetch copy is therefore preferred only as the fresher of the two, and the
+ * relation's own `done` is what actually carries the count. Vikunja types
+ * related_tasks as full Task objects, so it should be populated; if it ever is
+ * not, this badge under-reports as 0/N rather than misreporting a wrong count.
+ * src/api/integration.test.ts checks this against a real instance.
  */
 export function toTaskRow(task: Task, context: RowContext): TaskRowModel {
   const due = parseVikunjaDate(task.due_date);

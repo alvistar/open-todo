@@ -63,6 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deletions are found by reconciling the id set of a full fetch, because
   `deleted_at` is not filterable; a deletion can take up to five poll
   intervals to appear.
+- The subtask "0 / N" badge relies on `related_tasks.subtask[]` carrying
+  `done`: every view filters `done = false`, so a completed child is never in
+  the listing. If the relation omits it, the badge under-reports as 0/N. The
+  integration test reports the answer against a real server.
+- `filter_timezone` and `filter_include_nulls` are sent but were not part of
+  the verified filter set; if the server ignores the former, Today's boundary
+  becomes the server's midnight rather than the user's.
 - Not yet exercised against a live Vikunja instance by the author of this
   slice — verified against a stand-in server implementing the same API, plus
   the read-only integration test that runs on demand.
