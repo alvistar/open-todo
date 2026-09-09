@@ -128,7 +128,7 @@ owner's `vja` config is client-side only.
 | 3 | Soft-deleted tasks in an incremental fetch | **Not possible.** `filter=deleted_at > …` → 400 `The task field 'deleted_at' is invalid`. Deletions are detected by reconciling the id set of a full per-view fetch, or by webhooks (item 6). |
 | 4 | `now/d` date-math | **Verified.** `due_date < now/d+1d`, `due_date < now+1d` and `updated >= '2026-09-08T00:00:00Z'` all return 200 with results. |
 | 5 | Positions independent per view | **Verified read-only.** Project "Personale": list view (id 5) positions `0.2, 8, 128, 256, 512, 32768…` with `bucket_id 0`; kanban view (id 8) positions `1, 16, 128…` inside bucket "To-Do" and `196608…` in "Done". Same tasks, different position spaces. The bucket-move-then-list-order case was not exercised (it writes). |
-| 6 | Webhooks as push channel | Not tested. `/projects/{id}/webhooks` exists in the swagger. Revisit when the proxy exists. |
+| 6 | Webhooks as push channel | Dropped with the proxy (D5 revision): a browser cannot receive them. |
 | — | Default project for sigil-less quick-add | **Verified.** `GET /user` → `settings.default_project_id = 1` ("Inbox"). |
 
 ## 7. Refresh strategy (no `sync_token`)
@@ -136,5 +136,6 @@ owner's `vja` config is client-side only.
 Poll `GET /tasks?filter=updated >= '<last>'` per open view (verified to work),
 plus `GET /projects` and `GET /labels` on window focus. Merge by id. Deletions:
 a periodic full fetch of the open view and an id-set diff (item 3 rules out a
-cheaper path). The proxy (D5) can hold one poller per session and fan out over
-SSE later; v1 polls from the browser through the proxy.
+cheaper path). Polling runs in the browser, directly against Vikunja (D5, no
+proxy). Webhooks (item 6) have no browser-side receiver without a server, so
+they are off the table together with the proxy.

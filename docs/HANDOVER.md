@@ -1,7 +1,7 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA behind a thin proxy), D3 (own brand, teal accent), D4 (slice order). D2 is a per-screen call during measuring.
+**Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order). D2 is a per-screen call during measuring.
 **Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: product code, §7 step 6 (foundation slice).
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
@@ -184,7 +184,7 @@ measured layout), the interaction slices are built in this order:
 Rejected: drag reorder first (weeks before anything is usable; mapping table
 postponed); keyboard first (polish before the ability to add quickly).
 
-### D5 — Web stack — **DECIDED 2026-09-09: React + Vite static SPA, served by a thin proxy that forwards `/api`**
+### D5 — Web stack — **DECIDED 2026-09-09, REVISED the same day: React + Vite static SPA talking to Vikunja directly. No proxy.**
 
 Two axes, intertwined.
 
@@ -220,18 +220,44 @@ you. Next.js: an SSR runtime you never use, on a self-hosted box where every
 extra dependency is someone else's maintenance. Deferring: blocking — a layout
 cannot be measured into nothing.
 
-**Decision:** React + Vite as a static SPA, served by a thin proxy that
-forwards `/api` to Vikunja. Proxy language (Go vs Node) is not yet chosen; it is
-an implementation detail to settle when the proxy is written.
+**Decision (revised):** React + Vite as a static SPA that calls the Vikunja
+API **directly from the browser**. The SPA asks for the Vikunja URL on first
+run and stores it. It is deployable as a folder of static files (Caddy, nginx,
+GitHub Pages). **A proxy is not part of the project for now** — the owner ruled
+it out of consideration on 2026-09-09; it is not on the roadmap and should not
+be proposed again without a new reason.
 
-**Evidence that closed the direct option (measured 2026-09-09 against
-`pinguino`, Vikunja v2.5.0 at `vikunja.internal.thealvistar.com`):** a request
-with a foreign `Origin` header receives `vary: Origin` and **no
-`access-control-allow-origin`** on both a plain `GET /api/v1/info` and a
-preflight `OPTIONS /api/v1/tasks/all`. A browser served from any other origin
-is therefore blocked on the reference instance as configured, and the direct
-option would put a CORS (and, with OIDC enabled there via Keycloak, a
-redirect-URI) setup step on every installer. Re-run the probe with:
+**Why the first version of D5 was wrong.** The morning probe showed
+`vary: Origin` with no `access-control-allow-origin` and was read as "CORS is
+closed on the instance". Reading Vikunja's source (`pkg/config/config.go`,
+`pkg/routes/routes.go` on `main`) shows the real state: `cors.enable` defaults
+to **true**, and `cors.origins` defaults to `http://localhost:*`,
+`http://127.0.0.1:*` plus the instance's own `service.publicurl`. The probe's
+foreign origin simply was not in that list. The fix is one config line per
+install:
+
+```yaml
+cors:
+  origins:
+    - https://todo.example
+```
+
+(or `VIKUNJA_CORS_ORIGINS=https://todo.example`). The middleware sends
+`Access-Control-Allow-Credentials: true`.
+
+**Login without a proxy.** Username/password is `POST /api/v1/login` from the
+browser, as Vikunja's own frontend does. OIDC: `POST
+/api/v1/auth/openid/{provider}/callback` takes the client's `redirect_url` in
+the body, so the SPA runs the OIDC redirect itself; the SPA's URL must be added
+to the provider's valid redirect URIs (Keycloak client `vikunja` on the
+reference instance). **Not yet tested against the owner's Keycloak.**
+
+**Token custody.** Vikunja's official frontend keeps the JWT in
+`localStorage`; open-todo doing the same is at parity with Vikunja, not below
+it. The earlier "proxy keeps the token server-side" argument was true but
+bought nothing Vikunja's own users do not already accept.
+
+The original probe, for the record (re-run to check an instance's CORS list):
 
 ```bash
 curl -sS -o /dev/null -D - -X OPTIONS \
@@ -241,10 +267,10 @@ curl -sS -o /dev/null -D - -X OPTIONS \
   https://vikunja.internal.thealvistar.com/api/v1/tasks/all | grep -i access-control
 ```
 
-Rationale: the React ecosystem (`dnd-kit`, TanStack) covers the three expensive
-parts — drag reorder with persisted order, virtualized lists, command palette —
-and the proxy closes CORS and token custody in one move. SvelteKit was the
-honest runner-up and was not chosen only because of those three parts.
+Framework rationale (unchanged): the React ecosystem (`dnd-kit`, TanStack)
+covers the three expensive parts — drag reorder with persisted order,
+virtualized lists, command palette. SvelteKit was the honest runner-up and was
+not chosen only because of those three parts.
 
 ---
 
@@ -298,9 +324,10 @@ verified per-view float `position` semantics.
    webhooks remain open.
 5. ~~Pick the D3 accent hue~~ — teal, decided 2026-09-09 on
    `docs/sketches/mockup-accent-20260909.html`.
-6. Start product code: foundation slice (proxy, login, read-only list at the
-   measured layout), then D4's order. First call inside it: proxy language
-   (Go single binary vs Node), an implementation detail left open by D5.
+6. Start product code: foundation slice (Vikunja-URL + login screen, API
+   client, read-only list at the measured layout, static build), then D4's
+   order. Before the OIDC part: add the SPA's origin to `cors.origins` on
+   `pinguino` and its URL to the Keycloak client's redirect URIs.
 
 ---
 
