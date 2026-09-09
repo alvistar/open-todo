@@ -1,8 +1,8 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** research only. No product code yet. Decided: D1 (web app), D5 (React + Vite SPA behind a thin proxy).
-**Last session:** 2026-09-09. D5 answered; D3 (brand) and D4 (order) still open.
+**Status:** research only. No product code yet. Decided: D1 (web app), D5 (React + Vite SPA behind a thin proxy), D3 (own brand).
+**Last session:** 2026-09-09. D5 and D3 answered; D4 (order) still open.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -19,8 +19,7 @@ repo contains this document, a token dump, and two commits.
    re-derive them — the reconnaissance pass is done and the Todoist tab that
    produced it is probably gone.
 2. D5 is decided (§4). Do not reopen it.
-3. **Present D3 (brand) and D4 (implementation order)** — smaller, but still
-   the owner's calls, one per turn.
+3. **Present D4 (implementation order)** — the last open decision; D3 is done.
 4. Only then §7.
 
 **How the owner wants decisions handled:** one at a time, as a written brief in
@@ -123,11 +122,19 @@ type scale and layout structure can be applied as measured. Remaining judgement
 is about where Todoist is actually *bad* and should not be copied — that is a
 per-screen call, made during the measuring pass.
 
-### D3 — Brand identity
+### D3 — Brand identity — **DECIDED 2026-09-09: distinct accent, original icons, name stays `open-todo`**
 
-*Recommendation:* pick a distinct accent color (not Todoist's `#d33322`) and
-draw original icons. Cheap, and it removes the trade-dress question entirely
-(§6).
+Open-todo uses its own accent colour (not Todoist's `#d33322` or its family)
+and an original SVG icon set. The exact hue is chosen during the first
+design-sketch pass (§7 step 3), not in the abstract. The name `open-todo` stays:
+it is generic enough on its own, which is exactly why the other two elements
+must carry the distance from Todoist's trade dress (§6). The token dump's
+*structure* (semantic names: actionable-primary / hover / on-dark) is reused;
+its *values* are not.
+
+Rejected: staying in Todoist's red family (the combination with a "todo" name
+is the trade-dress risk); a neutral placeholder to be branded later (the
+placeholder tends to become permanent and every sketch would be redone).
 
 ### D4 — Implementation order for the interaction model
 
@@ -230,7 +237,7 @@ This mapping table should be written into `docs/` before UI work starts.
 
 ## 7. Immediate next steps
 
-1. Settle D3 and D4 (§4). D5 is done.
+1. Settle D4 (§4). D3 and D5 are done.
 2. Capture the dark-theme token set (same method, theme switched).
 3. Measure and record layout specs for the three core screens — inbox list, task
    detail, sidebar — as numeric specs plus hand-written HTML sketches
