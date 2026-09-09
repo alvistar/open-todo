@@ -3,10 +3,15 @@
  *   toolbar     56px, sticky, padding 0 12px
  *   title tier  52px, or 84px when a subtitle is present
  */
+/* flex: 0 0 auto is load-bearing. <main> is a flex column, so without it the
+   toolbar is shrinkable and collapses from 56px to ~36px once the list below
+   is tall enough to overflow - which only shows up with a real number of
+   tasks, not a handful of fixtures. */
 .toolbar {
   position: sticky;
   top: 0;
   z-index: 2;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   height: 56px;
