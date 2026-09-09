@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Discarding a composer with text in it asks for confirmation.
 
 ### Verified against a live Vikunja 2.5.0 (2026-09-09)
+- Quick-add end to end: "… domani alle 9 #Lavoro p2" created a task whose
+  stored fields were exactly the parse — a clean title with the sigils removed,
+  `due_date` at 09:00 in the user's zone, `priority: 3` for p2 per D-map-1, and
+  the named project. A task due today appeared in the list within 2 seconds
+  rather than on the next poll tick, sorted into place by due date.
 - `updated >= now-30s` is accepted, so the incremental poll window is now
   evaluated by the server and the browser clock is out of the loop entirely.
 - `filter_timezone` is honoured (13 tasks for `Europe/Rome` against 15 for
