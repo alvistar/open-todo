@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Handover document (`docs/HANDOVER.md`) stating the project's purpose, the
   findings of the Todoist reconnaissance pass, the open decisions, and the legal
   boundaries on reuse.
+- `CLAUDE.md` and a "read this first" section in the handover, so a session
+  started cold from this repo knows what is decided, what is open, and how the
+  owner wants decisions presented.
 - `research/todoist-tokens-light.json` — 712 CSS custom properties captured from
   the live Todoist web app in light theme, as reference material for deriving an
   original palette.

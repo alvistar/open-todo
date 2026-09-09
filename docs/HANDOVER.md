@@ -2,8 +2,35 @@
 
 **Created:** 2026-09-09
 **Status:** research only. No product code yet. Platform decided (D1): web app.
+**Last session:** 2026-09-09. Ended with **D5 (web stack) presented but unanswered.**
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
+
+---
+
+## 0. Read this first (new session starting from this repo)
+
+You are picking this up cold. Nothing is running, nothing is half-written; the
+repo contains this document, a token dump, and two commits.
+
+**Do this, in order:**
+
+1. Read §1 (purpose) and §2 (what was found and what was rejected). Do not
+   re-derive them — the reconnaissance pass is done and the Todoist tab that
+   produced it is probably gone.
+2. **Present D5 to the owner and get an answer.** It is written out in §4 with
+   options, costs and a recommendation. It was presented at the end of the last
+   session and never answered. Everything else is blocked on it.
+3. Then D3 (brand) and D4 (implementation order) — smaller, but still the
+   owner's calls.
+4. Only then §7.
+
+**How the owner wants decisions handled:** one at a time, as a written brief in
+the message (mechanism → what's wrong → why it matters → cost of each option →
+one flat recommendation), followed by a short options question. Do not bundle
+several decisions into one turn, and do not settle a material one silently.
+
+**Do not** `git push` or open a PR without explicit go-ahead in that session.
 
 ---
 
@@ -110,6 +137,47 @@ draw original icons. Cheap, and it removes the trade-dress question entirely
 single most-felt difference against Vikunja's own UI. Then keyboard navigation,
 then drag reorder + persisted order, then undo.
 
+### D5 — Web stack — **OPEN. Presented 2026-09-09, not answered. Start here.**
+
+Two axes, intertwined.
+
+**How the browser reaches Vikunja.** Vikunja exposes a token-based REST API.
+Either the browser calls it directly — in which case everything depends on how
+CORS is configured on each installer's self-hosted instance, **which has not
+been verified and must be tested against `pinguino` before this option is
+chosen** — or a thin proxy serves the bundle and forwards `/api`, which makes
+the CORS question disappear by construction and takes the token out of
+`localStorage`.
+
+```
+direct:  browser ──token──> vikunja:3456              CORS depends on the instance
+proxy:   browser ─────────> open-todo ──> vikunja:3456   one origin, token server-side
+```
+
+**Framework.** The app sits entirely behind a login, so SSR buys nothing: no
+SEO, no public first paint. That leaves a static SPA. The real difference
+between the candidates is not syntax, it is ecosystem depth for the three hard
+parts already identified: **drag reorder with persisted order**, **virtualized
+lists**, **command palette / quick-add**. React has `dnd-kit` and `TanStack`,
+which are more mature than the Svelte equivalents, and those are exactly the
+weeks-long work. Todoist is itself React, so a measured behaviour translates
+directly.
+
+Honest counterpoint: Svelte is nicer to write and ships a smaller bundle, and
+for a self-hosted app with a few hundred tasks the weight is not a real problem.
+It is not a wrong choice — it just costs more on the three hard parts.
+
+**Cost of getting it wrong.** React+Vite: more boilerplate for the life of the
+project. SvelteKit: you reach drag reorder and hand-roll what `dnd-kit` gave
+you. Next.js: an SSR runtime you never use, on a self-hosted box where every
+extra dependency is someone else's maintenance. Deferring: blocking — a layout
+cannot be measured into nothing.
+
+*Recommendation given (owner has not accepted or rejected it):* **React + Vite
+as a static SPA, served by a thin Go/Node proxy that forwards `/api`** — the
+ecosystem covers exactly the expensive parts, and the proxy closes CORS and
+token custody at once.
+
 ---
 
 ## 5. Data model gap: Vikunja ↔ Todoist
@@ -143,23 +211,14 @@ This mapping table should be written into `docs/` before UI work starts.
 
 ## 7. Immediate next steps
 
-1. Settle the web stack (**D5**, below): framework, rendering model, and how the
-   browser authenticates against a self-hosted Vikunja (Vikunja's API is
-   token-based; CORS on a self-hosted instance is a real constraint to check
-   before choosing a pure-SPA shape).
+1. Settle the web stack (**D5** in §4): framework, rendering model, and how the
+   browser authenticates against a self-hosted Vikunja.
 2. Capture the dark-theme token set (same method, theme switched).
 3. Measure and record layout specs for the three core screens — inbox list, task
    detail, sidebar — as numeric specs plus hand-written HTML sketches
    (see the owner's `design-sketch` skill; never AI-generated mockup images).
 4. Write the Vikunja↔Todoist data-model mapping table (§5).
 5. Only then start product code.
-
-### D5 — Web stack (open)
-
-Undecided. Needs: framework, SSR vs pure SPA, offline story (if any), and the
-auth/CORS approach against a self-hosted Vikunja. Deployment target is a
-self-hosted box, so a single static bundle plus a thin proxy is the shape to
-beat.
 
 ---
 
