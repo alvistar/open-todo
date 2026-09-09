@@ -2,7 +2,7 @@
 
 **Created:** 2026-09-09
 **Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA behind a thin proxy), D3 (own brand), D4 (slice order). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: decide D-map-2 (all-day dates) and the D3 accent hue, then product code (§7 step 5).
+**Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: pick the D3 accent hue (needs candidate sketches), then product code (§7 step 5).
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -285,9 +285,12 @@ verified per-view float `position` semantics.
 4. ~~Write the Vikunja↔Todoist data-model mapping table~~ — done 2026-09-09
    (`docs/data-model-mapping.md`). Position semantics verified from Vikunja's
    own source, not Veyrn (Veyrn never writes positions). Its §6 records what was
-   verified against `pinguino` the same day; only the all-day-date convention
-   (D-map-2) and webhooks remain open.
-5. Only then start product code: foundation slice first, then D4's order.
+   verified against `pinguino` the same day; D-map-2 (all-day dates) follows
+   Vikunja's own `default_due_time` setting with Veyrn's 20:00 fallback; only
+   webhooks remain open.
+5. Pick the D3 accent hue: draw 3–4 candidates in the reference sketch's
+   token slots (`docs/sketches/`), side by side, light and dark, and decide.
+6. Only then start product code: foundation slice first, then D4's order.
 
 ---
 
