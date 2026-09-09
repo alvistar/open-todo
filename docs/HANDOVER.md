@@ -1,8 +1,8 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** research only. No product code yet. Decided: D1 (web app), D5 (React + Vite SPA behind a thin proxy), D3 (own brand).
-**Last session:** 2026-09-09. D5 and D3 answered; D4 (order) still open.
+**Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA behind a thin proxy), D3 (own brand), D4 (slice order). D2 is a per-screen call during measuring.
+**Last session:** 2026-09-09. D5, D3 and D4 answered. Next: §7.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -18,9 +18,9 @@ repo contains this document, a token dump, and two commits.
 1. Read §1 (purpose) and §2 (what was found and what was rejected). Do not
    re-derive them — the reconnaissance pass is done and the Todoist tab that
    produced it is probably gone.
-2. D5 is decided (§4). Do not reopen it.
-3. **Present D4 (implementation order)** — the last open decision; D3 is done.
-4. Only then §7.
+2. D3, D4 and D5 are decided (§4). Do not reopen them; D2 is settled
+   per screen during the measuring pass.
+3. Go to §7 and start at its first unfinished step.
 
 **How the owner wants decisions handled:** one at a time, as a written brief in
 the message (mechanism → what's wrong → why it matters → cost of each option →
@@ -136,11 +136,25 @@ Rejected: staying in Todoist's red family (the combination with a "todo" name
 is the trade-dress risk); a neutral placeholder to be branded later (the
 placeholder tends to become permanent and every sketch would be redone).
 
-### D4 — Implementation order for the interaction model
+### D4 — Implementation order for the interaction model — **DECIDED 2026-09-09**
 
-*Recommendation:* quick-add with natural-language parsing first — it is the
-single most-felt difference against Vikunja's own UI. Then keyboard navigation,
-then drag reorder + persisted order, then undo.
+After the foundation slice (proxy, login, read-only project/task list at the
+measured layout), the interaction slices are built in this order:
+
+1. **Quick-add with natural-language parsing** — the most-felt difference
+   against Vikunja's UI; gives a daily-usable app at slice one. Its parser must
+   map dates, priority and recurrence onto Vikunja's fields, which is why the
+   §5 mapping table is written first.
+2. **Keyboard navigation** — focus model across list and detail panes; cheap
+   once the list exists.
+3. **Drag reorder with persisted order** — `dnd-kit` for the gesture; the real
+   work is how Vikunja's `position` field and kanban buckets represent order.
+   **Check Vikunja's position semantics in Veyrn's Swift code during the
+   foundation slice**, so the list component is not built on a wrong assumption.
+4. **Undo toasts** — depends on every mutation being reversible; cheapest last.
+
+Rejected: drag reorder first (weeks before anything is usable; mapping table
+postponed); keyboard first (polish before the ability to add quickly).
 
 ### D5 — Web stack — **DECIDED 2026-09-09: React + Vite static SPA, served by a thin proxy that forwards `/api`**
 
@@ -237,13 +251,16 @@ This mapping table should be written into `docs/` before UI work starts.
 
 ## 7. Immediate next steps
 
-1. Settle D4 (§4). D3 and D5 are done.
-2. Capture the dark-theme token set (same method, theme switched).
+1. ~~Settle D3, D4, D5~~ — done 2026-09-09.
+2. Capture the dark-theme token set (same method, theme switched; needs an
+   authenticated Todoist tab in the Orca browser).
 3. Measure and record layout specs for the three core screens — inbox list, task
    detail, sidebar — as numeric specs plus hand-written HTML sketches
    (see the owner's `design-sketch` skill; never AI-generated mockup images).
-4. Write the Vikunja↔Todoist data-model mapping table (§5).
-5. Only then start product code.
+   The accent hue for D3 is chosen here.
+4. Write the Vikunja↔Todoist data-model mapping table (§5). Include Vikunja's
+   `position` semantics (read from Veyrn) — needed by D4 slice 3.
+5. Only then start product code: foundation slice first, then D4's order.
 
 ---
 
