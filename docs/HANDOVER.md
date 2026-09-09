@@ -1,8 +1,8 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** research only. No product code yet. Platform decided (D1): web app.
-**Last session:** 2026-09-09. Ended with **D5 (web stack) presented but unanswered.**
+**Status:** research only. No product code yet. Decided: D1 (web app), D5 (React + Vite SPA behind a thin proxy).
+**Last session:** 2026-09-09. D5 answered; D3 (brand) and D4 (order) still open.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -18,11 +18,9 @@ repo contains this document, a token dump, and two commits.
 1. Read §1 (purpose) and §2 (what was found and what was rejected). Do not
    re-derive them — the reconnaissance pass is done and the Todoist tab that
    produced it is probably gone.
-2. **Present D5 to the owner and get an answer.** It is written out in §4 with
-   options, costs and a recommendation. It was presented at the end of the last
-   session and never answered. Everything else is blocked on it.
-3. Then D3 (brand) and D4 (implementation order) — smaller, but still the
-   owner's calls.
+2. D5 is decided (§4). Do not reopen it.
+3. **Present D3 (brand) and D4 (implementation order)** — smaller, but still
+   the owner's calls, one per turn.
 4. Only then §7.
 
 **How the owner wants decisions handled:** one at a time, as a written brief in
@@ -137,7 +135,7 @@ draw original icons. Cheap, and it removes the trade-dress question entirely
 single most-felt difference against Vikunja's own UI. Then keyboard navigation,
 then drag reorder + persisted order, then undo.
 
-### D5 — Web stack — **OPEN. Presented 2026-09-09, not answered. Start here.**
+### D5 — Web stack — **DECIDED 2026-09-09: React + Vite static SPA, served by a thin proxy that forwards `/api`**
 
 Two axes, intertwined.
 
@@ -173,10 +171,31 @@ you. Next.js: an SSR runtime you never use, on a self-hosted box where every
 extra dependency is someone else's maintenance. Deferring: blocking — a layout
 cannot be measured into nothing.
 
-*Recommendation given (owner has not accepted or rejected it):* **React + Vite
-as a static SPA, served by a thin Go/Node proxy that forwards `/api`** — the
-ecosystem covers exactly the expensive parts, and the proxy closes CORS and
-token custody at once.
+**Decision:** React + Vite as a static SPA, served by a thin proxy that
+forwards `/api` to Vikunja. Proxy language (Go vs Node) is not yet chosen; it is
+an implementation detail to settle when the proxy is written.
+
+**Evidence that closed the direct option (measured 2026-09-09 against
+`pinguino`, Vikunja v2.5.0 at `vikunja.internal.thealvistar.com`):** a request
+with a foreign `Origin` header receives `vary: Origin` and **no
+`access-control-allow-origin`** on both a plain `GET /api/v1/info` and a
+preflight `OPTIONS /api/v1/tasks/all`. A browser served from any other origin
+is therefore blocked on the reference instance as configured, and the direct
+option would put a CORS (and, with OIDC enabled there via Keycloak, a
+redirect-URI) setup step on every installer. Re-run the probe with:
+
+```bash
+curl -sS -o /dev/null -D - -X OPTIONS \
+  -H "Origin: https://open-todo.example" \
+  -H "Access-Control-Request-Method: GET" \
+  -H "Access-Control-Request-Headers: authorization" \
+  https://vikunja.internal.thealvistar.com/api/v1/tasks/all | grep -i access-control
+```
+
+Rationale: the React ecosystem (`dnd-kit`, TanStack) covers the three expensive
+parts — drag reorder with persisted order, virtualized lists, command palette —
+and the proxy closes CORS and token custody in one move. SvelteKit was the
+honest runner-up and was not chosen only because of those three parts.
 
 ---
 
@@ -211,8 +230,7 @@ This mapping table should be written into `docs/` before UI work starts.
 
 ## 7. Immediate next steps
 
-1. Settle the web stack (**D5** in §4): framework, rendering model, and how the
-   browser authenticates against a self-hosted Vikunja.
+1. Settle D3 and D4 (§4). D5 is done.
 2. Capture the dark-theme token set (same method, theme switched).
 3. Measure and record layout specs for the three core screens — inbox list, task
    detail, sidebar — as numeric specs plus hand-written HTML sketches
