@@ -1,0 +1,145 @@
+/* layout-specs §1. 280px, secondary background, 12px inset everywhere so the
+   content width is 256px. */
+.root {
+  flex: 0 0 280px;
+  width: 280px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  overflow-y: auto;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  margin: 12px;
+}
+
+.accountName {
+  font: 600 13px / 32px var(--font-sans);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.iconButton {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-base);
+  color: var(--text-secondary);
+}
+
+.iconButton:hover {
+  background: var(--hover-fill);
+}
+
+/* "Add task" row: 34px, padding 0 10px, icon pulled 6px left, accent label. */
+.addTask {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  margin: 0 12px;
+  padding: 0 10px;
+  border-radius: var(--radius-base);
+  color: var(--accent);
+}
+
+.addTask:hover {
+  background: var(--hover-fill);
+}
+
+.addTaskIcon {
+  margin: 0 6px 0 -6px;
+}
+
+.addTaskLabel {
+  font: 600 14px / 32px var(--font-sans);
+}
+
+.nav {
+  padding: 4px 12px;
+}
+
+/* 16px between the primary filters and the projects group. */
+.group {
+  margin-top: 16px;
+  padding: 0 12px;
+}
+
+.groupHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 4px 0 4px 4px;
+  background: var(--bg-secondary);
+  font: 600 14px / 21px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.groupActions {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+
+.smallIconButton {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-base);
+  color: var(--text-secondary);
+}
+
+.smallIconButton:hover {
+  background: var(--hover-fill);
+}
+
+.footer {
+  margin-top: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.footerRow {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-base);
+  font: 600 14px / 32px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.footerRow:hover {
+  background: var(--hover-fill);
+}
+
+.footerIcon {
+  margin: 0 6px 0 -6px;
+}
+
+.version {
+  padding: 0 10px 4px;
+  font: 400 12px / 16px var(--font-sans);
+  color: var(--text-tertiary);
+}

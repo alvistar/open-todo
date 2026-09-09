@@ -1,0 +1,103 @@
+/*
+ * layout-specs §2.3. Row is 79px with a one-line description, 59px title-only.
+ * The internals add up to those totals exactly:
+ *   8 pad + 23 title block + 3 meta gap + 16 meta + 8 pad + 1 border = 59
+ *   ... + 18 description + 2 description margin                      = 79
+ */
+.row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--divider);
+  text-align: left;
+  border-radius: var(--radius-base);
+}
+
+.row:hover {
+  background: var(--hover-fill);
+}
+
+/* Checkbox sits 3px left of the content column (24 wide + 3 offset = 27px
+   content inset, layout-specs §2.3 "Content block"). */
+.check {
+  display: block;
+  flex: 0 0 auto;
+  margin: 8px 6px 0 -3px;
+}
+
+/* Flex column, not block: adjacent-sibling margin collapsing between the
+   description and the meta row would otherwise cost 2px and make the row 77px
+   instead of the measured 79px. */
+.content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  margin-right: 22px;
+}
+
+.title {
+  font: 400 14px / 21px var(--font-sans);
+  color: var(--text-primary);
+  padding: 1px 1px 1px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.done .title {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+
+.description {
+  font: 400 12px / 18px var(--font-sans);
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  height: 16px;
+  margin-top: 3px;
+  color: var(--text-secondary);
+}
+
+.meta:empty {
+  display: none;
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 8px;
+  font: 400 12px / 16px var(--font-sans);
+  white-space: nowrap;
+}
+
+.due {
+  color: var(--schedule-color);
+}
+
+/* Pushed right and bled 22px so the chip sits flush with the column edge. */
+.project {
+  margin-left: auto;
+  margin-right: -22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 400 12px / 20px var(--font-sans);
+  color: var(--text-secondary);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

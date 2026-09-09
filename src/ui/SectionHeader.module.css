@@ -1,0 +1,42 @@
+/* layout-specs §2.2: sticky, ~33px, padding 0 16px 1px, bled 16px each side of
+   the 800px column, first section flush and later ones 30px down. */
+.root {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 16px 1px;
+  margin: 30px -16px 0;
+  background: var(--bg-primary);
+}
+
+.first {
+  margin-top: 0;
+}
+
+.title {
+  font: 700 14px / 21px var(--font-sans);
+  color: var(--text-primary);
+  padding: 6px 0 5px;
+  margin: 0;
+}
+
+.count {
+  margin-left: 8px;
+  font: 400 13px / 21px var(--font-sans);
+  color: var(--text-tertiary);
+}
+
+.action {
+  margin-left: auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-base);
+  font: 600 13px / 32px var(--font-sans);
+  color: var(--accent);
+}
+
+.action:hover {
+  background: var(--hover-fill);
+}

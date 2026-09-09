@@ -1,0 +1,28 @@
+/* layout-specs §2.1 "Content column": 800px centred inside <main>, the scroll
+   container carrying padding 0 55px 84px. */
+.scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0 55px 84px;
+}
+
+.column {
+  width: 800px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.list {
+  margin-top: 5px;
+}
+
+.section + .section {
+  margin-top: 0;
+}
+
+.empty {
+  padding: 48px 0;
+  text-align: center;
+  font: 400 14px / 21px var(--font-sans);
+  color: var(--text-secondary);
+}

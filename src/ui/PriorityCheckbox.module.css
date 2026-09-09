@@ -1,0 +1,48 @@
+/* layout-specs §2.3: 24x24 grid, inner circle 18px with a 2px border in the
+   priority colour; p1-p3 carry a tinted fill, p4 stays neutral.
+   Rules are ordered by ascending specificity so later ones always win. */
+.root {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.box {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--priority-color);
+  display: grid;
+  place-items: center;
+  color: var(--priority-color);
+  transition: background-color 80ms linear;
+}
+
+.tinted {
+  background: color-mix(in srgb, var(--priority-color) 12%, transparent);
+}
+
+.mark {
+  opacity: 0;
+}
+
+.root:hover .box {
+  background: color-mix(in srgb, var(--priority-color) 26%, transparent);
+}
+
+.root:hover .mark {
+  opacity: 0.55;
+}
+
+/* .root.done matches the specificity of the :hover rules above and comes
+   later, so a completed row stays marked while hovered. */
+.root.done .box {
+  background: color-mix(in srgb, var(--priority-color) 26%, transparent);
+}
+
+.root.done .mark {
+  opacity: 1;
+}

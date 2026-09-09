@@ -1,0 +1,143 @@
+/*
+ * open-todo design tokens.
+ *
+ * Names are our own; the *values* come from docs/layout-specs.md §0, which is a
+ * measurement of Todoist's shipped UI treated as specification (HANDOVER §6).
+ * The accent role is open-todo's own teal (D3), never Todoist's red.
+ *
+ * Light is defined on bare :root. Dark is redefined twice — once for the
+ * explicit toggle, once for the system preference guarded so an explicit
+ * "light" always wins.
+ */
+
+:root {
+  /* Type */
+  --font-sans: -apple-system, system-ui, "Segoe UI", "Noto Sans", sans-serif;
+  --font-size-base: 13px;
+
+  /* Radii */
+  --radius-base: 5px;
+  --radius-card: 10px;
+  --radius-composer: 12px;
+  --radius-chip: 8px;
+
+  /* Surfaces */
+  --bg-primary: #fff;
+  --bg-secondary: #fcfaf8;
+
+  /* Text */
+  --text-primary: #202020;
+  --text-secondary: #666;
+  --text-tertiary: #aaa;
+  --text-on-secondary-button: #444;
+
+  /* Lines */
+  --divider: #eee;
+  --divider-faint: #f5f5f5;
+  --border-idle: #e6e6e6;
+  --border-focus: #b8b8b8;
+
+  /* Accent (D3: teal) */
+  --accent: #0f766e;
+  --on-accent: #fff;
+  --accent-secondary-fill: #d1ebe7;
+  --selected-fill: #e1f0ed;
+  --selected-text: #0b5c56;
+
+  /* Priorities (functional colour, per layout-specs §0) */
+  --priority-p1: #d1453b;
+  --priority-p2: #eb8909;
+  --priority-p3: #246fe0;
+  --priority-p4: #999;
+
+  /* Schedule */
+  --schedule-overdue: #d1453b;
+  --schedule-today: #058527;
+  --schedule-tomorrow: #ad6200;
+  --schedule-next-week: #692ec2;
+
+  /* Effects */
+  --hover-fill: rgba(0, 0, 0, 0.04);
+  --overlay: rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 2px 8px rgba(0, 0, 0, 0.16);
+
+  color-scheme: light;
+}
+
+/*
+ * Dark values. --text-tertiary resolves the open question in layout-specs §0
+ * footnote 1: Todoist's dark "tertiary" token is a fill, not a text colour, so
+ * we pick #8a8a8a — readable on #1f1f1f and #262626, and clearly below
+ * --text-secondary in the hierarchy.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-primary: #1f1f1f;
+    --bg-secondary: #262626;
+
+    --text-primary: #fff;
+    --text-secondary: #ccc;
+    --text-tertiary: #8a8a8a;
+    --text-on-secondary-button: #e4e4e4;
+
+    --divider: #3d3d3d;
+    --divider-faint: #282828;
+    --border-idle: #3d3d3d;
+    --border-focus: #707070;
+
+    --accent: #2dd4bf;
+    --on-accent: #062a26;
+    --accent-secondary-fill: #1f4a44;
+    --selected-fill: #233f3b;
+    --selected-text: #8ee6da;
+
+    --priority-p1: #ff7066;
+    --priority-p2: #ff9a13;
+    --priority-p3: #5297ff;
+    --priority-p4: #a9a9a9;
+
+    --schedule-overdue: #ff7066;
+    --schedule-today: #25b84c;
+    --schedule-tomorrow: #ff9a14;
+    --schedule-next-week: #a970ff;
+
+    --hover-fill: rgba(255, 255, 255, 0.06);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg-primary: #1f1f1f;
+  --bg-secondary: #262626;
+
+  --text-primary: #fff;
+  --text-secondary: #ccc;
+  --text-tertiary: #8a8a8a;
+  --text-on-secondary-button: #e4e4e4;
+
+  --divider: #3d3d3d;
+  --divider-faint: #282828;
+  --border-idle: #3d3d3d;
+  --border-focus: #707070;
+
+  --accent: #2dd4bf;
+  --on-accent: #062a26;
+  --accent-secondary-fill: #1f4a44;
+  --selected-fill: #233f3b;
+  --selected-text: #8ee6da;
+
+  --priority-p1: #ff7066;
+  --priority-p2: #ff9a13;
+  --priority-p3: #5297ff;
+  --priority-p4: #a9a9a9;
+
+  --schedule-overdue: #ff7066;
+  --schedule-today: #25b84c;
+  --schedule-tomorrow: #ff9a14;
+  --schedule-next-week: #a970ff;
+
+  --hover-fill: rgba(255, 255, 255, 0.06);
+
+  color-scheme: dark;
+}
