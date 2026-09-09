@@ -2,7 +2,7 @@
 
 **Created:** 2026-09-09
 **Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA behind a thin proxy), D3 (own brand), D4 (slice order). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-09. D5, D3 and D4 answered. Next: §7.
+**Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: §7 step 4 (data-model mapping), then pick the D3 accent.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -88,8 +88,19 @@ CSS; `.theme_dark` carries 439 overrides. The dark capture therefore swapped
 the class locally, resolved, and restored `theme_todoist` — no account setting
 was changed. Same trick works for any other theme name listed above.
 
-Extraction method (reproducible; requires an authenticated Todoist tab in the
-Orca browser — find its `browserPageId` with `orca tab list --json`):
+- `docs/layout-specs.md` — **numeric layout spec** of the sidebar, list view
+  (inbox and Today), task-detail modal, quick-add composer and confirmation
+  modal, measured 2026-09-09 with `research/measure-dom.js`. Colours cited by
+  semantic token role with light and dark values. Includes the per-screen D2
+  calls (what not to copy).
+- `docs/sketches/reference-20260909.html` — hand-written HTML sketch of those
+  screens at the true 1639×878 viewport, light and dark, with fit-check
+  annotations. Placeholder icons and accent; open it in a browser.
+- `research/measure-dom.js` — the DOM-walk used for the measurement. Raw dumps
+  are not committed (they contain the account's task text).
+
+Token extraction method (reproducible; requires an authenticated Todoist tab
+in the Orca browser — find its `browserPageId` with `orca tab list --json`):
 
 ```bash
 orca eval --expression "(()=>{const s=getComputedStyle(document.documentElement);\
@@ -261,10 +272,12 @@ This mapping table should be written into `docs/` before UI work starts.
 1. ~~Settle D3, D4, D5~~ — done 2026-09-09.
 2. ~~Capture the dark-theme token set~~ — done 2026-09-09
    (`research/todoist-tokens-dark.json`).
-3. Measure and record layout specs for the three core screens — inbox list, task
-   detail, sidebar — as numeric specs plus hand-written HTML sketches
-   (see the owner's `design-sketch` skill; never AI-generated mockup images).
-   The accent hue for D3 is chosen here.
+3. ~~Measure and record layout specs~~ — done 2026-09-09
+   (`docs/layout-specs.md`, `docs/sketches/reference-20260909.html`). Still
+   open from that pass: hover/focus states were not measured (`:hover` cannot
+   be triggered from `orca eval`); the "Prossime" (upcoming) and project-with-
+   sections views were not measured; **the D3 accent hue has not been picked
+   yet** — the sketch uses the measured accent as a placeholder.
 4. Write the Vikunja↔Todoist data-model mapping table (§5). Include Vikunja's
    `position` semantics (read from Veyrn) — needed by D4 slice 3.
 5. Only then start product code: foundation slice first, then D4's order.

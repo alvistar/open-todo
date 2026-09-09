@@ -1,0 +1,287 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>open-todo — reference layout sketch (measured 2026-09-09)</title>
+<style>
+/* Tokens: names are ROLES; light values are the measured Todoist ones, kept only
+   as a reference until D3's own palette replaces them. Dark values from
+   research/todoist-tokens-dark.json. */
+:root{
+  --bg:#fff; --bg-2:#fcfaf8; --fg:#202020; --fg-2:#666; --fg-3:#aaa;
+  --divider:#eee; --divider-2:#f5f5f5; --border:#e6e6e6; --border-focus:#b8b8b8;
+  --accent:#d33322; --accent-2:#fde7d8; --btn-2-fg:#444;
+  --sel-fill:#ffefe5; --sel-fg:#a81f00;
+  --p1:#d1453b; --p2:#eb8909; --p3:#246fe0; --p4:#999;
+  --overdue:#d1453b; --today:#058527; --tomorrow:#ad6200; --nextweek:#692ec2;
+  --hover:rgba(0,0,0,.04); --overlay:rgba(0,0,0,.4);
+  --font:-apple-system,system-ui,"Segoe UI","Noto Sans",sans-serif;
+}
+.dark{
+  --bg:#1f1f1f; --bg-2:#262626; --fg:#fff; --fg-2:#ccc; --fg-3:#8a8a8a;
+  --divider:#3d3d3d; --divider-2:#282828; --border:#3d3d3d; --border-focus:#707070;
+  --accent:#d04348; --accent-2:#6f2625; --btn-2-fg:#e4e4e4;
+  --sel-fill:#472525; --sel-fg:#f07f75;
+  --p1:#ff7066; --p2:#ff9a13; --p3:#5297ff; --p4:#a9a9a9;
+  --overdue:#ff7066; --today:#25b84c; --tomorrow:#ff9a14; --nextweek:#a970ff;
+  --hover:rgba(255,255,255,.06); --overlay:rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+body{margin:0;font:13px/normal var(--font);color:var(--fg);background:#888;padding:24px 0}
+.note{font:12px/1.5 var(--font);color:#fff;max-width:1639px;margin:0 auto 12px;padding:0 8px}
+.note b{color:#ffe}
+.board{width:1639px;height:878px;margin:0 auto 32px;position:relative;display:flex;background:var(--bg);overflow:hidden;color:var(--fg)}
+.ann{position:absolute;font:11px/1.2 monospace;color:#c00;background:rgba(255,255,255,.85);padding:1px 4px;border:1px dashed #c00;pointer-events:none;z-index:9}
+.dark .ann{background:rgba(0,0,0,.7);color:#f88;border-color:#f88}
+/* icons: generic placeholders drawn here, NOT Todoist's */
+.ic{display:inline-block;width:24px;height:24px;flex:none;position:relative}
+.ic::before{content:"";position:absolute;inset:5px;border:1.5px solid currentColor;border-radius:4px;opacity:.7}
+.ic.s16{width:16px;height:16px}.ic.s16::before{inset:3px;border-radius:3px}
+.ic.s12{width:12px;height:12px}.ic.s12::before{inset:2px;border-radius:2px;border-width:1px}
+.ic.round::before{border-radius:50%}
+/* ---------- sidebar ---------- */
+nav{width:280px;height:100%;background:var(--bg-2);display:flex;flex-direction:column;flex:none}
+.acct{height:34px;margin:12px;display:flex;align-items:center;justify-content:space-between}
+.acct .who{display:flex;align-items:center;margin-left:-3px;padding-left:12px;height:32px;border-radius:5px}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--divider);margin:0 4px 0 -6px}
+.acct .name{font:600 13px/32px var(--font);margin-left:6px}
+.iconbtn{width:32px;height:32px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--fg-2)}
+.iconbtn.h34{width:34px;height:34px}.iconbtn.fill{background:var(--hover)}.iconbtn.s28{width:28px;height:28px}
+.addrow{height:34px;margin:0 12px;display:flex;align-items:center}
+.addrow .add{flex:1;display:flex;align-items:center;padding:0 10px;height:34px;border-radius:5px;color:var(--accent);font:600 14px/32px var(--font)}
+.addrow .add .ic{margin:0 6px 0 -6px}
+.navblock{padding:4px 12px;margin-top:4px}
+.navrow{height:34px;display:flex;align-items:center;padding-right:2px;border-radius:5px}
+.navrow .lnk{width:230px;height:34px;padding:5px;display:flex;align-items:center;border-radius:5px}
+.navrow .lbl{font:400 14px/16px var(--font);padding:3px 0 3px 5px}
+.navrow .cnt{width:24px;text-align:center;font:400 12px/24px var(--font);color:var(--fg-3)}
+.navrow.sel{background:var(--sel-fill)}.navrow.sel .lbl{color:var(--sel-fg)}.navrow.sel .cnt,.navrow .cnt.hot{color:var(--p1)}
+.grp{margin-top:16px}
+.grphead{height:36px;padding:4px 0 4px 4px;display:flex;align-items:center;font:600 14px/21px var(--font);color:var(--fg-2)}
+.grphead>span:first-child{flex:1;padding-right:4px}
+.bottom{margin-top:auto;padding:0 12px;margin-bottom:8px;display:flex;flex-direction:column;gap:8px}
+.bottom .b{height:32px;padding:0 10px;display:flex;align-items:center;font:600 14px/32px var(--font);color:var(--fg-2);border-radius:5px}
+.bottom .b .ic{margin:0 6px 0 -6px}
+/* ---------- main ---------- */
+main{flex:1;display:flex;flex-direction:column;background:var(--bg);position:relative}
+.toolbar{height:56px;padding:0 12px;display:flex;align-items:center;justify-content:flex-end}
+.toolbar .opt{height:32px;padding:0 12px;display:flex;align-items:center;border-radius:5px;font:600 13px/32px var(--font);color:var(--fg-2)}
+.toolbar .opt .ic{margin:0 6px 0 -6px}
+.titlebar{display:flex;justify-content:center}
+.col{width:800px}
+.titlebar .col{margin:6px 55px 9px}
+h1{font:700 26px/35px var(--font);margin:0;padding:0}
+.sub{font:400 14px/21px var(--font);color:var(--fg-2);margin-top:8px}
+.scroll{padding:0 55px 84px;display:flex;justify-content:center;flex:1}
+section{position:relative}section+section{margin-top:30px}
+.sech{height:33px;padding:0 16px 1px;margin:0 -16px;display:flex;align-items:center;background:var(--bg);position:relative}
+.sech .coll{position:absolute;left:-24px;top:4px;width:24px;height:24px}
+.sech h2{margin:0;padding:6px 0 5px;font:700 14px/21px var(--font)}
+.sech .act{margin-left:auto;height:32px;padding:0 12px;font:600 13px/32px var(--font);color:var(--accent)}
+.row{position:relative;height:79px;border-bottom:1px solid var(--divider)}
+.row.short{height:59px}
+.row .hit{position:absolute;inset:0 -8px 1px -8px;border-radius:5px}
+.row:hover .hit{background:var(--hover)}
+.row .drag{position:absolute;left:-32px;top:7px;width:24px;height:24px;opacity:0;cursor:move;color:var(--fg-3)}
+.row:hover .drag{opacity:1}
+.chk{position:absolute;left:-3px;top:8px;width:24px;height:24px;display:grid;place-items:center}
+.chk i{width:18px;height:18px;border-radius:50%;border:2px solid var(--pc,var(--p4));background:color-mix(in srgb,var(--pc,var(--p4)) 12%,transparent)}
+.body{position:absolute;left:27px;right:22px;top:0;bottom:0;padding:8px 0}
+.title{font:400 14px/21px var(--font);padding:1px 1px 1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.desc{font:400 12px/18px var(--font);color:var(--fg-2);margin:0 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{height:16px;display:flex;align-items:center;margin-top:3px;font:400 12px/16px var(--font);color:var(--fg-2)}
+.meta>*{margin-right:8px;display:flex;align-items:center;gap:2px}
+.meta .due{font:400 12px/18px var(--font)}
+.meta .proj{margin-left:auto;margin-right:-22px;font:400 12px/20px var(--font)}
+.addaff{height:33px;padding:0 20px 0 1px;display:flex;align-items:flex-start}
+.addaff .b{margin-left:-8px;padding:0 8px 8px 9px;font:400 14px var(--font);color:#808080;display:inline-flex;align-items:center;border-radius:5px}
+.addaff .b i{width:17px;height:17px;border-radius:50%;border:1.5px solid currentColor;margin-right:11px;display:inline-block}
+/* composer */
+.composer{padding:12px;border:1px solid var(--border-focus);border-radius:12px;background:var(--bg);margin-top:0}
+.composer .in{font:400 16px/23px var(--font);min-height:23px}
+.nl{display:inline-block;padding:0 4px;border-radius:3px;background:var(--accent-2)}
+.ctb{margin-top:8px;height:32px;display:flex;align-items:flex-end;gap:4px}
+.ctb .chips{flex:1;display:flex;align-items:center;gap:4px;padding:2px 0}
+.chip{height:28px;border:1px solid var(--border);border-radius:8px;display:flex;align-items:stretch}
+.chip .v{padding:0 6px;display:flex;align-items:center;font:400 13px/20px var(--font);color:var(--fg-2);gap:0}
+.chip .v .ic{margin-right:4px}
+.chip .x{width:22px;display:flex;align-items:center;justify-content:center;border-radius:0 8px 8px 0;color:var(--fg-2)}
+.chip .v.tmr{color:var(--tomorrow)}
+.ctb .more{width:28px;height:28px;border-radius:8px;background:var(--hover);display:grid;place-items:center;margin-bottom:2px}
+.ctb .acts{display:flex;gap:8px}
+.ctb .acts .a{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--fg-2)}
+.ctb .acts .a.go{background:var(--accent);color:#fff}
+/* modals */
+.overlay{position:absolute;inset:0;background:var(--overlay);display:flex;justify-content:center;align-items:flex-start}
+.dlg{background:var(--bg);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.16);display:flex;flex-direction:column;position:relative}
+.detail{width:864px;height:750px;margin-top:64px}
+.dhead{height:48px;padding:0 8px 0 12px;display:flex;align-items:center;gap:16px}
+.crumb{height:28px;padding:0 8px;display:flex;align-items:center;font:600 13px/20px var(--font);color:var(--fg-2);border-radius:5px}
+.crumb .ic{margin:0 2px 0 -6px}
+.dhead .acts{margin-left:auto;display:flex;gap:8px}
+.dhead .acts .pair{display:flex}
+.dlg hr{border:0;border-top:1px solid var(--divider);margin:0}
+.dbody{display:flex;flex:1}
+.dmain{width:604px;padding:16px 16px 0;display:flex;flex-direction:column}
+.dmain .ov{display:flex;position:relative}
+.dmain .chk{position:static;margin-top:-1px}
+.dmain .txt{margin-left:12px;padding-right:6px;flex:1}
+.dtitle{font:600 20px/22px var(--font);margin:4px 4px 0 3px;border-radius:3px}
+.ddesc{font:400 14px/23.1px var(--font);margin:8px 4px 0 3px}
+.subdiv{margin:12px 0 0 32px;padding-bottom:16px;border-bottom:1px solid var(--divider-2)}
+.subbtn{margin-left:-8px;height:28px;padding:0 8px;display:inline-flex;align-items:center;font:600 12px/28px var(--font);color:var(--fg-2);border-radius:5px}
+.subbtn .ic{margin:0 2px 0 -6px}
+.cmt{padding:8px 0 16px 32px;display:flex;align-items:center}
+.cmt .av{width:30px;height:30px;border-radius:50%;background:var(--divider);margin-right:8px}
+.cmt .pill{flex:1;height:30px;border:1px solid var(--divider);border-radius:15px;padding:0 46px 0 16px;display:flex;align-items:center;font:400 14px/30px var(--font);color:var(--fg-2);position:relative}
+.cmt .pill .ic{position:absolute;right:3px;top:2px}
+.dside{width:260px;background:var(--bg-2);padding:16px}
+.dside .inner{padding:0 8px;display:flex;flex-direction:column;gap:8px}
+.fld .l{font:600 12px/28px var(--font);color:var(--fg-2);padding-left:1px;display:flex;align-items:center;gap:4px}
+.fld .v{margin:0 -8px;height:28px;padding:0 8px;display:flex;align-items:center;border-radius:5px;font:400 12px/28px var(--font)}
+.fld .v .ic{margin-right:8px}.fld .v .tail{margin-left:auto;margin-right:3px}
+.fld .l .tail{margin-left:auto;margin-right:-6px}
+.fld.locked .l{margin:0 -8px;padding:0 8px}
+.dside hr{border-top:1px solid var(--divider)}
+.confirm{width:448px;margin-top:114px}
+.confirm header{padding:16px 16px 8px;font:600 16px/23px var(--font)}
+.confirm .b{padding:0 16px;font:400 14px/21px var(--font)}
+.confirm footer{padding:24px 16px 16px;display:flex;justify-content:flex-end;gap:10px}
+.btn{height:32px;padding:0 12px;border-radius:5px;font:600 13px/32px var(--font);display:flex;align-items:center}
+.btn.sec{background:var(--hover);color:var(--btn-2-fg)}.btn.pri{background:var(--accent);color:#fff}
+</style>
+
+<p class="note"><b>Reference layout sketch, measured from Todoist web 2026-09-09 at 1639×878.</b>
+Hand-written HTML at the measured values in <code>docs/layout-specs.md</code>; nothing here is a Todoist asset.
+The accent and the icons are placeholders until D3's own palette and icon set exist. Red annotations are the fit checks.
+Boards: (1) Today list with the composer open, light; (2) task detail modal, light; (3) same list, dark tokens; (4) confirmation modal.</p>
+
+<!-- ============ BOARD 1: list + composer, light ============ -->
+<div class="board" id="b1">
+  <nav>
+    <div class="acct"><div class="who"><span class="avatar"></span><span class="name">Nome</span><span class="ic" style="width:24px"></span></div>
+      <div style="display:flex;gap:4px;align-items:center"><span class="iconbtn h34"><span class="ic"></span></span><span class="iconbtn fill" style="margin-left:6px"><span class="ic"></span></span></div></div>
+    <div class="addrow"><div class="add"><span class="ic round"></span>Aggiungi attività</div><span class="iconbtn"><span class="ic"></span></span></div>
+    <div class="navblock">
+      <div class="navrow"><div class="lnk"><span class="ic"></span><span class="lbl">Cerca</span></div><span class="cnt"></span></div>
+      <div class="navrow"><div class="lnk"><span class="ic"></span><span class="lbl">In arrivo</span></div><span class="cnt hot">1</span></div>
+      <div class="navrow sel"><div class="lnk"><span class="ic"></span><span class="lbl">Oggi</span></div><span class="cnt">14</span></div>
+      <div class="navrow"><div class="lnk"><span class="ic"></span><span class="lbl">Prossime</span></div><span class="cnt"></span></div>
+      <div class="navrow"><div class="lnk"><span class="ic"></span><span class="lbl">Filtri ed etichette</span></div><span class="cnt"></span></div>
+      <div class="navrow"><div class="lnk"><span class="ic"></span><span class="lbl">Report</span></div><span class="cnt"></span></div>
+      <div class="grp">
+        <div class="grphead"><span>I miei progetti</span><span class="iconbtn s28"><span class="ic"></span></span><span class="iconbtn s28"><span class="ic"></span></span></div>
+        <div class="navrow"><div class="lnk"><span class="ic round"></span><span class="lbl">Personale</span></div><span class="cnt">8</span></div>
+        <div class="navrow"><div class="lnk"><span class="ic round"></span><span class="lbl">Lavoro</span></div><span class="cnt">37</span></div>
+      </div>
+    </div>
+    <div class="bottom"><div class="b"><span class="ic"></span>Impostazioni</div><div class="b"><span class="ic"></span>Assistenza</div></div>
+    <span class="ann" style="left:4px;top:40px">nav 280 · inset 12 · rows 34</span>
+    <span class="ann" style="left:120px;top:214px">selected: sel-fill / sel-fg</span>
+  </nav>
+  <main>
+    <div class="toolbar"><span class="opt"><span class="ic"></span>Opzioni</span><span class="iconbtn"><span class="ic"></span></span><span class="iconbtn"><span class="ic"></span></span></div>
+    <div class="titlebar"><div class="col"><h1>Oggi</h1><div class="sub">14 attività</div></div></div>
+    <div class="scroll"><div class="col">
+      <section>
+        <div class="sech"><span class="coll iconbtn" style="width:24px;height:24px"><span class="ic s16"></span></span><h2>Scadute</h2><span class="act">Ripianifica</span></div>
+        <div class="row" style="--pc:var(--p1)"><div class="hit"></div><span class="drag ic"></span><span class="chk"><i></i></span>
+          <div class="body"><div class="title">Titolo di un'attività scaduta con descrizione</div><div class="desc">Una riga di descrizione, troncata con ellissi quando supera la larghezza</div>
+          <div class="meta"><span class="due" style="color:var(--overdue)"><span class="ic s12"></span>Ieri 09:00</span><span><span class="ic s12"></span>2</span><span class="proj">Lavoro <span class="ic s12"></span></span></div></div></div>
+        <div class="row short" style="--pc:var(--p2)"><div class="hit"></div><span class="drag ic"></span><span class="chk"><i></i></span>
+          <div class="body"><div class="title">Attività senza descrizione: riga da 59px</div>
+          <div class="meta"><span class="due" style="color:var(--overdue)"><span class="ic s12"></span>7 Set 15:00</span><span class="proj">Personale <span class="ic s12"></span></span></div></div></div>
+        <span class="ann" style="right:-8px;top:40px">row 79 (1-line desc) / 59 (title only)</span>
+        <span class="ann" style="left:-240px;top:100px">drag handle x−32, opacity 0 → hover</span>
+      </section>
+      <section>
+        <div class="sech"><h2>9 Set ‧ Oggi ‧ mercoledì</h2></div>
+        <div class="row" style="--pc:var(--p3)"><div class="hit"></div><span class="drag ic"></span><span class="chk"><i></i></span>
+          <div class="body"><div class="title">Attività di oggi con sotto-attività e commenti</div><div class="desc">Descrizione</div>
+          <div class="meta"><span><span class="ic s16"></span>0 / 3</span><span class="due" style="color:var(--today)"><span class="ic s12"></span>18:00</span><span><span class="ic s12"></span></span><span><span class="ic s12"></span>4</span><span class="proj">Lavoro <span class="ic s12"></span></span></div></div></div>
+        <div class="row short" style="--pc:var(--p4)"><div class="hit"></div><span class="drag ic"></span><span class="chk"><i></i></span>
+          <div class="body"><div class="title">Attività p4 senza data</div><div class="meta"><span class="proj">Personale <span class="ic s12"></span></span></div></div></div>
+        <div class="composer">
+          <div class="in">Chiamare il commercialista <span class="nl">domani alle 10</span> <span class="nl">p1</span> <span class="nl">#Personale</span> @telefono</div>
+          <div class="ctb"><span class="more"><span class="ic s16"></span></span>
+            <div class="chips">
+              <span class="chip"><span class="v"><span class="ic s16"></span>Personale</span></span>
+              <span class="chip"><span class="v tmr"><span class="ic s16"></span>Domani 10:00</span><span class="x">×</span></span>
+              <span class="chip"><span class="v"><span class="ic s16"></span>P1</span><span class="x">×</span></span>
+              <span class="chip"><span class="v"><span class="ic s16"></span>All'orario dell'attività</span></span>
+            </div>
+            <div class="acts"><span class="a">×</span><span class="a go">➜</span></div></div>
+          <span class="ann" style="right:8px;top:-14px">composer: r12, p12, border-focus; chips 507px of 698 available → fits</span>
+        </div>
+        <div class="addaff"><span class="b"><i></i>Aggiungi attività</span></div>
+      </section>
+      <span class="ann" style="left:0;top:-58px">content column 800, centred; h1 26/35 700; subtitle 14/21</span>
+    </div></div>
+  </main>
+</div>
+
+<!-- ============ BOARD 2: task detail modal ============ -->
+<div class="board" id="b2">
+  <nav style="opacity:.5"></nav><main style="opacity:.5"></main>
+  <div class="overlay"><div class="dlg detail">
+    <div class="dhead"><span class="crumb"><span class="ic s16"></span>In arrivo</span>
+      <div class="acts"><span class="pair"><span class="iconbtn"><span class="ic"></span></span><span class="iconbtn"><span class="ic"></span></span></span><span class="iconbtn"><span class="ic"></span></span><span class="iconbtn"><span class="ic"></span></span></div></div>
+    <hr>
+    <div class="dbody">
+      <div class="dmain">
+        <div class="ov"><span class="chk" style="--pc:var(--p2)"><i></i></span>
+          <div class="txt"><div class="dtitle">Titolo dell'attività, modificabile al click (20/22 600)</div>
+            <div class="ddesc">Descrizione completa, 14/23.1, anch'essa modificabile al click. Può occupare più righe e contenere link.</div>
+            <div class="subdiv"><span class="subbtn"><span class="ic"></span>Aggiungi sotto-attività</span></div></div></div>
+        <div class="cmt"><span class="av"></span><span class="pill">Commenta<span class="ic"></span></span></div>
+        <span class="ann" style="left:16px;bottom:16px">main 604 · p 16 16 0 · title x+35</span>
+      </div>
+      <div class="dside"><div class="inner">
+        <div class="fld"><div class="l">Progetto</div><div class="v"><span class="ic s16"></span>In arrivo<span class="ic tail"></span></div></div><hr>
+        <div class="fld"><div class="l">Data</div><div class="v"><span class="ic s16"></span>sabato 10:00<span class="iconbtn s28 tail" style="margin-right:-5px"><span class="ic"></span></span></div></div><hr>
+        <div class="fld"><div class="l">Priorità</div><div class="v"><span class="ic s16"></span>P2<span class="ic tail"></span></div></div><hr>
+        <div class="fld locked"><div class="l">Etichette<span class="ic tail"></span></div></div><hr>
+        <div class="fld locked"><div class="l">Promemoria<span class="ic tail"></span></div>
+          <div class="v" style="margin:0 -8px 0 0;padding:0"><span class="ic s16" style="margin-right:8px"></span>All'orario dell'attività<span class="iconbtn s28 tail" style="margin-right:0"><span class="ic"></span></span></div></div><hr>
+        <span class="ann" style="right:8px;bottom:8px">sidebar 260 · p16 · inner p 0 8 · rows 28</span>
+      </div></div>
+    </div>
+    <span class="ann" style="left:8px;top:-18px">dialog 864×750 @ y=64 · r10 · overlay .4</span>
+  </div></div>
+</div>
+
+<!-- ============ BOARD 3: same list in dark tokens ============ -->
+<div class="board dark" id="b3">
+  <nav>
+    <div class="acct"><div class="who"><span class="avatar"></span><span class="name">Nome</span></div><span class="iconbtn fill"><span class="ic"></span></span></div>
+    <div class="addrow"><div class="add"><span class="ic round"></span>Aggiungi attività</div></div>
+    <div class="navblock">
+      <div class="navrow"><div class="lnk"><span class="ic"></span><span class="lbl">In arrivo</span></div><span class="cnt hot">1</span></div>
+      <div class="navrow sel"><div class="lnk"><span class="ic"></span><span class="lbl">Oggi</span></div><span class="cnt">14</span></div>
+      <div class="navrow"><div class="lnk"><span class="ic"></span><span class="lbl">Prossime</span></div><span class="cnt"></span></div>
+      <div class="grp"><div class="grphead"><span>I miei progetti</span></div>
+        <div class="navrow"><div class="lnk"><span class="ic round"></span><span class="lbl">Personale</span></div><span class="cnt">8</span></div></div>
+    </div>
+  </nav>
+  <main>
+    <div class="toolbar"><span class="opt"><span class="ic"></span>Opzioni</span></div>
+    <div class="titlebar"><div class="col"><h1>Oggi</h1><div class="sub">14 attività</div></div></div>
+    <div class="scroll"><div class="col">
+      <section><div class="sech"><h2>Scadute</h2><span class="act">Ripianifica</span></div>
+        <div class="row" style="--pc:var(--p1)"><div class="hit"></div><span class="chk"><i></i></span><div class="body"><div class="title">Attività scaduta</div><div class="desc">Descrizione</div><div class="meta"><span class="due" style="color:var(--overdue)"><span class="ic s12"></span>Ieri 09:00</span><span class="proj">Lavoro</span></div></div></div>
+        <div class="row short" style="--pc:var(--p3)"><div class="hit"></div><span class="chk"><i></i></span><div class="body"><div class="title">Attività di oggi</div><div class="meta"><span class="due" style="color:var(--today)"><span class="ic s12"></span>18:00</span><span class="proj">Personale</span></div></div></div>
+        <div class="composer"><div class="in">Testo <span class="nl">domani</span> <span class="nl">p1</span></div>
+          <div class="ctb"><span class="more"><span class="ic s16"></span></span><div class="chips"><span class="chip"><span class="v"><span class="ic s16"></span>Personale</span></span><span class="chip"><span class="v tmr"><span class="ic s16"></span>Domani</span><span class="x">×</span></span></div><div class="acts"><span class="a">×</span><span class="a go">➜</span></div></div></div>
+      </section>
+      <span class="ann" style="left:0;top:-58px">dark: bg #1f1f1f / #262626, fg #fff / #ccc, divider #3d3d3d, accent #d04348</span>
+    </div></div>
+  </main>
+</div>
+
+<!-- ============ BOARD 4: confirmation modal ============ -->
+<div class="board" id="b4" style="height:300px">
+  <div class="overlay"><div class="dlg confirm">
+    <header>Ignorare le modifiche non salvate?</header>
+    <div class="b">Le modifiche non salvate andranno perse.</div>
+    <footer><span class="btn sec">Annulla</span><span class="btn pri">Chiudi</span></footer>
+    <span class="ann" style="left:8px;top:-18px">448 wide @ y=114 · header p 16 16 8 · footer p 24 16 16 · gap 10</span>
+  </div></div>
+</div>
