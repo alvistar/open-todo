@@ -93,4 +93,55 @@ describe.skipIf(!enabled)("live Vikunja instance (read-only)", () => {
       listTasks(http, { filter: "deleted_at > '2026-01-01T00:00:00Z'" }),
     ).rejects.toMatchObject({ status: 400 });
   });
+
+  it("reports whether `updated >= now-30s` is accepted (mapping §6 item 10)", async () => {
+    // If the server evaluates this, the incremental poll can drop the browser
+    // clock from the equation entirely - it is the single most valuable
+    // unverified question in the refresh design.
+    try {
+      const tasks = await listTasks(http, { filter: "updated >= now-30s" });
+      console.log(
+        `  SERVER-RELATIVE FILTER SUPPORTED: "updated >= now-30s" returned ${tasks.length} task(s).`,
+      );
+      console.log(
+        "  -> PollingSource can stop deriving its mark from the browser clock.",
+      );
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      const message = (error as { message?: string }).message;
+      console.log(`  server-relative filter REJECTED (status ${status}): ${message}`);
+      console.log("  -> keep the server-timestamp mark; do not switch.");
+    }
+  });
+
+  it("reports whether filter_timezone is honoured for Today's boundary", async () => {
+    // Today is `due_date < now/d+1d`. If the server ignores filter_timezone,
+    // "midnight" is the server's, not the user's, and the view is wrong near
+    // the day boundary for anyone not in the server's zone.
+    const inRome = await listTasks(http, {
+      filter: and(notDone(), dueBeforeTomorrow()),
+      timezone: "Europe/Rome",
+    });
+    const inAuckland = await listTasks(http, {
+      filter: and(notDone(), dueBeforeTomorrow()),
+      timezone: "Pacific/Auckland",
+    });
+    console.log(
+      `  Today with filter_timezone Europe/Rome: ${inRome.length}; Pacific/Auckland: ${inAuckland.length}`,
+    );
+    if (inRome.length === inAuckland.length) {
+      console.log(
+        "  NOTE: identical counts. Either the data does not straddle the boundary, or filter_timezone is ignored - re-run near local midnight to tell them apart.",
+      );
+    }
+  });
+
+  it("reports the user's default_due_time and timezone (D-map-2)", async () => {
+    const user = await getUser(http);
+    const settings = user.settings ?? {};
+    console.log(`  timezone: ${settings.timezone ?? "(unset)"}`);
+    console.log(
+      `  frontend_settings.default_due_time: ${settings.frontend_settings?.default_due_time ?? "(absent -> the 20:00 fallback applies)"}`,
+    );
+  });
 });
