@@ -1,8 +1,8 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: product code, §7 step 6 (foundation slice).
+**Status:** foundation slice built (read-only app). All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
+**Last session:** 2026-09-09. Foundation slice implemented and committed (§7 step 6 done): scaffold, theme, API client, login, Inbox/Today/project views, PollingSource, docs. Next: D4 slice 1, quick-add.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -10,8 +10,10 @@ owner's working language is Italian).
 
 ## 0. Read this first (new session starting from this repo)
 
-You are picking this up cold. Nothing is running, nothing is half-written; the
-repo contains this document, a token dump, and two commits.
+You are picking this up cold. The repo now contains this document, the
+research material, and a working read-only web app (the foundation slice).
+`pnpm install && pnpm dev` runs it; see the README for how to point it at an
+instance.
 
 **Do this, in order:**
 
@@ -166,8 +168,9 @@ placeholder tends to become permanent and every sketch would be redone).
 
 ### D4 — Implementation order for the interaction model — **DECIDED 2026-09-09**
 
-After the foundation slice (proxy, login, read-only project/task list at the
-measured layout), the interaction slices are built in this order:
+After the foundation slice (login, read-only project/task list at the measured
+layout — no proxy, see the D5 revision), the interaction slices are built in
+this order:
 
 1. **Quick-add with natural-language parsing** — the most-felt difference
    against Vikunja's UI; gives a daily-usable app at slice one. Its parser must
@@ -335,10 +338,28 @@ verified per-view float `position` semantics.
    webhooks remain open.
 5. ~~Pick the D3 accent hue~~ — teal, decided 2026-09-09 on
    `docs/sketches/mockup-accent-20260909.html`.
-6. Start product code: foundation slice (Vikunja-URL + login screen, API
-   client, read-only list at the measured layout, `PollingSource`, static
-   build), then D4's order.
-7. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
+6. ~~Start product code: foundation slice~~ — done 2026-09-09. Vikunja-URL +
+   login screen, API client, read-only Inbox/Today/project lists at the
+   measured layout, `PollingSource` behind `LiveSource`, static build. Notes
+   for whoever continues:
+   - It has **not** been run against `pinguino` — the session that built it had
+     no credentials. It was verified against a stand-in server implementing the
+     same API surface. Run it against the real instance first, and run the
+     read-only integration test (`VIKUNJA_TEST_URL` + `VIKUNJA_TEST_TOKEN`,
+     see the README) to confirm the filter forms still hold.
+   - The incremental poll deliberately does **not** apply the view's filter;
+     only `updated >= mark`. Scoping it makes the poll blind to tasks that
+     *leave* the view (completed, moved), which is the change users most want
+     to see. See the commit message on `src/live/`.
+   - `UI_LOCALE` in `src/model/dates.ts` is the one place i18n will touch.
+   - D4 step 3's open question about position semantics is already answered in
+     `docs/data-model-mapping.md` §3; Veyrn is not a reference (it never writes
+     positions).
+7. Next: D4 slice 1 (quick-add with natural-language parsing), then keyboard
+   navigation, drag reorder, undo. The grammar is in
+   `docs/data-model-mapping.md` §5; the composer's geometry is in
+   `docs/layout-specs.md` §3.
+8. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
    WebSocket events (D6). Start from `pkg/websocket/listener.go` and
    `validEvents` in `connection.go`; the open question is how to resolve the
    recipients of a project-scoped event. Before the OIDC part: add the SPA's origin to `cors.origins` on

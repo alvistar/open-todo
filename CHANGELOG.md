@@ -8,22 +8,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Foundation slice**: a static React + Vite SPA that talks to a self-hosted
+  Vikunja directly from the browser, with no proxy.
+  - Server setup and login: probes `/info` and shows the server version, then
+    accepts either username/password (with an authenticator field when the
+    server asks) or a pasted API token. Logging out clears the credential and
+    keeps the server URL.
+  - Vikunja API client: typed errors, pagination, and the filter builders for
+    the forms verified in `docs/data-model-mapping.md` §6.
+  - Read-only Inbox, Today and project views at the layout measured in
+    `docs/layout-specs.md`, with hash routing and sidebar counts.
+  - Live refresh (D6): `PollingSource` behind a `LiveSource` interface — a
+    20-second incremental poll while the tab is visible, a full fetch every
+    fifth tick to catch deletions, and an immediate refresh on focus.
+  - Theme tokens in light and dark with open-todo's teal accent (D3), an
+    original icon set, and a theme toggle that respects the system setting.
+- `VERSION` is the single source of truth: `scripts/sync-version.mjs` derives
+  `package.json` from it and the build fails on drift.
 - Handover document (`docs/HANDOVER.md`) stating the project's purpose, the
-  findings of the Todoist reconnaissance pass, the open decisions, and the legal
-  boundaries on reuse.
+  findings of the Todoist reconnaissance pass, the open decisions, and the
+  legal boundaries on reuse.
 - `CLAUDE.md` and a "read this first" section in the handover, so a session
   started cold from this repo knows what is decided, what is open, and how the
   owner wants decisions presented.
-- `research/todoist-tokens-light.json` — 712 CSS custom properties captured from
-  the live Todoist web app in light theme, as reference material for deriving an
-  original palette.
+- `research/todoist-tokens-light.json` and `research/todoist-tokens-dark.json` —
+  CSS custom properties captured from the live Todoist web app, as reference
+  material for deriving an original palette.
+- `docs/layout-specs.md` — numeric layout specification measured from the live
+  product, plus `research/measure-dom.js` to reproduce it.
+- `docs/data-model-mapping.md` — the Todoist to Vikunja mapping, the priority
+  and all-day conventions, and the refresh strategy.
 
 ### Decided
 - D1 (platform): open-todo is a **web app** in this repository, targeting
   self-hosted Vikunja. Apple platforms stay with Veyrn (`Vikunja-Tasks`).
+- D3 (brand): own accent — teal — and an original icon set; the name stays.
+- D4: interaction slices in the order quick-add, keyboard, drag reorder, undo.
+- D5 (stack): React + Vite static SPA calling Vikunja directly. No proxy.
+- D6 (refresh): poll behind a `LiveSource` interface; an upstream PR for
+  WebSocket task events runs in parallel, off the critical path.
 
 ### Known gaps
-- Web stack undecided (handover D5): framework, rendering model, and the
-  auth/CORS approach against a self-hosted Vikunja.
-- Dark-theme token set not captured.
-- Vikunja↔Todoist data-model mapping not written.
+- Read-only: no task creation, editing, completion or reordering yet. The
+  checkboxes render priority but do not toggle.
+- The TOTP error shape has not been seen against a real TOTP-enabled account;
+  detection matches Vikunja's error code 1017 and the message text, and
+  degrades to "wrong username or password" rather than to a stuck prompt.
+- No token refresh: Vikunja 2.5.0 offers none, so an expired JWT returns the
+  user to the login screen.
+- UI strings and dates are English only; `UI_LOCALE` is the single place i18n
+  will change.
+- `GET /tasks` returns `position = 0`, so ordering is by due date. The drag
+  slice will move to the view-scoped endpoint (`docs/data-model-mapping.md` §3).
+- Deletions are found by reconciling the id set of a full fetch, because
+  `deleted_at` is not filterable; a deletion can take up to five poll
+  intervals to appear.
+- Not yet exercised against a live Vikunja instance by the author of this
+  slice — verified against a stand-in server implementing the same API, plus
+  the read-only integration test that runs on demand.
