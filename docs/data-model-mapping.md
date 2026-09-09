@@ -29,7 +29,7 @@ Legend: **=** direct, **≈** representable with a convention, **✗** no equiva
 | `description` | `description` | = | Vikunja stores HTML from its own editor. open-todo writes plain text / minimal HTML; render sanitised. |
 | `project_id` | `project_id` | = | Moving between projects = `POST /tasks/{id}` with new `project_id`. Bucket resets. |
 | `section_id` | `bucket_id` (only meaningful with a `project_view_id`) | ≈ | Move = `POST /projects/{p}/views/{v}/buckets/{b}/tasks`. Must stay inside one view. |
-| `parent_id` (sub-tasks, nested) | `related_tasks` with kind `subtask` / `parenttask` | ≈ | Relation, not a field: `PUT /tasks/{id}/relations`. Nesting depth unlimited on both. The list-row "0 / 3" counter needs `expand=subtasks`? — **?** verify which `expand` value returns children. |
+| `parent_id` (sub-tasks, nested) | `related_tasks` with kind `subtask` / `parenttask` | ≈ | Relation, not a field: `PUT /tasks/{id}/relations`. Nesting depth unlimited on both. The list-row "0 / 3" counter comes from `related_tasks.subtask` (present without `expand`, §6 item 2). |
 | `child_order` (order inside section/parent) | `position` **per project view** (`POST /tasks/{id}/position`, body `{project_view_id, position}`) | ≈ | See §3. |
 | `day_order` (manual order in Today) | `position` in a **saved-filter view** | ≈ | Only if "Today" is a saved filter (§4). Otherwise client-side and lost on reload. |
 | `labels[]` (names) | `labels[]` (objects) via `PUT /tasks/{id}/labels` / `DELETE …/labels/{lid}` | ≈ | Read-only on the task object; write through the sub-resource. `PUT /tasks/{id}/labels/bulk` sets the whole list. |
@@ -44,7 +44,7 @@ Legend: **=** direct, **≈** representable with a convention, **✗** no equiva
 | `added_at` / `updated_at` | `created` / `updated` | = | `updated` drives incremental refresh (§7). |
 | `responsible_uid` / `assigned_by_uid` | `assignees[]` | ≈ | Read only in v1. |
 | `is_collapsed` (sub-task tree) | ✗ | client state | localStorage. |
-| `is_deleted` | `deleted_at` (soft delete, 30-day retention) | = | New in v2.x. Whether `/tasks/all` can return soft-deleted rows for an incremental sync is **?**. |
+| `is_deleted` | `deleted_at` (soft delete, 30-day retention) | = | New in v2.x. Not filterable (§6 item 3): deletions are found by id-set reconciliation. |
 | Comments / notes (`content`, `file_attachment`, `posted_at`) | `TaskComment` via `/tasks/{id}/comments`; attachments via `/tasks/{id}/attachments` | = | `comment_count` needs `expand=comment_count`. |
 | Reminders (separate resource: absolute `due`, relative `minute_offset`, location) | `reminders[]` inline on the task: `reminder` (absolute) **or** `relative_period` (seconds, negative = before) + `relative_to` ∈ {`due_date`, `start_date`, `end_date`} | = | Location reminders: ✗. "All'orario dell'attività" = `relative_period 0, relative_to due_date`. |
 | `is_favorite` (task) | `is_favorite` | = | Vikunja surfaces favourites as a pseudo-project. |
@@ -74,9 +74,8 @@ Consequences for open-todo:
 - The list view and the kanban view of the same project have **independent**
   orders. Convention: open-todo reorders in the **list** view's position space
   and shows sections from the kanban view's buckets; bucket membership and
-  list order are therefore stored in two views. **?** verify that a task in a
-  manual-bucket kanban view keeps its list-view position when moved between
-  buckets (expected: yes, positions are per view).
+  list order are therefore stored in two views. Independence of the two
+  position spaces is verified read-only (§6 item 5).
 - Veyrn does **not** write positions at all (grep of its Swift sources on
   2026-09-09 found no position writes; it sorts client-side by
   `TaskSortOrder`). It is not a reference for this slice.
@@ -86,12 +85,12 @@ Consequences for open-todo:
 | Todoist view | Vikunja realisation | Notes |
 |---|---|---|
 | Inbox | default project, list view | Sections from its kanban view (§1). |
-| Today | Saved filter `done = false && due_date < now/d+1d` with **one list view** | Grouping into "Scadute" / today is client-side (`due_date < now/d`). Persisted manual order via the filter view's positions. **?** confirm `now/d` date-math syntax on v2.5.0. |
+| Today | Saved filter `done = false && due_date < now/d+1d` with **one list view** | Grouping into "Scadute" / today is client-side (`due_date < now/d`). Persisted manual order via the filter view's positions. `now/d` date-math verified (§6 item 4). |
 | Upcoming | Saved filter `done = false && due_date > now/d` grouped by day client-side | Drag between days = due-date change, not a position write. |
 | Project list / board | The project's `list` / `kanban` view | Board columns = buckets. |
 | Custom filter (`p1 & #Work`, `today \| overdue`) | `SavedFilter.filters.filter` in Vikunja syntax (`priority = 4 && project = 12`) | **No automatic translation** of Todoist query strings; open-todo's filter editor speaks Vikunja syntax, with a picker UI on top. |
-| Labels view (`@label`) | `GET /tasks/all?filter=labels in [id]` | |
-| Completed tasks | `GET /tasks/all?filter=done = true&sort_by=done_at&order_by=desc` | Per project: add `project = id`. |
+| Labels view (`@label`) | `GET /tasks?filter=labels in [id]` | |
+| Completed tasks | `GET /tasks?filter=done = true&sort_by=done_at&order_by=desc` | Per project: add `project = id`. |
 
 ## 5. Quick-add grammar (D4 slice 1)
 
@@ -116,25 +115,26 @@ text written for Vikunja's UI still parses.
 | Recurrence, **rejected** | `every mon, wed`, `every 2nd tuesday`, `every last day of month`, `every workday at 9 starting …` | Shown as "not supported by Vikunja"; text stays in the title. |
 | Reminder | `!` alone (Todoist's reminder sigil) | not in v1; chip in the composer instead |
 
-## 6. Open items (verify before the slice that needs them)
+## 6. Verified against `pinguino` (v2.5.0, 2026-09-09) and what stays open
 
-1. **All-day due representation** (D-map-2). Options: local 00:00 (sorts first,
-   but reads as "past" at 00:01), local 23:59 (sorts last, "overdue" only at
-   midnight, Todoist's effective semantics), or the Vikunja UI's 12:00. Needed
-   by quick-add. Recommendation: 23:59 local, rendered without a time when the
-   time is exactly 23:59:00.
-2. Which `expand` value returns sub-tasks / relation counts for the "0 / 3" row
-   badge, or whether it requires a second call per task.
-3. Whether `/tasks/all` can return soft-deleted tasks (`deleted_at`) so an
-   incremental refresh sees deletions; otherwise reconcile by id set.
-4. `now/d` date-math in filters on v2.5.0 (documented for 0.22+, verify).
-5. List-view position surviving a bucket move in the kanban view.
-6. Vikunja webhooks (`/projects/{id}/webhooks`) as a push channel to the proxy,
-   replacing polling for multi-client freshness (Veyrn writes concurrently).
+Route note: the task listing is **`GET /tasks`** in v2.5.0 (`/tasks/all` no
+longer exists and returns 400). Base path `/api/v1`; the `/api/v2` in the
+owner's `vja` config is client-side only.
+
+| # | Item | Result |
+|---|---|---|
+| 1 | All-day due representation (D-map-2) | **Still a decision.** Options: local 00:00 (reads as "past" at 00:01), local 23:59 (Todoist's effective semantics), or the Vikunja UI's 12:00. Recommendation: 23:59 local, rendered without a time when the stored time is exactly 23:59:00. |
+| 2 | Sub-task counts for the "0 / 3" badge | **Verified.** `related_tasks` (kinds `subtask`, `parenttask`) is present on every task from plain `GET /tasks` without `expand`; 12 of 47 open tasks carried it. Children are themselves in the listing, so done-counts come from a client-side id lookup. `expand=subtasks` also works (returned 56 vs 47) but is not needed. `comment_count` is **absent** without `expand=comment_count`. |
+| 3 | Soft-deleted tasks in an incremental fetch | **Not possible.** `filter=deleted_at > …` → 400 `The task field 'deleted_at' is invalid`. Deletions are detected by reconciling the id set of a full per-view fetch, or by webhooks (item 6). |
+| 4 | `now/d` date-math | **Verified.** `due_date < now/d+1d`, `due_date < now+1d` and `updated >= '2026-09-08T00:00:00Z'` all return 200 with results. |
+| 5 | Positions independent per view | **Verified read-only.** Project "Personale": list view (id 5) positions `0.2, 8, 128, 256, 512, 32768…` with `bucket_id 0`; kanban view (id 8) positions `1, 16, 128…` inside bucket "To-Do" and `196608…` in "Done". Same tasks, different position spaces. The bucket-move-then-list-order case was not exercised (it writes). |
+| 6 | Webhooks as push channel | Not tested. `/projects/{id}/webhooks` exists in the swagger. Revisit when the proxy exists. |
+| — | Default project for sigil-less quick-add | **Verified.** `GET /user` → `settings.default_project_id = 1` ("Inbox"). |
 
 ## 7. Refresh strategy (no `sync_token`)
 
-Poll `GET /tasks/all?filter=updated >= '<last>'&filter_include_nulls=false`
-per open view, plus `GET /projects` and `GET /labels` on focus. Merge by id;
-deletions per open item 3. The proxy (D5) can hold one poller per session and
-fan out over SSE later; v1 polls from the browser through the proxy.
+Poll `GET /tasks?filter=updated >= '<last>'` per open view (verified to work),
+plus `GET /projects` and `GET /labels` on window focus. Merge by id. Deletions:
+a periodic full fetch of the open view and an id-set diff (item 3 rules out a
+cheaper path). The proxy (D5) can hold one poller per session and fan out over
+SSE later; v1 polls from the browser through the proxy.
