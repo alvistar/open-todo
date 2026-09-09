@@ -2,7 +2,7 @@
 
 **Created:** 2026-09-09
 **Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA behind a thin proxy), D3 (own brand), D4 (slice order). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: §7 step 4 (data-model mapping), then pick the D3 accent.
+**Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: verify the open items in `docs/data-model-mapping.md` §6 against `pinguino`, pick the D3 accent, then product code (§7 step 5).
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -98,6 +98,8 @@ was changed. Same trick works for any other theme name listed above.
   annotations. Placeholder icons and accent; open it in a browser.
 - `research/measure-dom.js` — the DOM-walk used for the measurement. Raw dumps
   are not committed (they contain the account's task text).
+- `docs/data-model-mapping.md` — Todoist → Vikunja mapping (§5 below), with
+  the ordering model for D4 step 3 and the quick-add grammar for D4 step 1.
 
 Token extraction method (reproducible; requires an authenticated Todoist tab
 in the Orca browser — find its `browserPageId` with `orca tab list --json`):
@@ -249,7 +251,9 @@ Required in every scenario; scope depends on D1. Known mismatches to map:
 - Saved filters / views
 - Vikunja has no `sync_token`-style incremental protocol
 
-This mapping table should be written into `docs/` before UI work starts.
+Written up in `docs/data-model-mapping.md` (2026-09-09), including three
+conventions (priority scale, all-day dates, quick-add sigils) and the
+verified per-view float `position` semantics.
 
 ---
 
@@ -278,8 +282,10 @@ This mapping table should be written into `docs/` before UI work starts.
    be triggered from `orca eval`); the "Prossime" (upcoming) and project-with-
    sections views were not measured; **the D3 accent hue has not been picked
    yet** — the sketch uses the measured accent as a placeholder.
-4. Write the Vikunja↔Todoist data-model mapping table (§5). Include Vikunja's
-   `position` semantics (read from Veyrn) — needed by D4 slice 3.
+4. ~~Write the Vikunja↔Todoist data-model mapping table~~ — done 2026-09-09
+   (`docs/data-model-mapping.md`). Position semantics verified from Vikunja's
+   own source, not Veyrn (Veyrn never writes positions). Six items in its §6
+   still need verifying against `pinguino` before the slice that uses them.
 5. Only then start product code: foundation slice first, then D4's order.
 
 ---
