@@ -94,7 +94,10 @@ export function createHttp(config: HttpConfig): Http {
         ...(options.signal ? { signal: options.signal } : {}),
       });
     } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+      // Match on the name, not the class: an abort that arrives as something
+      // other than a DOMException would otherwise be rewrapped as a
+      // NetworkError carrying a misleading "check cors.origins" message.
+      if ((cause as { name?: string } | null)?.name === "AbortError") throw cause;
       // fetch rejects the same way for offline, DNS and a blocked CORS
       // preflight; the message points at the most actionable of the three.
       throw new NetworkError(
@@ -103,11 +106,14 @@ export function createHttp(config: HttpConfig): Http {
       );
     }
 
-    if (!response.ok) throw await toError(response);
+    if (!response.ok) throw await toError(response, options);
     return response;
   }
 
-  async function toError(response: Response): Promise<VikunjaError> {
+  async function toError(
+    response: Response,
+    options: RequestOptions,
+  ): Promise<VikunjaError> {
     let message = `${response.status} ${response.statusText}`.trim();
     let code: number | undefined;
     try {
@@ -118,7 +124,11 @@ export function createHttp(config: HttpConfig): Http {
       // Non-JSON error body (a proxy's HTML page, say): keep the status line.
     }
     if (response.status === 401) {
-      config.onUnauthorized?.();
+      // Only a request that actually carried the credential can condemn it.
+      // /info and /login are sent anonymously; behind an authenticating
+      // reverse proxy they can answer 401 for reasons that say nothing about
+      // the stored token, and logging the user out on that would be wrong.
+      if (!options.anonymous) config.onUnauthorized?.();
       return new UnauthorizedError(message, code);
     }
     return new VikunjaError(message, response.status, code);

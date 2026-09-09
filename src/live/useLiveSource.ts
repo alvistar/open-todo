@@ -4,7 +4,7 @@ import { http } from "../api/client";
 import { listTasks } from "../api/endpoints";
 import { updatedSince } from "../api/filter";
 import type { Task } from "../api/types";
-import type { ViewDef } from "../model/views";
+import { compareByDueDateThenId, type ViewDef } from "../model/views";
 import { queryKeys } from "../queries/keys";
 import { createPollingSource } from "./PollingSource";
 import { mergeUpserts } from "./reconcile";
@@ -73,14 +73,36 @@ export function useLiveSource({
     });
 
     const unsubscribe = source.subscribe((event) => {
+      if (event.type === "reset") {
+        /*
+         * The poller only follows the OPEN view, but the sidebar's Inbox and
+         * Today counts are separate query keys that nothing else refetches
+         * (TanStack's own polling and focus refetching are off, by design, so
+         * it does not fight the poller). Without this they stayed frozen for
+         * the whole session while the user sat on a project view. Piggy-backing
+         * on the full fetch bounds their staleness to one full-fetch cadence.
+         */
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey[0] === "tasks" && query.queryKey[1] !== viewKey,
+        });
+      }
+
       queryClient.setQueryData<Task[]>(queryKey, (current = []) => {
         switch (event.type) {
           case "reset":
             return event.tasks;
-          case "upsert":
-            return mergeUpserts(current, event.tasks, (task) =>
+          case "upsert": {
+            const merged = mergeUpserts(current, event.tasks, (task) =>
               view.belongs(task, new Date(), timeZone),
             );
+            // mergeUpserts appends newcomers; re-sort so a task created or
+            // rescheduled elsewhere does not sit at the bottom of the list
+            // until the next full fetch.
+            return merged === current
+              ? current
+              : [...merged].sort(compareByDueDateThenId);
+          }
           case "delete": {
             const removed = new Set(event.ids);
             return current.filter((task) => !removed.has(task.id));

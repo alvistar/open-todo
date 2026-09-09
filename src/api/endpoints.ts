@@ -1,3 +1,4 @@
+import { ApiError } from "./errors";
 import type { Http, ListResult, RequestOptions } from "./http";
 import type {
   Info,
@@ -32,10 +33,23 @@ export function getUser(http: Http, signal?: AbortSignal): Promise<User> {
   return http.request<User>("/user", signal ? { signal } : {});
 }
 
+/** Refuses to spin if a server ignores `page` and keeps answering full pages. */
+const MAX_PAGES = 200;
+
 /**
- * Walks every page of a collection. Vikunja caps a page at 50, and the total
- * page count comes back in x-pagination-total-pages; when the header is absent
- * we stop as soon as a short page arrives.
+ * Walks every page of a collection.
+ *
+ * The page size is the stop condition, NOT the x-pagination-total-pages header.
+ * That header is not CORS-safelisted, so a browser on a different origin from
+ * Vikunja - which is this app's whole deployment model (D5, no proxy) - reads
+ * it as null unless the instance sends Access-Control-Expose-Headers naming it.
+ * An earlier version keyed the loop off the header and silently truncated every
+ * collection to 50 items whenever it was unreadable; worse, a truncated *full*
+ * fetch makes PollingSource's id-set diff report the missing tasks as
+ * deletions, so they vanish from the UI as though someone had removed them.
+ *
+ * A short page therefore ends the walk. The header, when it is readable, only
+ * saves the one extra probe after an exactly-full last page.
  */
 async function fetchAllPages<T>(
   http: Http,
@@ -43,21 +57,24 @@ async function fetchAllPages<T>(
   options: RequestOptions = {},
 ): Promise<T[]> {
   const all: T[] = [];
-  let page = 1;
-  let totalPages: number | undefined;
 
-  do {
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
     const result: ListResult<T> = await http.listRequest<T>(path, {
       ...options,
       query: { ...options.query, page, per_page: MAX_PAGE_SIZE },
     });
     all.push(...result.items);
-    totalPages = result.totalPages;
-    if (result.items.length < MAX_PAGE_SIZE && totalPages === undefined) break;
-    page += 1;
-  } while (totalPages !== undefined && page <= totalPages);
 
-  return all;
+    // A page shorter than the maximum is the last one, header or no header.
+    if (result.items.length < MAX_PAGE_SIZE) return all;
+    // When the header IS readable it spares us the extra empty request.
+    if (result.totalPages !== undefined && page >= result.totalPages) return all;
+  }
+
+  throw new ApiError(
+    `Refusing to read more than ${MAX_PAGES} pages from ${path}: the server keeps returning full pages, so it is probably ignoring the "page" parameter.`,
+    0,
+  );
 }
 
 export function listProjects(http: Http, signal?: AbortSignal): Promise<Project[]> {

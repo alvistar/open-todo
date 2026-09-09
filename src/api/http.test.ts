@@ -111,6 +111,23 @@ describe("createHttp", () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
 
+  it("does NOT log out on a 401 from an anonymous request", async () => {
+    // /info and /login are sent without the credential. Behind an
+    // authenticating reverse proxy they can 401 for reasons that say nothing
+    // about the stored token; logging the user out there would be wrong.
+    const onUnauthorized = vi.fn();
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ message: "proxy auth required" }, { status: 401 }),
+    );
+    await expect(
+      http(fetchImpl as unknown as typeof fetch, { onUnauthorized }).request("/info", {
+        anonymous: true,
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedError);
+
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
   it("reports a failed fetch as NetworkError and names the CORS cause", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError("Failed to fetch");

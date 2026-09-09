@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "../api/types";
-import { inboxView, todayView } from "./views";
+import { compareByDueDateThenId, inboxView, todayView } from "./views";
 
 const TZ = "Europe/Rome";
 const NOW = new Date("2026-09-09T08:00:00Z");
@@ -51,5 +51,30 @@ describe("todayView", () => {
     expect(
       view.belongs(task({ due_date: "2026-09-09T18:00:00Z", done: true }), NOW, TZ),
     ).toBe(false);
+  });
+});
+
+describe("compareByDueDateThenId", () => {
+  const due = (id: number, d?: string) => task({ id, ...(d ? { due_date: d } : {}) });
+
+  it("orders by due date, then id, mirroring the server sort", () => {
+    const sorted = [
+      due(3, "2026-09-11T10:00:00Z"),
+      due(1, "2026-09-10T10:00:00Z"),
+      due(2, "2026-09-10T10:00:00Z"),
+    ].sort(compareByDueDateThenId);
+    expect(sorted.map((t) => t.id)).toEqual([1, 2, 3]);
+  });
+
+  it("puts undated tasks last", () => {
+    const sorted = [due(1), due(2, "2026-09-10T10:00:00Z")].sort(compareByDueDateThenId);
+    expect(sorted.map((t) => t.id)).toEqual([2, 1]);
+  });
+
+  it("treats Vikunja's zero date as undated", () => {
+    const sorted = [due(1, "0001-01-01T00:00:00Z"), due(2, "2026-09-10T10:00:00Z")].sort(
+      compareByDueDateThenId,
+    );
+    expect(sorted.map((t) => t.id)).toEqual([2, 1]);
   });
 });

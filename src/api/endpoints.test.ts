@@ -44,6 +44,47 @@ describe("pagination", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("walks every page when the server sends NO page-count header", async () => {
+    // The pagination headers are not CORS-safelisted, so a cross-origin
+    // browser sees them only if Vikunja sends Access-Control-Expose-Headers.
+    // Without this the walk stopped after page 1 and silently truncated every
+    // collection to 50 - and a truncated *full* fetch makes the polling diff
+    // report the missing tasks as deletions.
+    const first = Array.from({ length: 50 }, (_, i) => task(i + 1));
+    const second = Array.from({ length: 50 }, (_, i) => task(i + 51));
+    const fetchImpl = pagedFetch([first, second, [task(101), task(102)]]);
+
+    const projects = await listProjects(makeHttp(fetchImpl));
+
+    expect(projects).toHaveLength(102);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops after a full last page without looping forever", async () => {
+    // Exactly one full page and nothing after it: the walk must probe once
+    // more, get an empty page, and stop.
+    const full = Array.from({ length: 50 }, (_, i) => task(i + 1));
+    const fetchImpl = pagedFetch([full, []]);
+
+    const projects = await listProjects(makeHttp(fetchImpl));
+
+    expect(projects).toHaveLength(50);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up rather than looping forever if the server ignores `page`", async () => {
+    // A server that answers every page with a full page would otherwise spin.
+    const full = Array.from({ length: 50 }, (_, i) => task(i + 1));
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify(full), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    await expect(listProjects(makeHttp(fetchImpl))).rejects.toThrow(/page/i);
+  });
+
   it("asks for Vikunja's maximum page size", async () => {
     const fetchImpl = pagedFetch([[task(1)]]);
     await listProjects(makeHttp(fetchImpl));

@@ -45,6 +45,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/data-model-mapping.md` — the Todoist to Vikunja mapping, the priority
   and all-day conventions, and the refresh strategy.
 
+### Fixed
+- The page walk ended on the `x-pagination-total-pages` header, which a
+  cross-origin browser cannot read unless the instance sends
+  `Access-Control-Expose-Headers` — measured, and the deployment model is
+  cross-origin by design. Every collection silently truncated to 50 items, and
+  a truncated *full* fetch made the polling diff report the missing tasks as
+  deletions. The walk now ends on a short page and is correct either way.
+- The incremental poll mark was the browser's clock compared against the
+  server's `updated`, so a clock even a minute fast killed incremental
+  refresh outright and silently. It is now derived from server timestamps.
+- A `refreshNow()` arriving while a tick was in flight was dropped; it is now
+  queued. A failed full fetch lost its turn in the cadence, delaying deletion
+  detection; it is now retried.
+- A 401 from an anonymous request (`/info`, `/login`) cleared the stored
+  credential, which behind an authenticating proxy would log the user out for
+  an unrelated reason.
+- A scoped API token that may read tasks but not `/user` was rejected at login,
+  contradicting the query layer, which already tolerates `/user` failing.
+- Tasks merged in by the poll were appended rather than sorted, so a task
+  created or rescheduled elsewhere sat at the bottom of the list.
+- Sidebar Inbox and Today counts never refetched while another view was open.
+- `stop()` discarded subscribers, leaving a later `start()` deaf.
+
 ### Decided
 - D1 (platform): open-todo is a **web app** in this repository, targeting
   self-hosted Vikunja. Apple platforms stay with Veyrn (`Vikunja-Tasks`).
@@ -76,6 +99,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `filter_timezone` and `filter_include_nulls` are sent but were not part of
   the verified filter set; if the server ignores the former, Today's boundary
   becomes the server's midnight rather than the user's.
+- The incremental poll compares a mark against the server's `updated`. It is
+  now derived from server timestamps, but a browser clock more than the
+  bootstrap lookback ahead can still widen the first window on an empty view.
+  A server-evaluated `updated >= now-30s` would remove the browser clock
+  entirely and is the next thing worth verifying.
 - Not yet exercised against a live Vikunja instance by the author of this
   slice — verified against a stand-in server implementing the same API, plus
   the read-only integration test that runs on demand.

@@ -25,6 +25,21 @@ export interface ViewDef {
 
 const taskCount = (n: number) => `${n} ${n === 1 ? "task" : "tasks"}`;
 
+/**
+ * Mirrors the server's `sort_by=due_date,id` so a task merged in by the
+ * incremental poll lands in its proper place instead of at the bottom.
+ *
+ * Undated tasks sort last, which is where `filter_include_nulls=true` puts
+ * them in the responses observed so far; if an instance disagrees the full
+ * fetch every fifth tick restores the server's own order.
+ */
+export function compareByDueDateThenId(a: Task, b: Task): number {
+  const at = parseVikunjaDate(a.due_date)?.getTime() ?? Number.POSITIVE_INFINITY;
+  const bt = parseVikunjaDate(b.due_date)?.getTime() ?? Number.POSITIVE_INFINITY;
+  if (at !== bt) return at - bt;
+  return a.id - b.id;
+}
+
 export function inboxView(projectId: number): ViewDef {
   return {
     key: `inbox:${projectId}`,

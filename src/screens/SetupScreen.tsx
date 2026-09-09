@@ -1,8 +1,9 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { http } from "../api/client";
 import { getInfo, getUser, login } from "../api/endpoints";
+import { isUnauthorized } from "../api/errors";
 import { createHttp, normalizeBaseUrl } from "../api/http";
-import { setToken } from "../auth/authStore";
+import { logOut, setToken } from "../auth/authStore";
 import { isTotpRequired } from "../auth/totp";
 import { baseUrlValue, useBaseUrl } from "../settings/settingsStore";
 import { Icon } from "../ui/icons/Icon";
@@ -143,6 +144,14 @@ function LoginStep({
       await getUser(probe);
       setToken(candidate);
     } catch (e) {
+      // 401 means the credential was rejected. Anything else - notably a 403
+      // from a scoped API token that may read tasks but not /user - means it
+      // authenticated fine, so it is accepted; the app already tolerates
+      // /user failing (see queries/useVikunja.ts).
+      if (!isUnauthorized(e)) {
+        setToken(candidate);
+        return;
+      }
       setError(errorMessage(e));
     } finally {
       setBusy(false);
@@ -231,7 +240,14 @@ function LoginStep({
       <button
         type="button"
         className={styles.secondary}
-        onClick={() => baseUrlValue.clear()}
+        onClick={() => {
+          // Drop the credential FIRST. Clearing only the URL leaves a valid
+          // token in the gate, so typing a new host would skip the login form
+          // entirely and send the previous server's bearer token to whatever
+          // was typed - including a typo.
+          logOut();
+          baseUrlValue.clear();
+        }}
       >
         Use a different server
       </button>
