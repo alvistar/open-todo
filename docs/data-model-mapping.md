@@ -131,11 +131,39 @@ owner's `vja` config is client-side only.
 | 6 | Webhooks as push channel | Dropped with the proxy (D5 revision): a browser cannot receive them. |
 | — | Default project for sigil-less quick-add | **Verified.** `GET /user` → `settings.default_project_id = 1` ("Inbox"). |
 
-## 7. Refresh strategy (no `sync_token`)
+## 7. Refresh strategy — decided 2026-09-09 (D6 in the handover)
 
-Poll `GET /tasks?filter=updated >= '<last>'` per open view (verified to work),
-plus `GET /projects` and `GET /labels` on window focus. Merge by id. Deletions:
-a periodic full fetch of the open view and an id-set diff (item 3 rules out a
-cheaper path). Polling runs in the browser, directly against Vikunja (D5, no
-proxy). Webhooks (item 6) have no browser-side receiver without a server, so
-they are off the table together with the proxy.
+Vikunja has **no SSE** and its **WebSocket does not carry task events** (verified
+on `main` and on `pinguino`, see below), so v1 polls, behind an interface the
+WebSocket can replace later.
+
+**What Vikunja offers today.** `GET /api/v1/ws` (also `/api/v2/ws`), present
+since 2.3.0 (April 2026); `pinguino` answers `426` to a bare request, i.e. the
+endpoint exists. Protocol: first message `{"action":"auth","token":"<jwt>"}`,
+then `{"action":"subscribe","event":"<name>"}`; pushes arrive as
+`{"event":"…","data":{…}}`. The allowed events (`pkg/websocket/connection.go`,
+`validEvents`) are only `notification.created`, `timer.created`,
+`timer.updated`, `timer.deleted`. The hub publishes per user
+(`PublishForUser`), never per project. The internal bus already emits 19 events
+including `task.created`, `task.updated`, `task.deleted`,
+`task.comment.created`, `task.relation.created` (list from
+`GET /webhooks/events`), but they are wired to HTTP webhooks only.
+
+**v1 design.**
+
+1. `LiveSource` interface with one implementation, `PollingSource`:
+   `GET /tasks?filter=updated >= '<last>'` for the open view every 20 s while
+   the tab is visible (`document.visibilityState`), paused in background,
+   immediate refresh on focus and after every own mutation. Merge by id.
+   Deletions: a full fetch of the open view and an id-set diff every N polls
+   (§6 item 3 rules out a cheaper path).
+2. `notification.created` over the WebSocket as a **wake-up**: on receipt,
+   poll immediately. Covers assignments, comments, reminders, overdue; not
+   generic edits. ~30 lines on top of the polling source.
+3. `WebSocketSource` slot reserved for when upstream carries `task.*`.
+
+**Parallel track (owner's call, 2026-09-09): upstream PR to Vikunja** adding
+`task.*` events to the WebSocket with per-project subscription. The work: a
+listener per task event resolving the users with access to the project and
+publishing through the hub; the delicate part is the authorisation check.
+Benefits Veyrn as well. Not on the critical path of any slice.

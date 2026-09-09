@@ -1,7 +1,7 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order). D2 is a per-screen call during measuring.
+**Status:** research only. No product code yet. All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
 **Last session:** 2026-09-09. All decisions answered; dark tokens and layout specs captured. Next: product code, §7 step 6 (foundation slice).
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
@@ -184,6 +184,17 @@ measured layout), the interaction slices are built in this order:
 Rejected: drag reorder first (weeks before anything is usable; mapping table
 postponed); keyboard first (polish before the ability to add quickly).
 
+### D6 — Live refresh — **DECIDED 2026-09-09: poll behind a `LiveSource` interface; upstream PR for WebSocket task events in parallel**
+
+Vikunja has no SSE. Its WebSocket (`/api/v1/ws`, since 2.3.0, present on
+`pinguino`) only carries `notification.created` and `timer.*`; task events
+exist on the internal bus (webhooks) but are not exposed. Decision: v1 polls
+`GET /tasks?filter=updated >= …` every 20 s while visible, uses
+`notification.created` as a wake-up, and hides both behind `LiveSource` so a
+`WebSocketSource` can replace them without touching the UI. In parallel, open
+a PR to Vikunja adding `task.*` to the WebSocket with per-project
+subscription. Full detail and the verified protocol: `docs/data-model-mapping.md` §7.
+
 ### D5 — Web stack — **DECIDED 2026-09-09, REVISED the same day: React + Vite static SPA talking to Vikunja directly. No proxy.**
 
 Two axes, intertwined.
@@ -325,8 +336,12 @@ verified per-view float `position` semantics.
 5. ~~Pick the D3 accent hue~~ — teal, decided 2026-09-09 on
    `docs/sketches/mockup-accent-20260909.html`.
 6. Start product code: foundation slice (Vikunja-URL + login screen, API
-   client, read-only list at the measured layout, static build), then D4's
-   order. Before the OIDC part: add the SPA's origin to `cors.origins` on
+   client, read-only list at the measured layout, `PollingSource`, static
+   build), then D4's order.
+7. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
+   WebSocket events (D6). Start from `pkg/websocket/listener.go` and
+   `validEvents` in `connection.go`; the open question is how to resolve the
+   recipients of a project-scoped event. Before the OIDC part: add the SPA's origin to `cors.origins` on
    `pinguino` and its URL to the Keycloak client's redirect URIs.
 
 ---
