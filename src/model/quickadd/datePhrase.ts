@@ -19,6 +19,7 @@
 import type { Chrono, ParsedResult } from "chrono-node";
 import * as chronoEn from "chrono-node/en";
 import * as chronoIt from "chrono-node/it";
+import { MONTH_ANY, WEEKDAY_FULL, word } from "./vocabulary";
 
 export interface WhenMatch {
   /** Midnight of the matched day in `timeZone`, or the instant when hasTime. */
@@ -30,8 +31,14 @@ export interface WhenMatch {
   text: string;
 }
 
+interface DateParts {
+  year: number;
+  month: number;
+  day: number;
+}
+
 /** Calendar parts of `instant` as seen in `timeZone`. */
-function partsIn(instant: Date, timeZone: string) {
+function partsIn(instant: Date, timeZone: string): DateParts {
   const f = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -125,6 +132,100 @@ const END_OF_MONTH = /(?:\bend\s+of\s+(?:the\s+)?month\b|\bfine\s+mese\b)/i;
 const TIME_MARKER = /:|\d\s*(?:am|pm)\b|\b(?:at|alle|ore)\b/i;
 
 /*
+ * The grammar gate (D-vocab, docs/data-model-mapping.md §5.1).
+ *
+ * chrono resolves; §5 decides what is admissible. chrono's vocabulary is far
+ * wider than ours and cannot be configured per word, so left alone it reads
+ * "sat" in "I sat down with the team" as Saturday and "mar" in "il mar mosso"
+ * as Tuesday - and because parse.ts removes whatever matched from the title,
+ * the user loses a word AND gains a date they never asked for.
+ *
+ * Each constant below is one row of the §5.1 table. Keep them in that order,
+ * and keep the names matching, so the two can be diffed by reading.
+ */
+
+const RELATIVE_DAY = "today|tomorrow|tonight|oggi|domani|dopodomani|stasera";
+
+/** Only the full weekday names - see the note in vocabulary.ts. */
+const WEEKDAY_PHRASE = `(?:next\\s+|prossim[ao]\\s+)?(?:${WEEKDAY_FULL})(?:\\s+prossim[ao])?`;
+
+const DAY_PART = "morning|afternoon|evening|night|mattina|pomeriggio|sera|notte";
+
+const DAY_SHAPE = `(?:${RELATIVE_DAY}|${WEEKDAY_PHRASE})(?:\\s+(?:${DAY_PART}))?`;
+
+/** "in 3 days", "tra un mese", "fra 2 settimane". */
+const OFFSET_SHAPE =
+  "(?:in|tra|fra)\\s+(?:\\d+|un|uno|una)\\s+" +
+  "(?:days?|weeks?|months?|giorni|giorno|settimane|settimana|mesi|mese)";
+
+/** "next week", "la settimana prossima", "prossimo mese". */
+const NEXT_PERIOD_SHAPE =
+  "next\\s+(?:week|month)|" +
+  "(?:la\\s+|il\\s+|lo\\s+)?(?:settimana|mese)\\s+prossim[ao]|" +
+  "prossim[ao]\\s+(?:settimana|mese)";
+
+/** A month name always needs a day number beside it: "apr" alone is a period. */
+const MONTH_DAY_SHAPE = `(?:\\d{1,2}\\s+(?:${MONTH_ANY})|(?:${MONTH_ANY})\\s+\\d{1,2})(?:\\s+\\d{4})?`;
+
+const ISO_SHAPE = "\\d{4}-\\d{2}-\\d{2}";
+
+/** Day-first, which is what §5 specifies. chrono's Italian parser agrees. */
+const SLASH_SHAPE = "\\d{1,2}/\\d{1,2}";
+
+/** The Time row of §5, admissible only as a suffix on one of the shapes above. */
+const CLOCK = "\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?";
+const TIME_CLAUSE = `(?:\\s+(?:at|alle|ore)\\s+${CLOCK}|\\s+\\d{1,2}:\\d{2}|\\s*\\d{1,2}\\s*(?:am|pm))?`;
+
+const ACCEPTED_SHAPE = new RegExp(
+  `^(?:${DAY_SHAPE}|${OFFSET_SHAPE}|${NEXT_PERIOD_SHAPE}|${MONTH_DAY_SHAPE}|${ISO_SHAPE}|${SLASH_SHAPE})${TIME_CLAUSE}$`,
+  "iu",
+);
+
+/*
+ * Whether the span names a month at all. `word()` closes the alternation, so
+ * the abbreviation "mar" does not match inside "martedì".
+ */
+const NAMES_A_MONTH = new RegExp(`\\b${word(MONTH_ANY)}`, "iu");
+
+/** Sigil masking leaves multi-space gaps: "domani       alle 10" is one span. */
+function normalise(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function isBefore(a: DateParts, b: DateParts): boolean {
+  return a.year * 10000 + a.month * 100 + a.day < b.year * 10000 + b.month * 100 + b.day;
+}
+
+/**
+ * Whether a candidate is one of the §5 shapes. Applied to every candidate
+ * BEFORE the earliest-wins sort, never only to the winner: a rejected early
+ * false positive must not hide a valid date later in the line, so that
+ * "I sat with the team tomorrow" still resolves to tomorrow.
+ */
+function isAdmissible(
+  result: ParsedResult,
+  spanText: string,
+  today: DateParts,
+  timeZone: string,
+): boolean {
+  // A range. chrono collapses "Friday to Monday" to its start, silently
+  // discarding the half the user typed.
+  if (result.end) return false;
+
+  const norm = normalise(spanText);
+  if (!ACCEPTED_SHAPE.test(norm)) return false;
+
+  // chrono reads a trailing number after a month as a YEAR: "feb 29" comes
+  // back as 1 February 2029 and "Sep 15" as 1 September 2015, both with the
+  // day merely implied. Both pass the shape test on text alone.
+  if (NAMES_A_MONTH.test(norm) && !result.start.isCertain("day")) return false;
+
+  // A due date in the past is not a task. This is also what refuses
+  // "yesterday" / "ieri", so they need no special case.
+  return !isBefore(partsIn(result.start.date(), timeZone), today);
+}
+
+/*
  * Both locales run, because the owner types both languages in one line and
  * neither parser understands the other's words. Where they disagree the rule
  * is: earliest match wins, then the longest, then Italian.
@@ -178,14 +279,25 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenMatch 
     DATE_COMPONENTS.some((component) => result.start.isCertain(component)),
   );
 
-  candidates.sort((a, b) => {
+  const admissible = candidates.filter(({ result }) =>
+    isAdmissible(result, result.text, today, timeZone),
+  );
+
+  admissible.sort((a, b) => {
     if (a.result.index !== b.result.index) return a.result.index - b.result.index;
     if (a.result.text.length !== b.result.text.length)
       return b.result.text.length - a.result.text.length;
     return PREFERENCE[a.name] - PREFERENCE[b.name];
   });
 
-  const best = candidates[0] ?? retryWithExplicitYear(text, today.year, reference);
+  /*
+   * The retry runs only when chrono found nothing at all, never when the gate
+   * rejected what it found: appending a year to "sat" would otherwise be a way
+   * around the gate rather than a rescue for a leap day.
+   */
+  const best =
+    admissible[0] ??
+    (candidates.length === 0 ? retryWithExplicitYear(text, today.year, reference) : null);
   if (!best) return null;
 
   const { result } = best;

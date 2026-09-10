@@ -175,11 +175,10 @@ describe("matchWhen — times", () => {
     expect(m.hasTime).toBe(false);
   });
 
-  it("does not invent a clock time from a stray number", () => {
-    // chrono reads "13 15/9" as 15 September at 13:00. A clock time is only
-    // taken when the text marks one, so this stays all-day.
-    const m = when("x 45/13 15/9");
-    expect(m.hasTime).toBe(false);
-    expect(time(m.date)).toBe("00:00");
+  it("does not invent a date from a run of stray numbers", () => {
+    // chrono reads "13 15/9" as 15 September at 13:00 - a day AND a clock time
+    // the user never typed. The span is not a §5 shape, so nothing is taken:
+    // before D-vocab this returned 15 September, all-day.
+    expect(whenOrNull("x 45/13 15/9")).toBeNull();
   });
 });
