@@ -249,3 +249,40 @@ describe("matchWhen — the §5 gate reports what it turned down", () => {
     expect(rejected("call at 10")).toEqual([]);
   });
 });
+
+describe("matchWhen — a leap day is found wherever it sits in the line", () => {
+  it("resolves 29 February whatever surrounds it", () => {
+    // chrono declines the phrase outright in 2026 and 2027, so this is the
+    // retry's work. It used to require the phrase to end the line.
+    for (const phrase of [
+      "29 feb",
+      "party 29 feb",
+      "29 feb party",
+      "party 29 feb please",
+    ]) {
+      expect(day(when(phrase).date)).toBe("2028-02-29");
+    }
+    expect(day(when("29 febbraio").date)).toBe("2028-02-29");
+  });
+
+  it("keeps the span on the user's words, not on the probed year", () => {
+    expect(when("party 29 feb please").text).toBe("29 feb");
+  });
+
+  it("still refuses a day that exists in no year", () => {
+    expect(whenOrNull("30 feb")).toBeNull();
+    expect(whenOrNull("party 30 feb please")).toBeNull();
+  });
+
+  it("does not reach the retry for a digit without a month", () => {
+    // The window filter is what keeps this off the per-keystroke path: chosen
+    // on a digit alone, "buy 3 apples" would cost ~100 chrono parses a stroke.
+    expect(whenOrNull("buy 3 apples")).toBeNull();
+  });
+
+  it("does not let the retry walk around the §5 gate", () => {
+    // "sat" is a candidate chrono found and the gate refused, so the retry
+    // must not run at all - appending a year to it would be a way through.
+    expect(whenOrNull("I sat down with the team")).toBeNull();
+  });
+});

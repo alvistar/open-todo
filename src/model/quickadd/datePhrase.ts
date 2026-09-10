@@ -389,7 +389,9 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
    */
   const best =
     admissible[0] ??
-    (candidates.length === 0 ? retryWithExplicitYear(text, today.year, reference) : null);
+    (candidates.length === 0
+      ? retryWithExplicitYear(text, today.year, reference, today, timeZone)
+      : null);
 
   const accepted = admissible.map(({ result }) => ({
     start: result.index,
@@ -459,24 +461,63 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
  * chrono accepts one - which it does only for a real date, so "30 feb" stays
  * refused. Without this the leap day vanishes from the composer with no reason
  * shown.
+ *
+ * The year is inserted after the window rather than appended to the whole line,
+ * because appending required the match to reach the end of the string: "party
+ * 29 feb" resolved while "29 feb party" and "party 29 feb please" returned
+ * nothing at all. Inserting in place also keeps every offset aligned with the
+ * original text, so the span needs no translating back.
  */
 function retryWithExplicitYear(
   text: string,
   fromYear: number,
   reference: { instant: Date; timezone: string },
+  today: DateParts,
+  timeZone: string,
 ): Candidate | null {
-  for (let year = fromYear; year <= fromYear + 8; year += 1) {
-    const suffix = ` ${year}`;
-    const probe = `${text}${suffix}`;
-    for (const { name, chrono: parser } of PARSERS) {
-      const result = parser.parse(probe, reference, { forwardDate: true })[0];
-      if (!result) continue;
-      // The appended year must be part of what matched, and the phrase itself
-      // must start inside the original text - otherwise the year alone matched.
-      if (result.index >= text.length) continue;
-      if (result.index + result.text.length !== probe.length) continue;
-      return { name, result, spanEnd: text.length };
+  for (const [start, end] of monthWindows(text)) {
+    for (let year = fromYear; year <= fromYear + 8; year += 1) {
+      const suffix = ` ${year}`;
+      const probe = text.slice(0, end) + suffix + text.slice(end);
+      for (const { name, chrono: parser } of PARSERS) {
+        const result = parser.parse(probe, reference, { forwardDate: true })[0];
+        if (!result) continue;
+        // The match must start inside the window and run through the year we
+        // inserted - otherwise the year matched on its own.
+        if (result.index < start || result.index >= end) continue;
+        if (result.index + result.text.length !== end + suffix.length) continue;
+        // The gate must see the user's text, not the probe: result.text here
+        // reads "29 feb 2028", a year the user never typed.
+        if (!isAdmissible(result, text.slice(result.index, end), today, timeZone)) {
+          continue;
+        }
+        return { name, result, spanEnd: end };
+      }
     }
   }
   return null;
+}
+
+/**
+ * Token windows worth probing: at most three words, holding both a digit and a
+ * month name. The month is what keeps this off the per-keystroke path - windows
+ * chosen on a digit alone would put "buy 3 apples" through about a hundred
+ * chrono parses per keystroke, for a phrase that is not a date in any year.
+ */
+function monthWindows(text: string): [number, number][] {
+  const tokens = [...text.matchAll(/\S+/g)].map(
+    (m) => [m.index, m.index + m[0].length] as [number, number],
+  );
+  const windows: [number, number][] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    for (let size = 1; size <= 3 && i + size <= tokens.length; size += 1) {
+      const start = tokens[i]?.[0] ?? 0;
+      const end = tokens[i + size - 1]?.[1] ?? 0;
+      const span = text.slice(start, end);
+      if (!/\d/.test(span)) continue;
+      if (!NAMES_A_MONTH.test(span)) continue;
+      windows.push([start, end]);
+    }
+  }
+  return windows;
 }
