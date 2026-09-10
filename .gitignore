@@ -7,3 +7,4 @@ coverage/
 
 # Written and removed by scripts/quickadd-corpus-diff.mjs.
 src/model/quickadd/.datePhrase.baseline.tmp.ts
+.gstack/
