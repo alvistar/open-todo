@@ -350,6 +350,17 @@ verified per-view float `position` semantics.
 
 ## 6. Legal boundaries — non-negotiable
 
+**Licence — DECIDED 2026-09-10: MIT.** `LICENSE` at the repo root, `license`
+field in `package.json`. Until this was set the repo had no licence at all,
+which meant nobody could legally reuse it despite the stated intent to open it.
+
+This also settles a question that was open while the parser was being built:
+**Vikunja's own source cannot be copied into open-todo.** Vikunja is
+AGPL-3.0-or-later, so porting its `parseTaskText.ts` would relicense open-todo
+under the AGPL. It has not been copied — the parser here was written from
+scratch and accepts Todoist's sigils, not Vikunja's. open-todo uses Vikunja's
+public HTTP API only, which carries no such obligation.
+
 - **Do not** copy Todoist source, bundles, CSS files, icons, illustrations,
   logos, or proprietary fonts into this repository.
 - **Do** treat measured values (colors, spacings, type scale) and observed

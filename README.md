@@ -93,3 +93,12 @@ Two more things worth knowing before you deploy it:
 | `DESIGN.md` | The design system: tokens (generated), layout rules, components, do's and don'ts |
 | `docs/` | The specification: layout measurements, data-model mapping, handover |
 | `research/` | Reference material captured from Todoist; not shipped |
+
+## Licence
+
+[MIT](LICENSE). © 2026 Alessandro Viganò.
+
+open-todo carries no Todoist code, assets or trade dress, and no code from
+Vikunja itself: Vikunja is AGPL-3.0-or-later, and reusing its source — its
+quick-add parser, for instance — would place open-todo under that licence too.
+open-todo speaks to Vikunja over its public HTTP API only.
