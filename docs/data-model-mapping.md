@@ -114,8 +114,8 @@ text written for Vikunja's UI still parses.
 | Project | `#Name` (prefix match, quoted for spaces) | `project_id` |
 | Label | `@name`, `*name` (existing labels only; unknown → offer to create) | `labels[]` |
 | Priority | `p1`–`p4`, `!1`–`!5` | `priority` per D-map-1 |
-| Date | today/oggi, tomorrow/domani, tonight/stasera, weekday names (+ next/prossimo), `in N days/weeks/months` (`tra N giorni…`), `next week/month`, `end of month`, `Apr 30` / `30 apr`, ISO `2026-09-15`, `15/9` (only when unambiguous) | `due_date` |
-| Time | `alle 10`, `at 10`, `10:30`, `3pm` | time part of `due_date` |
+| Date | See the enforced table below | `due_date` |
+| Time | `at 10`, `alle 10`, `ore 10`, `10:30`, `3pm` — as a suffix on a Date row, never alone | time part of `due_date` |
 | Recurrence | `every day/week/month/year`, `daily…yearly`, `every N days/weeks/months`, `every monday` (single weekday), `every weekday` (approximated as weekly — **flag in UI**), `every! …` → `repeat_mode 2` | `repeat_after` + `repeat_mode` |
 | Recurrence, **rejected** | `every mon, wed`, `every 2nd tuesday`, `every last day of month`, `every workday at 9 starting …` | Shown as "not supported by Vikunja"; text stays in the title. |
 | Reminder | `!` alone (Todoist's reminder sigil) | not in v1; chip in the composer instead |
@@ -129,6 +129,68 @@ no library supplies the masking order that keeps `@monday` from becoming a date.
 Two grammar notes follow from that wrapper: a bare weekday always means the next
 occurrence, never today; and `tonight` / `stasera` set the day only, leaving the
 time to the all-day marker in D-map-2.
+
+### 5.1 The date table is enforced, not merely documented (D-vocab, 2026-09-10)
+
+chrono carries a far wider vocabulary than this table and cannot be configured
+per word. Left alone it reads `sat` in "I sat down with the team" as Saturday,
+`mar` in "il mar mosso" as Tuesday, and `Sep 15` as 1 September **2015**. Because
+`parse.ts` removes whatever the date layer matched from the title, the user loses
+a word *and* gains a due date they never asked for.
+
+So the table below is an **acceptor**: chrono resolves, this table decides what is
+admissible. Anything outside it keeps its text in the title, sets no date, and
+says why in the composer. Adding a row here is a deliberate grammar amendment and
+takes an owner decision, not a bug fix.
+
+Every row is one shape. A row may carry a time clause from the Time row above.
+
+| Shape | EN | IT |
+|---|---|---|
+| relative day | `today`, `tomorrow` | `oggi`, `domani`, `dopodomani` |
+| day part suffix | `tomorrow morning`, `friday afternoon` | `domani sera`, `sabato mattina` |
+| tonight | `tonight` | `stasera` |
+| weekday, full name | `friday`, `next friday` | `venerdì`, `venerdì prossimo`, `prossimo venerdì` |
+| numeric offset | `in N days`/`weeks`/`months` | `tra`/`fra N giorni`/`settimane`/`mesi`, `tra un mese`, `tra una settimana` |
+| next period | `next week`, `next month` | `la settimana prossima`, `prossima settimana`, `il mese prossimo` |
+| end of month | `end of month` | `fine mese` |
+| month + day | `Apr 30`, `30 apr`, `1 jan`, `29 feb` | `15 settembre`, `settembre 15`, `30 dic`, `29 febbraio` |
+| month + day + year | `15 sep 2027` | `15 set 2027` |
+| ISO | `2026-09-15` | `2026-09-15` |
+| slash, day-first | `15/9`, `13/10` | `15/9`, `13/10` |
+
+Two rules apply on top of the shapes, because a matching shape is not enough:
+
+- **A month name needs a certain day.** chrono reads the trailing number in
+  `feb 29` as a *year* and returns 1 February 2029; `Sep 15` likewise returns
+  1 September 2015. Both match the "month + day" shape by text alone, so the
+  acceptor also requires that chrono marked the `day` component certain.
+- **No date in the past.** `yesterday` / `ieri` and the 2015 reading above are
+  refused by the same rule. A task is a thing still to do.
+
+**Deliberately excluded**, each verified to resolve today and each removed on
+purpose:
+
+| Excluded | Why |
+|---|---|
+| 3-letter weekdays: `sat`, `mon`, `wed`, `lun`, `mar`, `ven`, `gio`, `sab`, `dom` | Every one is also an ordinary word in one of the two languages. This removes a capability that worked before chrono, and is the single biggest reason D-vocab exists. |
+| `this Wednesday`, `this weekend`, `weekend`, `fine settimana` | `this Wednesday` currently resolves a week out — the *wrong* date, not merely an undocumented one. |
+| `yesterday`, `ieri`, `last friday` | A due date in the past is not a task. |
+| `next year` | Nothing useful to schedule; a year is not a due date. |
+| `in N hours`, `tra N ore` | Never in §5, and the two disagree with each other today (all-day vs 12:00) only because `ore` happens to be a time marker. |
+| bare month names: `March`, `marzo` | A month without a day is a period, not a date. |
+| ranges: `Friday to Monday` | chrono collapses a range to its start, silently discarding the half the user typed. |
+
+**Instant idioms are excluded silently.** `now`, `a sec`, `a second`, `in a
+minute` are real chrono matches, but nobody typing them believes they are
+setting a due date. Warning on them would train the user to ignore the warning
+that protects `sat` and `mar`, so they are dropped with no message. The
+predicate is: chrono is certain of an `hour`, is not certain of a `weekday`, and
+the matched text holds no digit.
+
+Bare times (`at 10`, `10:30`) are likewise silent, but for a different reason:
+they never become date candidates in the first place, so the acceptor never sees
+them.
 
 ## 6. Verified against `pinguino` (v2.5.0, 2026-09-09) and what stays open
 
