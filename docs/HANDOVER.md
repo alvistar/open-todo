@@ -362,7 +362,8 @@ means the text stays in the title, no date is invented, and the composer says
 why — the treatment rejected recurrence has had since the parser was written.
 
 `scripts/quickadd-corpus-diff.mjs` measures any future amendment the same way it
-measured this one: 35 of 98 phrases changed, none of them a §5 row. The full
+measured this one: 37 of 98 phrases changed — 35 forms withdrawn, none of
+them a §5 row, plus two leap-day phrasings that now resolve and did not before. The full
 excluded list, with the reason for each, is `docs/data-model-mapping.md` §5.1.
 
 Three findings worth not re-deriving, each reproduced against the code:

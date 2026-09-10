@@ -31,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transcription of it. Anything outside it keeps its text in the title, sets no
   date, and says why in the composer — the treatment rejected recurrence has
   had since the parser was written. `scripts/quickadd-corpus-diff.mjs` measures
-  the change: 35 of 98 phrases, none of them a §5 row.
+  the change: 37 of 98 phrases — 35 forms withdrawn, none of them a §5 row,
+  plus the two leap-day phrasings below that now work and did not before.
 - **Deliberately removed**: 3-letter weekdays (`sat`, `mon`, `wed`, `lun`,
   `ven`, `gio`, `sab`, `dom` — each also an ordinary word in one of the two
   languages, and the biggest real cost here), `this Wednesday` (which set the
