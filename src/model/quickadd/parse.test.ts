@@ -336,3 +336,44 @@ describe("parseQuickAdd — # does not match mid-word", () => {
     expect(r.title).toBe('close issue#"Casa e giardino" please');
   });
 });
+
+describe("parseQuickAdd — a date outside §5 is reported, not swallowed", () => {
+  it("keeps the whole title, sets no date, and says why", () => {
+    const r = parse("I sat down with the team");
+    expect(r.title).toBe("I sat down with the team");
+    expect(r.dueDate).toBeNull();
+    expect(r.spans).toEqual([]);
+    expect(r.warnings).toEqual([
+      '"sat" is not a date open-todo recognises and was kept in the task name.',
+    ]);
+  });
+
+  it("warns and still sets the date the user did type", () => {
+    const r = parse("I sat with the team domani");
+    expect(r.title).toBe("I sat with the team");
+    expect(ymd(due(r))).toBe("2026-09-10");
+    expect(r.warnings).toHaveLength(1);
+  });
+
+  it("says nothing about chrono's instant idioms", () => {
+    const r = parse("buy now pay later");
+    expect(r.title).toBe("buy now pay later");
+    expect(r.dueDate).toBeNull();
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("warns once per phrase, never once per locale", () => {
+    // QuickAdd keys the warning list on the message itself, so a duplicate
+    // would collide in React as well as read badly.
+    expect(parse("weekend plans").warnings).toHaveLength(1);
+  });
+
+  it("leaves the sigils alone while it does it", () => {
+    const r = parse("il mar mosso #Work p1");
+    expect(r.title).toBe("il mar mosso");
+    expect(r.projectId).toBe(3);
+    expect(r.priority).toBe(4);
+    expect(r.dueDate).toBeNull();
+    expect(r.warnings).toHaveLength(1);
+  });
+});

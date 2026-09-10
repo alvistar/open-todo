@@ -37,6 +37,28 @@ interface DateParts {
   day: number;
 }
 
+/**
+ * A span the date layer recognised but §5 does not admit. Reported rather than
+ * dropped: the text stays in the title, and the composer says why.
+ */
+export interface RejectedSpan {
+  start: number;
+  end: number;
+  text: string;
+  /**
+   * chrono's instant idioms - "now", "a sec", "in a minute". Real matches, but
+   * nobody typing them believes they are setting a due date, and warning on
+   * them would train the user to ignore the warning that protects "sat".
+   */
+  silent: boolean;
+}
+
+export interface WhenResult {
+  when: WhenMatch | null;
+  /** In text order, de-duplicated. Never overlaps `when`. */
+  rejected: RejectedSpan[];
+}
+
 /** Calendar parts of `instant` as seen in `timeZone`. */
 function partsIn(instant: Date, timeZone: string): DateParts {
   const f = new Intl.DateTimeFormat("en-CA", {
@@ -196,6 +218,57 @@ function isBefore(a: DateParts, b: DateParts): boolean {
   return a.year * 10000 + a.month * 100 + a.day < b.year * 10000 + b.month * 100 + b.day;
 }
 
+/*
+ * chrono is certain of an hour, names no weekday, and the text holds no digit.
+ * That is the shape of "now", "a sec", "a second", "in a minute" - and of
+ * nothing that needs protecting: "sat at 10" names a weekday, "March" has no
+ * hour, "in 2 hours" has a digit.
+ *
+ * Note there is no `!isCertain("month")` here, tempting as it reads. chrono
+ * marks day, month AND year certain on all four of these, so that clause would
+ * make the predicate never fire.
+ */
+function isInstantIdiom(result: ParsedResult, spanText: string): boolean {
+  return (
+    result.start.isCertain("hour") &&
+    !result.start.isCertain("weekday") &&
+    !/\d/.test(spanText)
+  );
+}
+
+interface Offsets {
+  start: number;
+  end: number;
+}
+
+function overlaps(a: Offsets, b: Offsets): boolean {
+  return a.start < b.end && b.start < a.end;
+}
+
+/*
+ * Both locales parse the same line, so one phrase can be rejected twice: "this
+ * weekend" is [5,12) "weekend" in Italian and [0,14) "this weekend" in English.
+ * And a span can be rejected by one locale while ACCEPTED by the other - "Apr
+ * 30" is a real date to the Italian parser and a bare month+year to the English
+ * one - which must not produce a warning on a phrase that set a date.
+ *
+ * So: an accepted span silences anything it overlaps, and what is left collapses
+ * to the longest, matching the earliest-then-longest preference used for the
+ * winner.
+ */
+function collapse(rejected: RejectedSpan[], accepted: Offsets[]): RejectedSpan[] {
+  const kept: RejectedSpan[] = [];
+  const byPreference = [...rejected].sort(
+    (a, b) => a.start - b.start || b.end - b.start - (a.end - a.start),
+  );
+  for (const span of byPreference) {
+    if (accepted.some((a) => overlaps(a, span))) continue;
+    if (kept.some((k) => overlaps(k, span))) continue;
+    kept.push(span);
+  }
+  return kept.sort((a, b) => a.start - b.start);
+}
+
 /**
  * Whether a candidate is one of the §5 shapes. Applied to every candidate
  * BEFORE the earliest-wins sort, never only to the winner: a rejected early
@@ -251,19 +324,26 @@ interface Candidate {
   spanEnd?: number;
 }
 
-/** Finds the first date phrase in `text`. Returns null when there is none. */
-export function matchWhen(text: string, now: Date, timeZone: string): WhenMatch | null {
+/**
+ * Finds the first admissible date phrase in `text`, plus every span the gate
+ * turned down. Both, not one or the other: "I sat with the team tomorrow" owes
+ * the user a due date AND an explanation of what happened to "sat".
+ */
+export function matchWhen(text: string, now: Date, timeZone: string): WhenResult {
   const today = partsIn(now, timeZone);
 
   const endOfMonth = END_OF_MONTH.exec(text);
   if (endOfMonth) {
     const lastDay = new Date(Date.UTC(today.year, today.month, 0)).getUTCDate();
     return {
-      date: midnight(today.year, today.month, lastDay, timeZone),
-      hasTime: false,
-      start: endOfMonth.index,
-      end: endOfMonth.index + endOfMonth[0].length,
-      text: endOfMonth[0],
+      when: {
+        date: midnight(today.year, today.month, lastDay, timeZone),
+        hasTime: false,
+        start: endOfMonth.index,
+        end: endOfMonth.index + endOfMonth[0].length,
+        text: endOfMonth[0],
+      },
+      rejected: [],
     };
   }
 
@@ -279,9 +359,21 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenMatch 
     DATE_COMPONENTS.some((component) => result.start.isCertain(component)),
   );
 
-  const admissible = candidates.filter(({ result }) =>
-    isAdmissible(result, result.text, today, timeZone),
-  );
+  const admissible: Candidate[] = [];
+  const turnedDown: RejectedSpan[] = [];
+  for (const candidate of candidates) {
+    const { result } = candidate;
+    if (isAdmissible(result, result.text, today, timeZone)) {
+      admissible.push(candidate);
+      continue;
+    }
+    turnedDown.push({
+      start: result.index,
+      end: result.index + result.text.length,
+      text: result.text,
+      silent: isInstantIdiom(result, result.text),
+    });
+  }
 
   admissible.sort((a, b) => {
     if (a.result.index !== b.result.index) return a.result.index - b.result.index;
@@ -298,7 +390,14 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenMatch 
   const best =
     admissible[0] ??
     (candidates.length === 0 ? retryWithExplicitYear(text, today.year, reference) : null);
-  if (!best) return null;
+
+  const accepted = admissible.map(({ result }) => ({
+    start: result.index,
+    end: result.index + result.text.length,
+  }));
+  const rejected = collapse(turnedDown, accepted);
+
+  if (!best) return { when: null, rejected };
 
   const { result } = best;
   let instant = result.start.date();
@@ -342,11 +441,14 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenMatch 
   const end = best.spanEnd ?? result.index + result.text.length;
 
   return {
-    date,
-    hasTime,
-    start: result.index,
-    end,
-    text: text.slice(result.index, end),
+    when: {
+      date,
+      hasTime,
+      start: result.index,
+      end,
+      text: text.slice(result.index, end),
+    },
+    rejected,
   };
 }
 

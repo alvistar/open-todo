@@ -231,7 +231,20 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
   // Date and time. A time on its own is not a due date.
   let dueDate: Date | null = null;
   let allDay = false;
-  const when = matchWhen(rest, context.now, context.timeZone);
+  const { when, rejected } = matchWhen(rest, context.now, context.timeZone);
+  /*
+   * A span the §5 gate turned down keeps its text in the title and says why,
+   * exactly as a rejected recurrence does above. mask() has no consumer today
+   * because the date layer runs last; it is here so that stays true if a layer
+   * is ever added after it, and so the two rejection paths read the same.
+   */
+  for (const span of rejected) {
+    mask(span.start, span.end);
+    if (span.silent) continue;
+    warnings.push(
+      `"${span.text.trim()}" is not a date open-todo recognises and was kept in the task name.`,
+    );
+  }
   if (when) {
     consumeSurviving(when.start, when.end, "date");
     if (when.hasTime) {

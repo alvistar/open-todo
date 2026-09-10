@@ -21,7 +21,17 @@ const time = (d: Date) =>
     hour12: false,
   }).format(d);
 
-const whenOrNull = (text: string) => matchWhen(text, NOW, TZ);
+const whenOrNull = (text: string) => matchWhen(text, NOW, TZ).when;
+
+/** The spans the §5 gate turned down, in text order. */
+const rejected = (text: string) => matchWhen(text, NOW, TZ).rejected;
+
+/** Asserts the gate turned something down, so the tests read without `?.`. */
+const turnedDown = (text: string) => {
+  const [first] = rejected(text);
+  if (!first) throw new Error(`expected a rejected span in ${JSON.stringify(text)}`);
+  return first;
+};
 
 /** Asserts a phrase matched, so the tests read without non-null assertions. */
 const when = (text: string) => {
@@ -180,5 +190,62 @@ describe("matchWhen — times", () => {
     // the user never typed. The span is not a §5 shape, so nothing is taken:
     // before D-vocab this returned 15 September, all-day.
     expect(whenOrNull("x 45/13 15/9")).toBeNull();
+  });
+});
+
+describe("matchWhen — the §5 gate reports what it turned down", () => {
+  it("reports the rejected span and still finds the real date", () => {
+    // The gate runs over every candidate before the sort, so the false
+    // positive early in the line neither wins nor disappears.
+    const r = matchWhen("I sat with the team tomorrow", NOW, TZ);
+    expect(day(r.when?.date as Date)).toBe("2026-09-10");
+    expect(r.rejected.map((s) => s.text)).toEqual(["sat"]);
+  });
+
+  it("reports one span when both locales reject the same phrase", () => {
+    // Italian and English both match "weekend" at the same offset.
+    expect(rejected("weekend plans")).toHaveLength(1);
+  });
+
+  it("reports one span when the two locales reject overlapping phrases", () => {
+    // Italian matches [5,12) "weekend", English [0,14) "this weekend".
+    expect(rejected("this weekend")).toHaveLength(1);
+    expect(turnedDown("this weekend").text).toBe("this weekend");
+  });
+
+  it("says nothing when one locale accepts what the other rejects", () => {
+    // "Apr 30" is 30 April to the Italian parser and a bare month+year to the
+    // English one. A warning here would be about a phrase that set a date.
+    const r = matchWhen("Apr 30", NOW, TZ);
+    expect(day(r.when?.date as Date)).toBe("2027-04-30");
+    expect(r.rejected).toEqual([]);
+  });
+
+  it("drops chrono's instant idioms without a word", () => {
+    for (const phrase of [
+      "buy now pay later",
+      "give me a sec",
+      "a second",
+      "in a minute",
+    ]) {
+      expect(rejected(phrase)).toHaveLength(1);
+      expect(turnedDown(phrase).silent).toBe(true);
+    }
+  });
+
+  it("still speaks up for the phrases the idiom rule must not cover", () => {
+    // Each of these is certain of an hour too, so only the weekday and the
+    // digit tell them apart from "in a minute".
+    for (const phrase of [
+      "I sat at 10 with the team",
+      "call in 2 hours",
+      "March report",
+    ]) {
+      expect(turnedDown(phrase).silent).toBe(false);
+    }
+  });
+
+  it("says nothing about a bare time, which never becomes a candidate", () => {
+    expect(rejected("call at 10")).toEqual([]);
   });
 });
