@@ -118,6 +118,7 @@ text written for Vikunja's UI still parses.
 | Time | `at 10`, `alle 10`, `ore 10`, `10:30`, `3pm` — as a suffix on a Date row, never alone | time part of `due_date` |
 | Recurrence | `every day/week/month/year`, `daily…yearly`, `every N days/weeks/months`, `every monday` (single weekday), `every weekday` (approximated as weekly — **flag in UI**), `every! …` → `repeat_mode 2` | `repeat_after` + `repeat_mode` |
 | Recurrence, **rejected** | `every mon, wed`, `every 2nd tuesday`, `every last day of month`, `every workday at 9 starting …` | Shown as "not supported by Vikunja"; text stays in the title. |
+| Literal | the **whole** line wrapped in matching `"` or `'` | nothing is parsed; the quoted text becomes the title verbatim |
 | Reminder | `!` alone (Todoist's reminder sigil) | not in v1; chip in the composer instead |
 
 **Implementation (D-parser, 2026-09-10).** The Date and Time rows are parsed by

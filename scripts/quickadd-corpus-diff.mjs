@@ -19,11 +19,22 @@ import { rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 
-/** Last commit before the grammar gate. */
-const BASELINE_REF = "9de77e7";
+/*
+ * The D-parser commit, before any of D-vocab. Overridable, because once this
+ * branch is squash-merged the default is the only thing here that can rot:
+ *
+ *   node scripts/quickadd-corpus-diff.mjs <ref>
+ */
+const BASELINE_REF = process.argv[2] ?? "d3d0a4a";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+/*
+ * The baseline has to sit inside the package or its own `./vocabulary` import
+ * will not resolve. It is git-ignored, since a crash before the `finally` would
+ * otherwise leave a stray .ts that biome, tsc and vitest all pick up.
+ */
 const BASELINE_FILE = "src/model/quickadd/.datePhrase.baseline.tmp.ts";
+const BASELINE_PATH = new URL(BASELINE_FILE, `file://${ROOT}`);
 
 const TZ = "Europe/Rome";
 /** Thursday 10 September 2026, 09:00 in Rome. */

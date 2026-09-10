@@ -222,9 +222,12 @@ describe("matchWhen — the §5 gate reports what it turned down", () => {
   });
 
   it("drops chrono's instant idioms without a word", () => {
+    // "after a sec" is not redundant with "give me a sec": chrono's span for
+    // it is the whole phrase rather than just "a sec".
     for (const phrase of [
       "buy now pay later",
       "give me a sec",
+      "after a sec",
       "a second",
       "in a minute",
     ]) {
@@ -238,7 +241,9 @@ describe("matchWhen — the §5 gate reports what it turned down", () => {
     // digit tell them apart from "in a minute".
     for (const phrase of [
       "I sat at 10 with the team",
+      "il mar alle 10 mosso",
       "call in 2 hours",
+      "chiama tra 2 ore",
       "March report",
     ]) {
       expect(turnedDown(phrase).silent).toBe(false);
@@ -246,7 +251,9 @@ describe("matchWhen — the §5 gate reports what it turned down", () => {
   });
 
   it("says nothing about a bare time, which never becomes a candidate", () => {
-    expect(rejected("call at 10")).toEqual([]);
+    for (const phrase of ["call at 10", "alle 10", "10:30", "3pm"]) {
+      expect(rejected(phrase)).toEqual([]);
+    }
   });
 });
 
