@@ -286,3 +286,103 @@ describe("matchWhen — a leap day is found wherever it sits in the line", () =>
     expect(whenOrNull("I sat down with the team")).toBeNull();
   });
 });
+
+/*
+ * One test per row of the §5.1 table, named after the row. Drift between the
+ * table and the acceptor is then a reading exercise rather than a debugging
+ * one - which matters, because re-stating §5's vocabulary in code is the whole
+ * cost of D-vocab.
+ */
+describe("matchWhen — §5.1 rows that must resolve", () => {
+  it("relative day", () => {
+    expect(day(when("dopodomani").date)).toBe("2026-09-11");
+  });
+
+  it("day part suffix", () => {
+    expect(day(when("tomorrow morning").date)).toBe("2026-09-10");
+    expect(day(when("domani sera").date)).toBe("2026-09-10");
+    expect(day(when("sabato mattina").date)).toBe("2026-09-12");
+    expect(day(when("friday afternoon").date)).toBe("2026-09-11");
+  });
+
+  it("weekday, full name — adjective either side in Italian", () => {
+    expect(day(when("venerdì prossimo").date)).toBe("2026-09-18");
+    expect(day(when("prossimo venerdì").date)).toBe("2026-09-18");
+  });
+
+  it("numeric offset — fra is tra, and the count may be a word", () => {
+    expect(day(when("fra 3 giorni").date)).toBe("2026-09-12");
+    expect(day(when("tra una settimana").date)).toBe("2026-09-16");
+    expect(day(when("tra un mese").date)).toBe("2026-10-09");
+  });
+
+  it("next period — both Italian word orders", () => {
+    expect(day(when("la settimana prossima").date)).toBe("2026-09-16");
+    expect(day(when("prossima settimana").date)).toBe("2026-09-16");
+    expect(day(when("il mese prossimo").date)).toBe("2026-10-09");
+  });
+
+  it("month + day — full month names, both orders", () => {
+    expect(day(when("15 settembre").date)).toBe("2026-09-15");
+    expect(day(when("settembre 15").date)).toBe("2026-09-15");
+  });
+
+  it("month + day + year", () => {
+    expect(day(when("15 sep 2027").date)).toBe("2027-09-15");
+    expect(day(when("15 set 2027").date)).toBe("2027-09-15");
+  });
+});
+
+describe("matchWhen — §5.1 rows that are deliberately excluded", () => {
+  it("3-letter weekdays, English and Italian", () => {
+    for (const phrase of ["sat", "mon", "wed", "lun", "ven", "gio", "sab", "dom"]) {
+      expect(whenOrNull(phrase)).toBeNull();
+    }
+    // The two that made the case: both are ordinary words as well as days.
+    expect(whenOrNull("I sat down with the team")).toBeNull();
+    expect(whenOrNull("il mar mosso")).toBeNull();
+    expect(whenOrNull("call next mon")).toBeNull();
+  });
+
+  it("this <weekday> and the weekend", () => {
+    // "this Wednesday" resolved a week out - the wrong date, not merely an
+    // undocumented one.
+    expect(whenOrNull("this Wednesday")).toBeNull();
+    expect(whenOrNull("weekend plans")).toBeNull();
+    expect(whenOrNull("this weekend")).toBeNull();
+    expect(whenOrNull("fine settimana")).toBeNull();
+  });
+
+  it("dates in the past", () => {
+    for (const phrase of ["yesterday", "ieri", "last friday"]) {
+      expect(whenOrNull(phrase)).toBeNull();
+    }
+  });
+
+  it("a month name with a number chrono reads as a year", () => {
+    // "feb 29" resolved to 1 February 2029 and "Sep 15" to 1 September 2015,
+    // both with the day merely implied.
+    expect(whenOrNull("feb 29")).toBeNull();
+    expect(whenOrNull("Sep 15")).toBeNull();
+  });
+
+  it("a bare month name", () => {
+    expect(whenOrNull("March report")).toBeNull();
+    expect(whenOrNull("marzo report")).toBeNull();
+  });
+
+  it("a range, which chrono collapses to its start", () => {
+    expect(whenOrNull("Friday to Monday")).toBeNull();
+  });
+
+  it("offsets in hours, which the two locales did not even agree on", () => {
+    // One returned all-day, the other 12:00, purely because "ore" is a time
+    // marker and "hours" is not.
+    expect(whenOrNull("call in 2 hours")).toBeNull();
+    expect(whenOrNull("chiama tra 2 ore")).toBeNull();
+  });
+
+  it("next year", () => {
+    expect(whenOrNull("next year")).toBeNull();
+  });
+});
