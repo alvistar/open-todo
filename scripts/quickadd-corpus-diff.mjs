@@ -20,7 +20,8 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 
 /*
- * The D-parser commit, before any of D-vocab. Overridable, because once this
+ * The last commit before D-vocab (D-parser itself is 2ab17ce, two before).
+ * Overridable, because once this
  * branch is squash-merged the default is the only thing here that can rot:
  *
  *   node scripts/quickadd-corpus-diff.mjs <ref>
@@ -54,6 +55,8 @@ const CORPUS = [
   "2026-09-15", "30 apr", "Apr 30", "30 dic", "1 jan", "29 feb", "29 febbraio",
   "15 settembre", "settembre 15", "15 sep 2027", "15 set 2027", "15/9", "13/10",
   "at 10", "alle 10", "10:30", "3pm", "12pm",
+  "domenica ore 15", "domani ore 9", "domani alle ore 15", "15 settembre ore 15",
+  "tra 2 ore 15", "ore di lavoro",
   "tomorrow at 10:30", "domani alle 20:30", "call tomorrow at 3pm",
   "call mum domani       alle 10", "standup tomorrow", "gym wednesday",
   // Out of grammar: the reason this change exists.

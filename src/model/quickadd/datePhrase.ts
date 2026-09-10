@@ -158,15 +158,26 @@ const END_OF_MONTH = /(?:\bend\s+of\s+(?:the\s+)?month\b|\bfine\s+mese\b)/i;
  * owner writes them - and §5 lists it, so it is rewritten to the word chrono
  * does know before parsing.
  *
- * Only when a number follows: in "tra 2 ore" the same word is the unit
- * "hours", and rewriting that would stop the phrase being recognised at all,
- * which would silently drop the warning §5 owes it.
+ * Two shapes, because Italian writes the time both ways - see each regex.
  *
  * "alle" is one character longer than "ore", so every offset after a rewrite
  * shifts. `ProbeText` carries the map back; nothing downstream may use
  * chrono's own indices.
  */
-const ORE_AS_PREPOSITION = /\bore(?=\s+\d)/gi;
+/*
+ * "alle ore 15" is the most formal way to write an appointment in Italian, and
+ * there the "ore" is redundant - chrono already has the "alle" it needs. Three
+ * spaces rather than a deletion, because a same-length substitution shifts no
+ * offset at all.
+ */
+const REDUNDANT_ORE = /(?<=\balle\s{1,4})ore(?=\s+\d)/gi;
+
+/*
+ * The preposition case. Not after a number: "tra 2 ore 15" is two hours from
+ * now, and rewriting the unit would stop the phrase being recognised, which is
+ * the silent drop the §5 warning exists to prevent.
+ */
+const ORE_AS_PREPOSITION = /(?<!\d\s{1,4})\bore(?=\s+\d)/gi;
 
 interface ProbeText {
   probe: string;
@@ -175,20 +186,23 @@ interface ProbeText {
 }
 
 function rewriteOre(text: string): ProbeText {
+  // Same length in, same length out, so this step alone needs no offset map.
+  const levelled = text.replace(REDUNDANT_ORE, "   ");
+
   const shifts: number[] = [];
   let probe = "";
   let last = 0;
   ORE_AS_PREPOSITION.lastIndex = 0;
-  let m = ORE_AS_PREPOSITION.exec(text);
+  let m = ORE_AS_PREPOSITION.exec(levelled);
   while (m) {
-    probe += text.slice(last, m.index) + "alle";
+    probe += levelled.slice(last, m.index) + "alle";
     // Where the +1 lands in probe coordinates.
     shifts.push(probe.length);
     last = m.index + m[0].length;
-    m = ORE_AS_PREPOSITION.exec(text);
+    m = ORE_AS_PREPOSITION.exec(levelled);
   }
-  if (shifts.length === 0) return { probe: text, toOriginal: (i) => i };
-  probe += text.slice(last);
+  if (shifts.length === 0) return { probe: levelled, toOriginal: (i) => i };
+  probe += levelled.slice(last);
   return {
     probe,
     toOriginal: (index) => index - shifts.filter((at) => at <= index).length,
@@ -240,7 +254,10 @@ const SLASH_SHAPE = "\\d{1,2}/\\d{1,2}";
 
 /** The Time row of §5, admissible only as a suffix on one of the shapes above. */
 const CLOCK = "\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?";
-const TIME_CLAUSE = `(?:\\s+(?:at|alle|ore)\\s+${CLOCK}|\\s+\\d{1,2}:\\d{2}|\\s*\\d{1,2}\\s*(?:am|pm))?`;
+// "alle ore 15" carries both prepositions, and is how Italian writes an
+// appointment most formally.
+const TIME_PREPOSITION = "(?:at|alle|ore)(?:\\s+ore)?";
+const TIME_CLAUSE = `(?:\\s+${TIME_PREPOSITION}\\s+${CLOCK}|\\s+\\d{1,2}:\\d{2}|\\s*\\d{1,2}\\s*(?:am|pm))?`;
 
 const ACCEPTED_SHAPE = new RegExp(
   `^(?:${DAY_SHAPE}|${OFFSET_SHAPE}|${NEXT_PERIOD_SHAPE}|${MONTH_DAY_SHAPE}|${ISO_SHAPE}|${SLASH_SHAPE})${TIME_CLAUSE}$`,

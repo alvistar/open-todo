@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { QuickAddContext } from "../model/quickadd/parse";
 import { QuickAdd } from "./QuickAdd";
@@ -29,14 +29,14 @@ const ctx = (over: Partial<QuickAddContext> = {}): QuickAddContext => ({
   ...over,
 });
 
-/** Renders the composer and types `text` into it, returning the textarea. */
+/** Renders the composer and types `text` into it. */
 function compose(text: string) {
-  render(
+  const { container } = render(
     <QuickAdd context={ctx()} onSubmit={vi.fn(async () => [])} onCancel={vi.fn()} />,
   );
-  const input = screen.getByRole("textbox");
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
   fireEvent.change(input, { target: { value: text } });
-  return input as HTMLTextAreaElement;
+  return { input, container };
 }
 
 const OUT_OF_GRAMMAR =
@@ -49,22 +49,23 @@ describe("QuickAdd — a phrase outside §5", () => {
   });
 
   it("leaves the typed text whole", () => {
-    const input = compose("I sat down with the team");
+    const { input } = compose("I sat down with the team");
     expect(input.value).toBe("I sat down with the team");
   });
 
   it("leaves the date chip empty", () => {
+    // "Date" is the chip's empty label. Asserting the placeholder alone would
+    // also pass on a WRONG date, so the accepted case is pinned beside it.
     compose("I sat down with the team");
     expect(screen.getByText("Date")).toBeInTheDocument();
+    cleanup();
+    compose("domani");
+    expect(screen.queryByText("Date")).not.toBeInTheDocument();
+    expect(screen.getByText("Tomorrow")).toBeInTheDocument();
   });
 
   it("highlights nothing, so no word looks consumed", () => {
-    const { container } = render(
-      <QuickAdd context={ctx()} onSubmit={vi.fn(async () => [])} onCancel={vi.fn()} />,
-    );
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "I sat down with the team" },
-    });
+    const { container } = compose("I sat down with the team");
     expect(container.querySelectorAll("mark")).toHaveLength(0);
   });
 
@@ -85,21 +86,13 @@ describe("QuickAdd — a warning and a date in the same line", () => {
 
 describe("QuickAdd — phrases that must stay quiet", () => {
   it("says nothing about chrono's instant idioms", () => {
-    const { container } = render(
-      <QuickAdd context={ctx()} onSubmit={vi.fn(async () => [])} onCancel={vi.fn()} />,
-    );
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "buy now pay later" },
-    });
+    const { container } = compose("buy now pay later");
     expect(container.textContent).not.toContain("is not a date open-todo recognises");
     expect(screen.getByText("Date")).toBeInTheDocument();
   });
 
   it("says nothing about a bare time", () => {
-    const { container } = render(
-      <QuickAdd context={ctx()} onSubmit={vi.fn(async () => [])} onCancel={vi.fn()} />,
-    );
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "call at 10" } });
+    const { container } = compose("call at 10");
     expect(container.textContent).not.toContain("is not a date open-todo recognises");
   });
 
@@ -115,7 +108,7 @@ describe("QuickAdd — phrases that must stay quiet", () => {
 
 describe("QuickAdd — a quoted line", () => {
   it("takes the text literally, with no date and no warning", () => {
-    const input = compose('"Buy milk tomorrow"');
+    const { input } = compose('"Buy milk tomorrow"');
     expect(input.value).toBe('"Buy milk tomorrow"');
     expect(screen.getByText("Date")).toBeInTheDocument();
     expect(screen.getByLabelText("Add task")).not.toBeDisabled();

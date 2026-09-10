@@ -115,7 +115,7 @@ text written for Vikunja's UI still parses.
 | Label | `@name`, `*name` (existing labels only; unknown → offer to create) | `labels[]` |
 | Priority | `p1`–`p4`, `!1`–`!5` | `priority` per D-map-1 |
 | Date | See the enforced table below | `due_date` |
-| Time | `at 10`, `alle 10`, `ore 10`, `10:30`, `3pm` — as a suffix on a Date row, never alone | time part of `due_date` |
+| Time | `at 10`, `alle 10`, `ore 10`, `alle ore 10`, `10:30`, `3pm` — as a suffix on a Date row, never alone | time part of `due_date` |
 | Recurrence | `every day/week/month/year`, `daily…yearly`, `every N days/weeks/months`, `every monday` (single weekday), `every weekday` (approximated as weekly — **flag in UI**), `every! …` → `repeat_mode 2` | `repeat_after` + `repeat_mode` |
 | Recurrence, **rejected** | `every mon, wed`, `every 2nd tuesday`, `every last day of month`, `every workday at 9 starting …` | Shown as "not supported by Vikunja"; text stays in the title. |
 | Literal | the **whole** line wrapped in matching `"` or `'` | nothing is parsed; the quoted text becomes the title verbatim |
@@ -178,7 +178,7 @@ purpose:
 | `this Wednesday`, `this weekend`, `weekend`, `fine settimana` | `this Wednesday` currently resolves a week out — the *wrong* date, not merely an undocumented one. |
 | `yesterday`, `ieri`, `last friday` | A due date in the past is not a task. |
 | `next year` | Nothing useful to schedule; a year is not a due date. |
-| `in N hours`, `tra N ore` | Never in §5, and the two disagree with each other today (all-day vs 12:00) only because `ore` happens to be a time marker. |
+| `in N hours`, `tra N ore` | Never in §5. Note `ore` is *two* words here: a time preposition in "ore 15", the unit "hours" in "tra 2 ore". Only the first is admitted, and only the first is rewritten before parsing — see the D-parser guard table in the handover. |
 | bare month names: `March`, `marzo` | A month without a day is a period, not a date. |
 | ranges: `Friday to Monday` | chrono collapses a range to its start, silently discarding the half the user typed. |
 

@@ -430,6 +430,30 @@ describe('matchWhen — "ore" is a time preposition, like "alle"', () => {
     expect("dentista domenica ore 15".slice(m.start, m.end)).toBe("domenica ore 15");
   });
 
+  it('reads "alle ore", which is how Italian writes it most formally', () => {
+    // The first cut of the rewrite turned "domani alle ore 15" into the probe
+    // "domani alle alle 15", which chrono cannot parse - so the most idiomatic
+    // phrasing of all lost its date entirely, and even the day it used to get.
+    expect(day(when("domani alle ore 15").date)).toBe("2026-09-10");
+    expect(time(when("domani alle ore 15").date)).toBe("15:00");
+    expect(time(when("luned\u00ec alle ore 15").date)).toBe("15:00");
+  });
+
+  it("still warns about an hours offset that happens to end in a number", () => {
+    // "tra 2 ore 15" has a digit after "ore", so a naive rule rewrote the unit
+    // and the phrase stopped being recognised at all - dropping the warning
+    // rather than showing it.
+    expect(whenOrNull("tra 2 ore 15")).toBeNull();
+    expect(turnedDown("tra 2 ore 15").text).toBe("tra 2 ore");
+  });
+
+  it("maps offsets back through several rewrites in one line", () => {
+    const text = "ore 8 e ore 9 e domani ore 10";
+    const m = when(text);
+    expect(text.slice(m.start, m.end)).toBe(m.text);
+    expect(m.text).toBe("domani ore 10");
+  });
+
   it("leaves ore alone when it is the unit, not the preposition", () => {
     // "tra 2 ore" is an offset in hours, which §5 excludes - and it must keep
     // being RECOGNISED so the warning still explains itself.

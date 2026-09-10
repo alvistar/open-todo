@@ -322,6 +322,7 @@ Guards added around chrono, each with a test (`src/model/quickadd/datePhrase.ts`
 | A bare weekday resolving to today is pushed a week | chrono returns today for `gym wednesday` typed on a Wednesday; a task means the day to come. `next wednesday` is already a week out and is not pushed twice. |
 | A clock time counts only with a marker (`:`, `3pm`, `at`/`alle`/`ore`) | chrono reads the stray `13` in `x 45/13 15/9` as 13:00 — a time the user never typed. |
 | `end of month` / `fine mese` matched before chrono | Neither locale has them, and §5 lists them. Done here rather than as a chrono custom parser because a custom parser sees only an instant: at 00:30 in Rome that instant is still the previous month in UTC. |
+| `ore` is rewritten before parsing | chrono's Italian locale knows `alle` and not `ore` at all, so "domenica ore 15" returned the day with no time and left the words in the title — a form §5 has always listed. `alle ore 15` blanks the redundant `ore` (same length, no offset shift); a bare `ore 15` becomes `alle 15` (+1, offsets mapped back). Never after a number: in "tra 2 ore" the word is the unit. |
 | A day+month chrono declines is retried with each following year | `29 feb` is not a date in 2026 or 2027, so chrono returns nothing. The retry only succeeds on a real date, so `30 feb` stays refused. |
 
 Cost: **+16.1 kB gzip** (86.2 → 102.3 kB), measured by building both ways.
