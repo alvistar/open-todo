@@ -8,7 +8,7 @@
  * would put the task on the wrong day for most of the year.
  */
 
-import { WEEKDAY_ANY, word } from "./vocabulary";
+import { WEEKDAY_RECURRENCE, wordBounded } from "./vocabulary";
 
 export const DAY = 24 * 60 * 60;
 export const WEEK = 7 * DAY;
@@ -30,11 +30,11 @@ export interface RecurrenceMatch {
 }
 
 /*
- * Recurrence admits the short weekdays: "every sat" can only mean Saturday,
- * because "every" has already established that a weekday follows. The date
- * layer admits only the full names - see vocabulary.ts.
+ * "every sat" can only mean Saturday, because "every" has already established
+ * that a weekday follows. The date layer admits only the full names, and
+ * neither layer takes the Italian abbreviations - see vocabulary.ts.
  */
-const WEEKDAY = WEEKDAY_ANY;
+const WEEKDAY = WEEKDAY_RECURRENCE;
 
 /** Word-form ordinals, which are as calendar-shaped as the digit ones. */
 const ORDINAL_WORD = "second|third|fourth|fifth|last|first|other|next";
@@ -49,7 +49,7 @@ const ORDINAL_WORD = "second|third|fourth|fifth|last|first|other|next";
  * accepted form — was rejected outright, and the user was told Vikunja could
  * not do something it does.
  */
-const WD = word(WEEKDAY);
+const WD = wordBounded(WEEKDAY);
 
 const REJECTED: RegExp[] = [
   // A list of weekdays: "every mon, wed"

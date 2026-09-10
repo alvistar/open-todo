@@ -19,7 +19,7 @@
 import type { Chrono, ParsedResult } from "chrono-node";
 import * as chronoEn from "chrono-node/en";
 import * as chronoIt from "chrono-node/it";
-import { MONTH_ANY, WEEKDAY_FULL, word } from "./vocabulary";
+import { MONTH_ANY, WEEKDAY_FULL, wordBounded } from "./vocabulary";
 
 export interface WhenMatch {
   /** Midnight of the matched day in `timeZone`, or the instant when hasTime. */
@@ -207,7 +207,7 @@ const ACCEPTED_SHAPE = new RegExp(
  * Whether the span names a month at all. `word()` closes the alternation, so
  * the abbreviation "mar" does not match inside "martedì".
  */
-const NAMES_A_MONTH = new RegExp(`\\b${word(MONTH_ANY)}`, "iu");
+const NAMES_A_MONTH = new RegExp(`\\b${wordBounded(MONTH_ANY)}`, "iu");
 
 /** Sigil masking leaves multi-space gaps: "domani       alle 10" is one span. */
 function normalise(text: string): string {

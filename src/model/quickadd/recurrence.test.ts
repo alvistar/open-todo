@@ -103,3 +103,22 @@ describe("matchRecurrence — regressions found in review", () => {
     );
   });
 });
+
+describe("matchRecurrence — the shared vocabulary did not widen the grammar", () => {
+  it("still takes the English weekday abbreviations", () => {
+    expect(r("gym every sat")).toMatchObject({ repeatAfter: WEEK });
+  });
+
+  it("still refuses the Italian ones, which §5 never listed", () => {
+    // Extracting the word lists into vocabulary.ts briefly added these, which
+    // is a grammar amendment rather than a tidying-up: "ogni mar" scheduled a
+    // weekly repeat where it had previously done nothing at all.
+    for (const phrase of ["ogni mar", "ogni sab", "ogni gio", "ogni lun"]) {
+      expect(r(phrase)).toBeNull();
+    }
+  });
+
+  it("still takes the full Italian names", () => {
+    expect(r("ogni marted\u00ec")).toMatchObject({ repeatAfter: WEEK });
+  });
+});
