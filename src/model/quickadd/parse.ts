@@ -167,7 +167,12 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
    */
   // #project — quoted for names with spaces, else a bare prefix.
   let projectId: number | null = null;
-  const projectMatch = rest.match(/#"([^"]+)"/) ?? rest.match(/#([\p{L}\p{N}_-]+)/u);
+  // The same lookbehind the label and priority patterns use, so "issue#3" and
+  // "C#Lavoro" are text rather than a project. `#` was the one sigil without
+  // it, which made it the only one that matched mid-word.
+  const projectMatch =
+    rest.match(/(?<![\p{L}\p{N}])#"([^"]+)"/u) ??
+    rest.match(/(?<![\p{L}\p{N}])#([\p{L}\p{N}_-]+)/u);
   if (projectMatch) {
     const needle = (projectMatch[1] ?? "").toLowerCase();
     const candidates = context.projects.filter((p) =>

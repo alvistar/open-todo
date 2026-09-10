@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MIT licence** — `LICENSE` at the repo root and a `license` field in
   `package.json`. The repo had none, so nothing in it was legally reusable.
 
+### Fixed
+- `#project` no longer matches inside another word: `close issue#3` stays a
+  plain title instead of resolving a project. `#` was the only sigil without
+  the lookbehind that `@label` and `p1` already used.
+
 ### Changed
 - **Quick-add dates and times are parsed by `chrono-node`** (D-parser). The
   hand-written date matchers are gone; recurrence and the sigils are unchanged.

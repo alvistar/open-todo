@@ -314,3 +314,25 @@ describe("parseQuickAdd — a sigil between the date and the time", () => {
     expect(sorted.map((s) => s.text)).toEqual(["domani", "#Work", "alle 10"]);
   });
 });
+
+describe("parseQuickAdd — # does not match mid-word", () => {
+  it("ignores a # attached to the preceding word", () => {
+    // "#" was the only sigil without the lookbehind that @label and p1 use, so
+    // it was the only one that could fire from inside another token.
+    const r = parse("close issue#3 and ping");
+    expect(r.projectId).toBeNull();
+    expect(r.title).toBe("close issue#3 and ping");
+  });
+
+  it("still matches at the start of the text and after a space", () => {
+    expect(parse("#Work ping").projectId).toBe(3);
+    expect(parse("ping #Work").projectId).toBe(3);
+    expect(parse('ping #"Casa e giardino"').projectId).toBe(4);
+  });
+
+  it("ignores a quoted project attached to the preceding word", () => {
+    const r = parse('close issue#"Casa e giardino" please');
+    expect(r.projectId).toBeNull();
+    expect(r.title).toBe('close issue#"Casa e giardino" please');
+  });
+});
