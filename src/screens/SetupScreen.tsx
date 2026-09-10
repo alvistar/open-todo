@@ -13,6 +13,17 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
+/*
+ * Vikunja's /info already returns the version with its "v" - "v2.5.0" - so
+ * prefixing another one printed "vv2.5.0" in the login banner. Not every
+ * deployment is guaranteed to, though (a dev build reports a bare commit-ish
+ * string), so normalise rather than just dropping the prefix here.
+ */
+export function displayVersion(version: string): string {
+  const bare = version.trim().replace(/^v/i, "");
+  return `v${bare}`;
+}
+
 /** Step 1: which Vikunja instance. Probes /info so a typo fails here, not later. */
 function ServerStep({ onDone }: { onDone: (url: string, version: string) => void }) {
   const [url, setUrl] = useState("");
@@ -165,7 +176,7 @@ function LoginStep({
       <p className={styles.server}>
         {version ? <Icon name="check" size={16} className={styles.ok} /> : null}
         {baseUrl}
-        {version ? ` · v${version}` : ""}
+        {version ? ` · ${displayVersion(version)}` : ""}
       </p>
 
       <div className={styles.tabs}>
