@@ -83,7 +83,43 @@ function parseAllDayTime(value: string | null): { hours: number; minutes: number
   return { hours, minutes };
 }
 
+/*
+ * The escape hatch, whose behaviour is Vikunja's (behaviour only - Vikunja is
+ * AGPL and open-todo is MIT, so nothing was copied). Wrapping the WHOLE line in
+ * matching quotes turns every rule off and takes the rest literally.
+ *
+ * It is the answer to a task genuinely called "Buy milk tomorrow", which no
+ * amount of grammar can distinguish from the same words meaning a due date.
+ * Requiring the whole line is what keeps it clear of `#"Casa e giardino"`,
+ * which is a quoted project name in the middle of a sentence, not an escape.
+ *
+ * Returns the literal title, or null when this is an ordinary line.
+ */
+function wholeInputInQuotes(input: string): string | null {
+  const trimmed = input.trim();
+  if (trimmed.length < 2) return null;
+  const first = trimmed[0];
+  if (first !== '"' && first !== "'") return null;
+  if (trimmed[trimmed.length - 1] !== first) return null;
+  return trimmed.slice(1, -1).trim();
+}
+
 export function parseQuickAdd(input: string, context: QuickAddContext): QuickAddResult {
+  const quoted = wholeInputInQuotes(input);
+  if (quoted !== null) {
+    return {
+      title: quoted,
+      projectId: null,
+      effectiveProjectId: context.defaultProjectId,
+      labelIds: [],
+      priority: null,
+      dueDate: null,
+      allDay: false,
+      spans: [],
+      warnings: [],
+    };
+  }
+
   const spans: QuickAddSpan[] = [];
   const warnings: string[] = [];
   let rest = input;

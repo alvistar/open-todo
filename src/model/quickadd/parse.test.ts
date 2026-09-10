@@ -377,3 +377,42 @@ describe("parseQuickAdd — a date outside §5 is reported, not swallowed", () =
     expect(r.warnings).toHaveLength(1);
   });
 });
+
+describe("parseQuickAdd — quoting the whole line turns the grammar off", () => {
+  it("takes a quoted line literally", () => {
+    const r = parse('"Buy milk tomorrow"');
+    expect(r.title).toBe("Buy milk tomorrow");
+    expect(r.dueDate).toBeNull();
+    expect(r.spans).toEqual([]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("accepts single quotes and ignores whitespace around them", () => {
+    expect(parse("'Buy milk tomorrow'").title).toBe("Buy milk tomorrow");
+    expect(parse('   "Buy milk tomorrow"   ').title).toBe("Buy milk tomorrow");
+  });
+
+  it("keeps the sigils off too, not just the dates", () => {
+    const r = parse('"Read the C# book p1 #Work"');
+    expect(r.title).toBe("Read the C# book p1 #Work");
+    expect(r.projectId).toBeNull();
+    expect(r.priority).toBeNull();
+  });
+
+  it("leaves an empty quoted line unsubmittable rather than crashing", () => {
+    // QuickAdd's canSubmit is a non-empty title, so this disables the button.
+    expect(parse('""').title).toBe("");
+  });
+
+  it("is not triggered by one quote, or by two that do not match", () => {
+    expect(parse('"').title).toBe('"');
+    expect(parse("\"Buy milk tomorrow'").title).not.toBe("Buy milk tomorrow");
+  });
+
+  it("does not swallow a quoted project name mid-sentence", () => {
+    const r = parse('#"Casa e giardino" domani');
+    expect(r.projectId).toBe(4);
+    expect(ymd(due(r))).toBe("2026-09-10");
+    expect(r.title).toBe("");
+  });
+});
