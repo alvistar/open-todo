@@ -3,10 +3,14 @@
 A genuinely good UI for [Vikunja](https://vikunja.io), built by measuring what
 Todoist's shipped interface does and reimplementing it natively.
 
-**Status:** foundation slice. A static React + Vite SPA that talks to a
-self-hosted Vikunja directly from the browser: server setup, login, and
-read-only Inbox, Today and project lists at the measured layout, kept fresh by
-polling. Creating and editing tasks is not built yet — that is the next slice.
+**Status:** foundation slice plus quick-add. A static React + Vite SPA that
+talks to a self-hosted Vikunja directly from the browser: server setup, login,
+and Inbox, Today and project lists at the measured layout, kept fresh by
+polling. Tasks can be **created** through a quick-add composer that reads dates,
+times, projects, labels, priority and recurrence out of plain English and
+Italian — `dentista domenica ore 15 #Personale p3`. Editing and completing an
+existing task are not built yet, nor are keyboard navigation, drag reorder or
+undo; those are the next slices.
 
 Start here: [`docs/HANDOVER.md`](docs/HANDOVER.md) — purpose, findings from the
 Todoist reconnaissance pass, decisions taken and still open, and legal
