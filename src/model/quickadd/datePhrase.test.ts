@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchDatePhrase, matchTimePhrase } from "./datePhrase";
+import { matchWhen } from "./datePhrase";
 
 const TZ = "Europe/Rome";
 // Wednesday 9 September 2026, 10:00 in Rome.
@@ -21,148 +21,165 @@ const time = (d: Date) =>
     hour12: false,
   }).format(d);
 
-const dateOrNull = (text: string) => matchDatePhrase(text, NOW, TZ);
+const whenOrNull = (text: string) => matchWhen(text, NOW, TZ);
 
 /** Asserts a phrase matched, so the tests read without non-null assertions. */
-const date = (text: string) => {
-  const match = dateOrNull(text);
+const when = (text: string) => {
+  const match = whenOrNull(text);
   if (!match) throw new Error(`expected a date phrase in ${JSON.stringify(text)}`);
   return match;
 };
-const timeOf = (text: string) => {
-  const match = matchTimePhrase(text);
-  if (!match) throw new Error(`expected a time phrase in ${JSON.stringify(text)}`);
-  return match;
-};
 
-describe("matchDatePhrase — relative days", () => {
+describe("matchWhen — relative days", () => {
   it("understands today and tomorrow in English and Italian", () => {
-    expect(day(date("call mum today").date)).toBe("2026-09-09");
-    expect(day(date("call mum tomorrow").date)).toBe("2026-09-10");
-    expect(day(date("chiamare mamma oggi").date)).toBe("2026-09-09");
-    expect(day(date("chiamare mamma domani").date)).toBe("2026-09-10");
+    expect(day(when("call mum today").date)).toBe("2026-09-09");
+    expect(day(when("call mum tomorrow").date)).toBe("2026-09-10");
+    expect(day(when("chiamare mamma oggi").date)).toBe("2026-09-09");
+    expect(day(when("chiamare mamma domani").date)).toBe("2026-09-10");
   });
 
-  it("understands tonight / stasera as today", () => {
-    expect(day(date("dinner tonight").date)).toBe("2026-09-09");
-    expect(day(date("cena stasera").date)).toBe("2026-09-09");
+  it("understands tonight / stasera as today, with no time of its own", () => {
+    // chrono resolves both to 22:00. The phrase names a day, not a clock time,
+    // so it stays all-day and D-map-2 supplies the marker.
+    expect(day(when("dinner tonight").date)).toBe("2026-09-09");
+    expect(when("dinner tonight").hasTime).toBe(false);
+    expect(day(when("cena stasera").date)).toBe("2026-09-09");
+    expect(when("cena stasera").hasTime).toBe(false);
   });
 
   it("reports the span it consumed so the title can drop it", () => {
-    const m = date("call mum tomorrow");
+    const m = when("call mum tomorrow");
     expect("call mum tomorrow".slice(m.start, m.end)).toBe("tomorrow");
   });
 });
 
-describe("matchDatePhrase — weekdays", () => {
+describe("matchWhen — weekdays", () => {
   it("takes the next occurrence of a weekday, never today", () => {
-    // NOW is a Wednesday.
-    expect(day(date("gym friday").date)).toBe("2026-09-11");
-    expect(day(date("gym monday").date)).toBe("2026-09-14");
-    expect(day(date("gym wednesday").date)).toBe("2026-09-16");
+    // NOW is a Wednesday. chrono resolves a bare weekday to today; a task is
+    // about the day to come, so the same-day case is pushed a week out.
+    expect(day(when("gym friday").date)).toBe("2026-09-11");
+    expect(day(when("gym monday").date)).toBe("2026-09-14");
+    expect(day(when("gym wednesday").date)).toBe("2026-09-16");
+    expect(day(when("palestra mercoledì").date)).toBe("2026-09-16");
   });
 
   it("understands Italian weekdays", () => {
-    expect(day(date("palestra venerdì").date)).toBe("2026-09-11");
-    expect(day(date("palestra lunedi").date)).toBe("2026-09-14");
+    expect(day(when("palestra venerdì").date)).toBe("2026-09-11");
+    expect(day(when("palestra lunedi").date)).toBe("2026-09-14");
   });
 
-  it("pushes a week out for next/prossimo", () => {
-    expect(day(date("gym next friday").date)).toBe("2026-09-18");
-    expect(day(date("palestra venerdì prossimo").date)).toBe("2026-09-18");
+  it("pushes a week out for next/prossimo, and only once", () => {
+    expect(day(when("gym next friday").date)).toBe("2026-09-18");
+    expect(day(when("palestra venerdì prossimo").date)).toBe("2026-09-18");
+    // Already a week out, so the same-day rule must not push it again.
+    expect(day(when("gym next wednesday").date)).toBe("2026-09-16");
   });
 });
 
-describe("matchDatePhrase — offsets", () => {
+describe("matchWhen — offsets", () => {
   it("understands in N days/weeks/months", () => {
-    expect(day(date("ping in 3 days").date)).toBe("2026-09-12");
-    expect(day(date("ping in 2 weeks").date)).toBe("2026-09-23");
-    expect(day(date("ping in 1 month").date)).toBe("2026-10-09");
+    expect(day(when("ping in 3 days").date)).toBe("2026-09-12");
+    expect(day(when("ping in 2 weeks").date)).toBe("2026-09-23");
+    expect(day(when("ping in 1 month").date)).toBe("2026-10-09");
   });
 
   it("understands tra N giorni/settimane/mesi", () => {
-    expect(day(date("ping tra 3 giorni").date)).toBe("2026-09-12");
-    expect(day(date("ping tra 2 settimane").date)).toBe("2026-09-23");
+    expect(day(when("ping tra 3 giorni").date)).toBe("2026-09-12");
+    expect(day(when("ping tra 2 settimane").date)).toBe("2026-09-23");
   });
 
   it("understands next week / next month and end of month", () => {
-    expect(day(date("review next week").date)).toBe("2026-09-16");
-    expect(day(date("review next month").date)).toBe("2026-10-09");
-    expect(day(date("invoice end of month").date)).toBe("2026-09-30");
-    expect(day(date("fattura fine mese").date)).toBe("2026-09-30");
+    expect(day(when("review next week").date)).toBe("2026-09-16");
+    expect(day(when("review next month").date)).toBe("2026-10-09");
+    // Neither chrono locale has these; they are matched before chrono runs.
+    expect(day(when("invoice end of month").date)).toBe("2026-09-30");
+    expect(day(when("fattura fine mese").date)).toBe("2026-09-30");
   });
 });
 
-describe("matchDatePhrase — explicit dates", () => {
+describe("matchWhen — explicit dates", () => {
   it("parses an ISO date", () => {
-    expect(day(date("deploy 2026-09-15").date)).toBe("2026-09-15");
+    expect(day(when("deploy 2026-09-15").date)).toBe("2026-09-15");
   });
 
   it("parses day-month names in both languages", () => {
-    expect(day(date("deploy 30 apr").date)).toBe("2027-04-30");
-    expect(day(date("deploy Apr 30").date)).toBe("2027-04-30");
-    expect(day(date("deploy 30 dic").date)).toBe("2026-12-30");
+    expect(day(when("deploy 30 apr").date)).toBe("2027-04-30");
+    expect(day(when("deploy 30 dic").date)).toBe("2026-12-30");
+  });
+
+  it("reads month-day as a date, not a year", () => {
+    // chrono's en-GB parser returns 1 April 2030 for this: it reads the "30" as
+    // a year. The Italian parser is right, and wins the tie on an equal span.
+    expect(day(when("deploy Apr 30").date)).toBe("2027-04-30");
   });
 
   it("parses d/m only when unambiguous, and reads it day-first", () => {
-    expect(day(date("deploy 15/9").date)).toBe("2026-09-15");
+    expect(day(when("deploy 15/9").date)).toBe("2026-09-15");
     // 13 cannot be a month, so it is unambiguous day-first.
-    expect(day(date("deploy 13/10").date)).toBe("2026-10-13");
+    expect(day(when("deploy 13/10").date)).toBe("2026-10-13");
   });
 
   it("rolls a past bare date into next year", () => {
     // 1 Jan already passed in 2026.
-    expect(day(date("party 1 jan").date)).toBe("2027-01-01");
+    expect(day(when("party 1 jan").date)).toBe("2027-01-01");
   });
 
   it("returns null when there is no date at all", () => {
-    expect(dateOrNull("just a plain task")).toBeNull();
+    expect(whenOrNull("just a plain task")).toBeNull();
   });
 
   it("does not treat a bare number as a date", () => {
-    expect(dateOrNull("buy 4 apples")).toBeNull();
+    expect(whenOrNull("buy 4 apples")).toBeNull();
+  });
+
+  it("refuses impossible dates rather than rolling them over", () => {
+    expect(whenOrNull("deploy 2026-13-45")).toBeNull();
+    expect(whenOrNull("deploy 2026-02-30")).toBeNull();
+    expect(whenOrNull("deploy 31/2")).toBeNull();
   });
 });
 
-describe("matchTimePhrase", () => {
-  const t = (text: string) => matchTimePhrase(text);
+describe("matchWhen — times", () => {
+  it("parses a day with a time in both languages", () => {
+    const en = when("standup tomorrow at 09:30");
+    expect(en.hasTime).toBe(true);
+    expect(day(en.date)).toBe("2026-09-10");
+    expect(time(en.date)).toBe("09:30");
 
-  it("parses at H / alle H", () => {
-    expect(t("call at 10")).toMatchObject({ hours: 10, minutes: 0 });
-    expect(t("chiamare alle 10")).toMatchObject({ hours: 10, minutes: 0 });
-  });
-
-  it("parses H:MM", () => {
-    expect(t("standup 10:30")).toMatchObject({ hours: 10, minutes: 30 });
+    const it_ = when("standup domani alle 10");
+    expect(it_.hasTime).toBe(true);
+    expect(time(it_.date)).toBe("10:00");
   });
 
   it("parses am/pm", () => {
-    expect(t("call 3pm")).toMatchObject({ hours: 15, minutes: 0 });
-    expect(t("call 12am")).toMatchObject({ hours: 0, minutes: 0 });
-    expect(t("call 12pm")).toMatchObject({ hours: 12, minutes: 0 });
+    expect(time(when("call tomorrow 3pm").date)).toBe("15:00");
+    expect(time(when("call tomorrow 12pm").date)).toBe("12:00");
   });
 
-  it("ignores impossible times", () => {
-    expect(t("code 99:99")).toBeNull();
+  it("keeps a bare clock face attached to its day", () => {
+    const m = when("standup tomorrow 10:30");
+    expect(m.hasTime).toBe(true);
+    expect(time(m.date)).toBe("10:30");
   });
 
-  it("does not read a bare number as a time", () => {
-    expect(t("buy 4 apples")).toBeNull();
-  });
-});
-
-describe("date and time combine", () => {
-  it("applies a parsed time to a parsed day", () => {
-    const d = date("standup tomorrow at 09:30");
-    const tm = timeOf("standup tomorrow at 09:30");
-    const combined = tm.apply(d.date, TZ);
-    expect(day(combined)).toBe("2026-09-10");
-    expect(time(combined)).toBe("09:30");
+  it("is not a due date when the text carries only a time", () => {
+    // "a time on its own is not a due date" - the text stays in the title.
+    expect(whenOrNull("call at 10")).toBeNull();
+    expect(whenOrNull("chiamare alle 10")).toBeNull();
+    expect(whenOrNull("standup 10:30")).toBeNull();
   });
 
   it("a day with no time is left at midnight for the caller to fill in", () => {
-    const d = date("standup tomorrow");
-    expect(time(d.date)).toBe("00:00");
-    expect(d.hasTime).toBe(false);
+    const m = when("standup tomorrow");
+    expect(time(m.date)).toBe("00:00");
+    expect(m.hasTime).toBe(false);
+  });
+
+  it("does not invent a clock time from a stray number", () => {
+    // chrono reads "13 15/9" as 15 September at 13:00. A clock time is only
+    // taken when the text marks one, so this stays all-day.
+    const m = when("x 45/13 15/9");
+    expect(m.hasTime).toBe(false);
+    expect(time(m.date)).toBe("00:00");
   });
 });

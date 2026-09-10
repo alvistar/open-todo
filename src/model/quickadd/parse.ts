@@ -1,6 +1,6 @@
 import { DEFAULT_ALL_DAY_TIME } from "../dates";
 import { type Priority, priorityToVikunja } from "../priority";
-import { matchDatePhrase, matchTimePhrase, zonedDate } from "./datePhrase";
+import { matchWhen, zonedDate } from "./datePhrase";
 import { matchRecurrence } from "./recurrence";
 
 /*
@@ -90,6 +90,37 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
 
   const consume = (start: number, end: number, kind: SpanKind) => {
     spans.push({ start, end, kind, text: input.slice(start, end) });
+    rest = blank(rest, start, end);
+  };
+
+  /*
+   * Consumes a range that may already contain consumed text. chrono reads
+   * "domani      alle 10" as one phrase even when a sigil between them has been
+   * blanked, so its span can straddle a "#Work" that is already a span of its
+   * own. Overlapping spans corrupt the title, which is rebuilt by cutting every
+   * span out of the input. Emitting one span per surviving fragment keeps them
+   * disjoint and highlights only the words the user actually typed.
+   */
+  const consumeSurviving = (start: number, end: number, kind: SpanKind) => {
+    // A position that is a space in `rest` but not in `input` was blanked by an
+    // earlier match. Only those break the range; the phrase's own spaces do not,
+    // or "alle 10" would highlight as two separate words.
+    const blanked = (i: number) => rest[i] === " " && input[i] !== " ";
+    const push = (from: number, to: number) => {
+      let a = from;
+      let b = to;
+      while (a < b && input[a] === " ") a += 1;
+      while (b > a && input[b - 1] === " ") b -= 1;
+      if (a < b) spans.push({ start: a, end: b, kind, text: input.slice(a, b) });
+    };
+
+    let from = start;
+    for (let i = start; i <= end; i += 1) {
+      if (i === end || blanked(i)) {
+        push(from, i);
+        from = i + 1;
+      }
+    }
     rest = blank(rest, start, end);
   };
 
@@ -192,16 +223,14 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
     }
   }
 
-  // Date, then time. A time on its own is not a due date.
+  // Date and time. A time on its own is not a due date.
   let dueDate: Date | null = null;
   let allDay = false;
-  const dateMatch = matchDatePhrase(rest, context.now, context.timeZone);
-  if (dateMatch) {
-    consume(dateMatch.start, dateMatch.end, "date");
-    const timeMatch = matchTimePhrase(rest);
-    if (timeMatch) {
-      consume(timeMatch.start, timeMatch.end, "time");
-      dueDate = timeMatch.apply(dateMatch.date, context.timeZone);
+  const when = matchWhen(rest, context.now, context.timeZone);
+  if (when) {
+    consumeSurviving(when.start, when.end, "date");
+    if (when.hasTime) {
+      dueDate = when.date;
       allDay = false;
     } else {
       // D-map-2: a date with no time is stored at the all-day marker.
@@ -211,7 +240,7 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
-      }).formatToParts(dateMatch.date);
+      }).formatToParts(when.date);
       const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
       dueDate = zonedDate(
         get("year"),

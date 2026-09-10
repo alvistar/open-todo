@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Quick-add dates and times are parsed by `chrono-node`** (D-parser). The
+  hand-written date matchers are gone; recurrence and the sigils are unchanged.
+  Costs 16.1 kB gzip and brings both an Italian and an English locale, proper
+  refusal of impossible dates, and `tomorrow at 10:30` read as one phrase.
+  Guarded against three ways chrono is confidently wrong — `Apr 30` read as the
+  year 2030, a bare weekday resolved to today, and a stray number read as a
+  clock time. Deliberate change: `tonight` / `stasera` now set the day only.
+
 ### Added
 - **Foundation slice**: a static React + Vite SPA that talks to a self-hosted
   Vikunja directly from the browser, with no proxy.

@@ -286,6 +286,49 @@ covers the three expensive parts — drag reorder with persisted order,
 virtualized lists, command palette. SvelteKit was the honest runner-up and was
 not chosen only because of those three parts.
 
+### D-parser — Natural-language date parsing — **DECIDED 2026-09-10: chrono-node for the date/time layer only**
+
+The quick-add parser was hand-written. The question was whether a library or a
+small language model should replace it. Researched 2026-09-10:
+
+- **No library does the whole job.** Nothing on npm parses Todoist-style
+  quick-add. The general NLP packages classify intent, which is a different and
+  larger problem.
+- **`rrule` is unsafe for us.** `RRule.fromText` reads recurrence in English but
+  does not fail on Italian — it *silently* returns `FREQ=YEARLY;INTERVAL=1` for
+  `ogni giorno`, `ogni 2 settimane` and `ogni lunedì`. A wrong repeat would be
+  written to Vikunja with nothing shown to the user. **Rejected.**
+- **A browser LLM is disproportionate.** Sub-1 GB quantised models over WebGPU
+  (~83% browser coverage) to interpret a 40-character phrase, in a static SPA
+  that must keep working offline of any third party. An API call would break D5
+  (no proxy, no telemetry). **Rejected.**
+- **`chrono-node` is worth taking, for dates and times only.** It has both an
+  `it` and an `en` locale, refuses impossible dates (`2026-13-45`, `31/2`,
+  `29 feb 2027`), and absorbs the preposition in `tomorrow at 10:30`.
+
+**Decision: `chrono-node` replaces the hand-written date/time matchers.
+Recurrence and the sigils stay ours.** The research did not weaken that split,
+it confirmed it: the two most serious defects the review found — `@monday`
+parsed as a date, `every 2nd tuesday` scheduled as one Tuesday — are
+**orchestration**, not date parsing. chrono reproduces both when called naively.
+What prevents them is the masking order in `parse.ts`, which no library
+provides.
+
+Guards added around chrono, each with a test (`src/model/quickadd/datePhrase.ts`):
+
+| Guard | Why |
+|---|---|
+| Both locales run; earliest match wins, then longest, then Italian | chrono's `en-GB` parser reads `Apr 30` as **1 April 2030** — a confident four-year error. The Italian parser is right, and is day-first, which §5 requires for `15/9`. |
+| A bare weekday resolving to today is pushed a week | chrono returns today for `gym wednesday` typed on a Wednesday; a task means the day to come. `next wednesday` is already a week out and is not pushed twice. |
+| A clock time counts only with a marker (`:`, `3pm`, `at`/`alle`/`ore`) | chrono reads the stray `13` in `x 45/13 15/9` as 13:00 — a time the user never typed. |
+| `end of month` / `fine mese` matched before chrono | Neither locale has them, and §5 lists them. Done here rather than as a chrono custom parser because a custom parser sees only an instant: at 00:30 in Rome that instant is still the previous month in UTC. |
+| A day+month chrono declines is retried with each following year | `29 feb` is not a date in 2026 or 2027, so chrono returns nothing. The retry only succeeds on a real date, so `30 feb` stays refused. |
+
+Cost: **+16.1 kB gzip** (86.2 → 102.3 kB), measured by building both ways.
+
+Behaviour that changed, deliberately: `tonight`/`stasera` stay all-day rather
+than 22:00, because the phrase names a day and D-map-2 owns the time.
+
 ---
 
 ## 5. Data model gap: Vikunja ↔ Todoist

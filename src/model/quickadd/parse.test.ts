@@ -284,3 +284,33 @@ describe("parseQuickAdd — the title reads cleanly", () => {
     expect(parse("cena domani alle 20:30").title).toBe("cena");
   });
 });
+
+describe("parseQuickAdd — a sigil between the date and the time", () => {
+  /*
+   * chrono reads "domani <blanked> alle 10" as one phrase, so its span covers
+   * the "#Work" that was already consumed as a project. Overlapping spans cut
+   * the title twice and corrupt it, so the date span is split around whatever
+   * has already been taken.
+   */
+  it("keeps the date and the time together across a consumed project", () => {
+    const r = parse("call mum domani #Work alle 10");
+    expect(r.title).toBe("call mum");
+    expect(r.projectId).toBe(3);
+    expect(ymd(due(r))).toBe("2026-09-10");
+    expect(hhmm(due(r))).toBe("10:00");
+  });
+
+  it("leaves the spans disjoint and inside the input", () => {
+    const input = "call mum domani #Work alle 10";
+    const r = parse(input);
+    const sorted = [...r.spans].sort((a, b) => a.start - b.start);
+    for (const [i, span] of sorted.entries()) {
+      expect(span.text).toBe(input.slice(span.start, span.end));
+      expect(span.start).toBeLessThan(span.end);
+      const previous = sorted[i - 1];
+      if (previous) expect(span.start).toBeGreaterThanOrEqual(previous.end);
+    }
+    // Every highlighted fragment is real text, never the blanked gap.
+    expect(sorted.map((s) => s.text)).toEqual(["domani", "#Work", "alle 10"]);
+  });
+});

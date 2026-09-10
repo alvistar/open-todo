@@ -120,6 +120,16 @@ text written for Vikunja's UI still parses.
 | Recurrence, **rejected** | `every mon, wed`, `every 2nd tuesday`, `every last day of month`, `every workday at 9 starting …` | Shown as "not supported by Vikunja"; text stays in the title. |
 | Reminder | `!` alone (Todoist's reminder sigil) | not in v1; chip in the composer instead |
 
+**Implementation (D-parser, 2026-09-10).** The Date and Time rows are parsed by
+`chrono-node` (`it` and `en` locales), wrapped by the guards listed in
+HANDOVER D-parser. The Recurrence rows and every sigil stay hand-written:
+`rrule` misreads Italian recurrence as yearly without reporting a failure, and
+no library supplies the masking order that keeps `@monday` from becoming a date.
+
+Two grammar notes follow from that wrapper: a bare weekday always means the next
+occurrence, never today; and `tonight` / `stasera` set the day only, leaving the
+time to the all-day marker in D-map-2.
+
 ## 6. Verified against `pinguino` (v2.5.0, 2026-09-09) and what stays open
 
 Route note: the task listing is **`GET /tasks`** in v2.5.0 (`/tasks/all` no
