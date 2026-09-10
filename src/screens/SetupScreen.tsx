@@ -99,6 +99,11 @@ function LoginStep({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const canSubmit =
+    mode === "password"
+      ? username.trim() !== "" && password !== ""
+      : apiToken.trim() !== "";
+
   // On a reload the URL is already stored, so re-probe to show the version.
   useEffect(() => {
     if (version) return;
@@ -242,7 +247,16 @@ function LoginStep({
         </label>
       )}
 
-      <button className={styles.primary} type="submit" disabled={busy}>
+      {/*
+       * Same guard the server step uses. Without it an empty form submitted,
+       * which cost a round-trip and came back with Vikunja's own wording -
+       * "missing, malformed, expired or otherwise invalid token provided" -
+       * for a field the user had simply not filled in yet.
+       * The password is checked untrimmed: leading and trailing spaces are
+       * part of a password, so trimming to test emptiness would reject a
+       * legitimate one made only of spaces.
+       */}
+      <button className={styles.primary} type="submit" disabled={busy || !canSubmit}>
         {busy ? "Signing in…" : "Log in"}
       </button>
 
