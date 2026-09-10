@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **MIT licence** — `LICENSE` at the repo root and a `license` field in
-  `package.json`. The repo had none, so nothing in it was legally reusable.
-
 ### Fixed
 - `#project` no longer matches inside another word: `close issue#3` stays a
   plain title instead of resolving a project. `#` was the only sigil without
@@ -24,8 +20,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Guarded against three ways chrono is confidently wrong — `Apr 30` read as the
   year 2030, a bare weekday resolved to today, and a stray number read as a
   clock time. Deliberate change: `tonight` / `stasera` now set the day only.
+- **The quick-add date grammar is enforced, not just documented** (D-vocab).
+  `docs/data-model-mapping.md` §5 always described the date vocabulary as a
+  closed list; adopting chrono quietly made that a claim nobody was checking,
+  because chrono carries a far wider vocabulary and cannot be configured per
+  word. Since the parser removes whatever matched from the title, the user lost
+  a word *and* gained a date they never asked for: `I sat down with the team`
+  became "I down with the team" due Saturday, `Sep 15` resolved to 1 September
+  **2015**. §5 is now a row-per-shape bilingual table and the code is a
+  transcription of it. Anything outside it keeps its text in the title, sets no
+  date, and says why in the composer — the treatment rejected recurrence has
+  had since the parser was written. `scripts/quickadd-corpus-diff.mjs` measures
+  the change: 35 of 98 phrases, none of them a §5 row.
+- **Deliberately removed**: 3-letter weekdays (`sat`, `mon`, `wed`, `lun`,
+  `ven`, `gio`, `sab`, `dom` — each also an ordinary word in one of the two
+  languages, and the biggest real cost here), `this Wednesday` (which set the
+  *wrong* date, a week out), `weekend` / `this weekend` / `fine settimana`,
+  `yesterday` / `ieri` / `last friday`, `next year`, `in N hours` / `tra N ore`
+  (which the two locales did not even agree on), bare month names, and ranges
+  like `Friday to Monday` (which chrono collapses to its start). chrono's
+  instant idioms — `now`, `a sec`, `in a minute` — are dropped silently, since
+  warning on them would train the user to ignore the warning that protects
+  `sat`.
+- **A leap day now resolves wherever it sits in the line.** The retry appended
+  the year to the whole string and required the match to reach the end of it,
+  so `party 29 feb` worked while `29 feb party` and `party 29 feb please`
+  silently produced nothing.
+- **`chrono-node` is pinned exactly.** Which words become a due date is
+  application behaviour here, and a caret range let a minor upgrade change it.
 
 ### Added
+- **MIT licence** — `LICENSE` at the repo root and a `license` field in
+  `package.json`. The repo had none, so nothing in it was legally reusable.
+- **Quoting the whole quick-add line turns the grammar off**: `"Buy milk
+  tomorrow"` creates a task with exactly that name and no due date. No amount
+  of grammar can tell that task from the same words meaning a date, so the user
+  needs a way to say which they mean. Vikunja's behaviour, reimplemented — it
+  is AGPL and open-todo is MIT, so nothing was copied. Requiring the *whole*
+  line keeps it clear of `#"Casa e giardino"`.
 - **Foundation slice**: a static React + Vite SPA that talks to a self-hosted
   Vikunja directly from the browser, with no proxy.
   - Server setup and login: probes `/info` and shows the server version, then

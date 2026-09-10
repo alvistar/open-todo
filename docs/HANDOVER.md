@@ -2,7 +2,7 @@
 
 **Created:** 2026-09-09
 **Status:** foundation slice built (read-only app). All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-09. Foundation slice implemented and committed (§7 step 6 done): scaffold, theme, API client, login, Inbox/Today/project views, PollingSource, docs. Next: D4 slice 1, quick-add.
+**Last session:** 2026-09-10. Quick-add closed against §5 (D-vocab): the date grammar is now enforced rather than merely documented, out-of-grammar phrases are reported instead of silently reinterpreted, and a quoted line opts out entirely. Next: keyboard navigation (D4 step 2).
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -329,6 +329,81 @@ Cost: **+16.1 kB gzip** (86.2 → 102.3 kB), measured by building both ways.
 Behaviour that changed, deliberately: `tonight`/`stasera` stay all-day rather
 than 22:00, because the phrase names a day and D-map-2 owns the time.
 
+### D-vocab — Closing the grammar chrono opened — **DECIDED 2026-09-10: §5 is an acceptor; chrono resolves, §5 admits**
+
+D-parser adopted chrono for dates and times. What went unnoticed is that §5
+described the date vocabulary as a **closed table**, which was true by
+construction while the matchers were hand-written and became a claim nobody was
+checking the moment chrono arrived. chrono's vocabulary is far wider and cannot
+be configured per word, and `parse.ts` removes whatever the date layer matched
+from the title — so the user lost a word *and* gained a due date. Measured on
+`2ab17ce`, reference 10 September 2026, Europe/Rome:
+
+| typed | title became | due |
+|---|---|---|
+| `I sat down with the team` | `I down with the team` | Sat 12 Sep |
+| `il mar mosso` | `il mosso` | Tue 15 Sep |
+| `March report` | `report` | 1 Mar 2027 |
+| `Friday to Monday` | *(empty)* | Fri 11 Sep |
+| `feb 29` | *(empty)* | 1 Feb **2029** |
+| `Sep 15` | *(empty)* | 1 Sep **2015** |
+
+The last two are the ones worth remembering: chrono reads a trailing number
+after a month name as a **year**, with the day merely implied. `Apr 30` escapes
+only because the Italian parser also matches it and wins the tie.
+
+**Decision: §5 becomes an acceptor.** chrono keeps the *resolution* — DST, leap
+years, roll-forward, refusal of impossible dates — which is where every subtle
+bug lived and which was the valuable part of the deletion. What comes back is
+only the *acceptor*: an anchored transcription of the §5.1 table, applied to
+every candidate before the earliest-wins sort, plus two semantic rules (a month
+name needs a certain `day`; nothing may resolve before today). Out of grammar
+means the text stays in the title, no date is invented, and the composer says
+why — the treatment rejected recurrence has had since the parser was written.
+
+`scripts/quickadd-corpus-diff.mjs` measures any future amendment the same way it
+measured this one: 35 of 98 phrases changed, none of them a §5 row. The full
+excluded list, with the reason for each, is `docs/data-model-mapping.md` §5.1.
+
+Three findings worth not re-deriving, each reproduced against the code:
+
+- **A length or digit heuristic does not work.** A digit anywhere in the span
+  legitimises the abbreviation beside it, so `I sat at 10 with the team` still
+  becomes Saturday 10:00. A stoplist of words is the same idea in a new coat.
+- **The "instant idiom" predicate must not test `isCertain("month")`.** chrono
+  marks day, month *and* year certain on `now`, `a sec`, `a second` and `in a
+  minute`, so that clause would stop the predicate firing at all. What actually
+  separates them from `sat` is: certain hour, no weekday, no digit.
+- **De-duplicating rejected spans by exact offsets is not enough.** Both locales
+  parse every line, so `this weekend` is `[5,12)` in Italian and `[0,14)` in
+  English — two warnings for one phrase — and `Apr 30` is *accepted* by one
+  locale and *rejected* by the other at the same offsets, which would warn about
+  a phrase that correctly set a date. An accepted span silences what it overlaps.
+
+Investigated and rejected on the way, do not reopen: per-word constraints inside
+chrono (removing `ITWeekdayParser` also removes `martedì`; filtering by
+`constructor.name` breaks per version); browser NLP (`it-compromise` 0.3.0 tags
+`mar` as `Date|Month`); Python NLP in the browser (Pyodide 0.28 ships 340
+packages and has neither `spacy` nor its Cython chain — `thinc`, `blis`,
+`cymem`, `murmurhash` — nor `stanza`/`torch`; the runtime alone is 11.5 MB
+against a 102 kB app).
+
+**If open-todo ever grows a backend**, the technique to reach for is `obl` /
+`advmod` on a UD dependency tree (Stanza), **not** an LLM — spaCy attaches
+`colleghi` as `obl` in "gio con i colleghi", so a naive rule fires on it and the
+tree is what tells them apart. Even then it belongs in a pre-save check, never
+in the per-keystroke path: Stanza measured 74 ms mean / 96 ms p95 against this
+parser's 0.04–0.32 ms. **Caveat on that comparison:** the latency figures are
+solid (200–500 samples), but the *quality* comparison rests on six hand-picked
+sentences. It is a probe, not an evaluation, and nothing should be decided on it
+without a real corpus.
+
+**Also decided here:** wrapping the whole quick-add line in matching quotes
+turns every rule off and takes the rest literally. Nothing can distinguish a
+task genuinely called "Buy milk tomorrow" from the same words meaning a date, so
+the user needs a way to say which. This is Vikunja's *behaviour*, reimplemented —
+Vikunja is AGPL and open-todo is MIT (§6), so no code was copied.
+
 ---
 
 ## 5. Data model gap: Vikunja ↔ Todoist
@@ -417,6 +492,9 @@ public HTTP API only, which carries no such obligation.
    geometry, task creation with labels and recurrence, confirmation on
    discard. `!1`-`!5` is taken literally rather than through D-map-1, because
    it is Vikunja's own syntax and forcing it through would write 4 for `!5`.
+   Dates and times moved to `chrono-node` on 2026-09-10 (D-parser), and the
+   §5 grammar was closed against it the same day (D-vocab) — both entries are
+   in §4, and §5.1 of the mapping doc is the enforced table.
    Next: keyboard navigation, then drag reorder, then undo.
 8. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
    WebSocket events (D6). Start from `pkg/websocket/listener.go` and
