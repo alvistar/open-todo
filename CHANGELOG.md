@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instant idioms — `now`, `a sec`, `in a minute` — are dropped silently, since
   warning on them would train the user to ignore the warning that protects
   `sat`.
+- **`ore 15` now sets a time, like `alle 15`.** chrono's Italian parser knows
+  `alle` and not `ore`, so "dentista domenica ore 15" came back as Sunday with
+  no time and left "ore 15" in the task name. `ore` is rewritten before parsing,
+  but only when a number follows it — in "tra 2 ore" the same word is the unit
+  "hours", which §5 excludes and which must keep being recognised so its warning
+  still explains itself. Reported from real use.
 - **A leap day now resolves wherever it sits in the line.** The retry appended
   the year to the whole string and required the match to reach the end of it,
   so `party 29 feb` worked while `29 feb party` and `party 29 feb please`

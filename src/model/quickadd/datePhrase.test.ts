@@ -393,3 +393,52 @@ describe("matchWhen — §5.1 rows that are deliberately excluded", () => {
     expect(whenOrNull("next year")).toBeNull();
   });
 });
+
+describe('matchWhen — "ore" is a time preposition, like "alle"', () => {
+  it("reads the time chrono's Italian parser does not know", () => {
+    // Reported from real use: "dentista domenica ore 15" took only the day.
+    // chrono knows "alle" and not "ore", so the phrase came back as Sunday
+    // all-day with "ore 15" left sitting in the task name.
+    expect(day(when("dentista domenica ore 15").date)).toBe("2026-09-13");
+    expect(time(when("dentista domenica ore 15").date)).toBe("15:00");
+    expect(when("dentista domenica ore 15").hasTime).toBe(true);
+  });
+
+  it("matches what alle does, on every day shape", () => {
+    const pairs: [string, string][] = [
+      ["domenica ore 15", "domenica alle 15"],
+      ["domani ore 15", "domani alle 15"],
+      ["venerdì ore 15", "venerdì alle 15"],
+      ["15 settembre ore 15", "15 settembre alle 15"],
+      ["domenica ore 15:00", "domenica alle 15:00"],
+    ];
+    for (const [a, b] of pairs) {
+      expect(time(when(a).date)).toBe(time(when(b).date));
+      expect(day(when(a).date)).toBe(day(when(b).date));
+    }
+  });
+
+  it("reads a single-digit hour", () => {
+    expect(time(when("domani ore 9").date)).toBe("09:00");
+  });
+
+  it("keeps the span on the user's words, not on the rewritten probe", () => {
+    // "alle" is a character longer than "ore", so every offset after the
+    // rewrite shifts. The span must still name what the user typed.
+    const m = when("dentista domenica ore 15");
+    expect(m.text).toBe("domenica ore 15");
+    expect("dentista domenica ore 15".slice(m.start, m.end)).toBe("domenica ore 15");
+  });
+
+  it("leaves ore alone when it is the unit, not the preposition", () => {
+    // "tra 2 ore" is an offset in hours, which §5 excludes - and it must keep
+    // being RECOGNISED so the warning still explains itself.
+    expect(whenOrNull("chiama tra 2 ore")).toBeNull();
+    expect(turnedDown("chiama tra 2 ore").text).toBe("tra 2 ore");
+    expect(whenOrNull("ore di lavoro")).toBeNull();
+  });
+
+  it("still refuses an hour that does not exist", () => {
+    expect(when("dentista domenica ore 25").hasTime).toBe(false);
+  });
+});

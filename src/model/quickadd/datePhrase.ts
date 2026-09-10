@@ -151,6 +151,50 @@ const END_OF_MONTH = /(?:\bend\s+of\s+(?:the\s+)?month\b|\bfine\s+mese\b)/i;
  * "3pm" has no word boundary before "pm", so the meridiem is anchored to its
  * digits instead.
  */
+/*
+ * chrono's Italian parser knows "alle" and does NOT know "ore", so "domenica
+ * ore 15" came back as Sunday with no time and left "ore 15" sitting in the
+ * task name. "ore 15" is ordinary Italian for an appointment - it is how the
+ * owner writes them - and §5 lists it, so it is rewritten to the word chrono
+ * does know before parsing.
+ *
+ * Only when a number follows: in "tra 2 ore" the same word is the unit
+ * "hours", and rewriting that would stop the phrase being recognised at all,
+ * which would silently drop the warning §5 owes it.
+ *
+ * "alle" is one character longer than "ore", so every offset after a rewrite
+ * shifts. `ProbeText` carries the map back; nothing downstream may use
+ * chrono's own indices.
+ */
+const ORE_AS_PREPOSITION = /\bore(?=\s+\d)/gi;
+
+interface ProbeText {
+  probe: string;
+  /** Maps an index in `probe` back to its index in the original text. */
+  toOriginal: (index: number) => number;
+}
+
+function rewriteOre(text: string): ProbeText {
+  const shifts: number[] = [];
+  let probe = "";
+  let last = 0;
+  ORE_AS_PREPOSITION.lastIndex = 0;
+  let m = ORE_AS_PREPOSITION.exec(text);
+  while (m) {
+    probe += text.slice(last, m.index) + "alle";
+    // Where the +1 lands in probe coordinates.
+    shifts.push(probe.length);
+    last = m.index + m[0].length;
+    m = ORE_AS_PREPOSITION.exec(text);
+  }
+  if (shifts.length === 0) return { probe: text, toOriginal: (i) => i };
+  probe += text.slice(last);
+  return {
+    probe,
+    toOriginal: (index) => index - shifts.filter((at) => at <= index).length,
+  };
+}
+
 const TIME_MARKER = /:|\d\s*(?:am|pm)\b|\b(?:at|alle|ore)\b/i;
 
 /*
@@ -320,8 +364,14 @@ const DATE_COMPONENTS = ["day", "month", "year", "weekday"] as const;
 interface Candidate {
   name: "it" | "en";
   result: ParsedResult;
-  /** Overrides the span end when the text was probed with an added year. */
-  spanEnd?: number;
+  /**
+   * The span in the USER's text. chrono may have read a probe string instead -
+   * "ore" rewritten to "alle", or a year appended - so `result.index` and
+   * `result.text` are in probe coordinates and must never be used for the span,
+   * for the §5 shape check, or for the time-marker test.
+   */
+  start: number;
+  end: number;
 }
 
 /**
@@ -348,10 +398,14 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
   }
 
   const reference = { instant: now, timezone: timeZone };
+  const { probe, toOriginal } = rewriteOre(text);
   const candidates: Candidate[] = PARSERS.flatMap(({ name, chrono: parser }) =>
-    parser
-      .parse(text, reference, { forwardDate: true })
-      .map((result) => ({ name, result })),
+    parser.parse(probe, reference, { forwardDate: true }).map((result) => ({
+      name,
+      result,
+      start: toOriginal(result.index),
+      end: toOriginal(result.index + result.text.length),
+    })),
   ).filter(({ result }) =>
     // A time on its own is not a due date: "call at 10" leaves the text in the
     // title, exactly as it did before chrono. `isCertain` is true only for the
@@ -362,23 +416,24 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
   const admissible: Candidate[] = [];
   const turnedDown: RejectedSpan[] = [];
   for (const candidate of candidates) {
-    const { result } = candidate;
-    if (isAdmissible(result, result.text, today, timeZone)) {
+    const { result, start, end } = candidate;
+    // Always the user's own words, never chrono's view of the probe.
+    const spanText = text.slice(start, end);
+    if (isAdmissible(result, spanText, today, timeZone)) {
       admissible.push(candidate);
       continue;
     }
     turnedDown.push({
-      start: result.index,
-      end: result.index + result.text.length,
-      text: result.text,
-      silent: isInstantIdiom(result, result.text),
+      start,
+      end,
+      text: spanText,
+      silent: isInstantIdiom(result, spanText),
     });
   }
 
   admissible.sort((a, b) => {
-    if (a.result.index !== b.result.index) return a.result.index - b.result.index;
-    if (a.result.text.length !== b.result.text.length)
-      return b.result.text.length - a.result.text.length;
+    if (a.start !== b.start) return a.start - b.start;
+    if (a.end - a.start !== b.end - b.start) return b.end - b.start - (a.end - a.start);
     return PREFERENCE[a.name] - PREFERENCE[b.name];
   });
 
@@ -393,10 +448,7 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
       ? retryWithExplicitYear(text, today.year, reference, today, timeZone)
       : null);
 
-  const accepted = admissible.map(({ result }) => ({
-    start: result.index,
-    end: result.index + result.text.length,
-  }));
+  const accepted = admissible.map(({ start, end }) => ({ start, end }));
   const rejected = collapse(turnedDown, accepted);
 
   if (!best) return { when: null, rejected };
@@ -426,7 +478,10 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
    * 15 September at 13:00 - a time the user never typed. A clock time counts
    * only with a marker, which is the rule the hand-written matcher used.
    */
-  const hasTime = result.start.isCertain("hour") && TIME_MARKER.test(result.text);
+  // Tested against the user's text: the probe may have rewritten "ore" away,
+  // and it is the word the user typed that decides whether they named a time.
+  const hasTime =
+    result.start.isCertain("hour") && TIME_MARKER.test(text.slice(best.start, best.end));
 
   const parts = partsIn(instant, timeZone);
   const date = hasTime
@@ -440,15 +495,13 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
       )
     : midnight(parts.year, parts.month, parts.day, timeZone);
 
-  const end = best.spanEnd ?? result.index + result.text.length;
-
   return {
     when: {
       date,
       hasTime,
-      start: result.index,
-      end,
-      text: text.slice(result.index, end),
+      start: best.start,
+      end: best.end,
+      text: text.slice(best.start, best.end),
     },
     rejected,
   };
@@ -491,7 +544,9 @@ function retryWithExplicitYear(
         if (!isAdmissible(result, text.slice(result.index, end), today, timeZone)) {
           continue;
         }
-        return { name, result, spanEnd: end };
+        // The probe only inserts text AFTER the window, so an index inside it
+        // already means the same position in the user's text.
+        return { name, result, start: result.index, end };
       }
     }
   }

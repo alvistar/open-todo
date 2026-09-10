@@ -416,3 +416,17 @@ describe("parseQuickAdd — quoting the whole line turns the grammar off", () =>
     expect(r.title).toBe("");
   });
 });
+
+describe('parseQuickAdd — "ore" alongside the sigils', () => {
+  it("pulls the day, the time, the project and the priority out of one line", () => {
+    // The offset map for the "ore" rewrite has to survive sigil masking too.
+    const r = parse("dentista domenica ore 15 #Work p1");
+    expect(r.title).toBe("dentista");
+    expect(ymd(due(r))).toBe("2026-09-13");
+    expect(hhmm(due(r))).toBe("15:00");
+    expect(r.allDay).toBe(false);
+    expect(r.projectId).toBe(3);
+    expect(r.priority).toBe(4);
+    expect(r.warnings).toEqual([]);
+  });
+});
