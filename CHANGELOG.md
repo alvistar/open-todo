@@ -56,17 +56,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning at all. The repeat is now dropped with the date, and the every-word
   returns to the title.
 
-  Four limitations are left open and pinned as F7 to F10 in
-  `known-defects.test.ts`, each one a widened pattern matching ordinary prose
-  and each a §5 decision rather than a repair. Italian writes decimals with a
-  comma, so `corri ogni 1,5 km` warns about a repeat nobody wrote. A repeat
-  adverb is read anywhere in the line, so `disdire il servizio pagato
-  mensilmente` becomes a monthly task — English has behaved this way since
-  before the language packs. A `starting` clause need not start a date, so
-  `leggere ogni giorno a partire dalla prima pagina` loses a daily repeat that
-  used to work. And a month abbreviation is also an ordinary word: `ogni 3 set`
-  schedules 3 September, the same tension as `mar` that §5 already settled by
-  excluding 3-letter weekdays while keeping 3-letter months.
+  A `starting` clause must now name a date, so `leggere ogni giorno a partire
+  dalla prima pagina` keeps the daily repeat it always deserved, and
+  `review every chapter starting from the second` is left alone — an English
+  hole that predates the language packs.
+
+  Four limitations are left open and pinned as F7, F8, F10 and F11 in
+  `known-defects.test.ts`, each one a pattern matching ordinary prose and each a
+  §5 decision rather than a repair. Italian writes decimals with a comma, so
+  `corri ogni 1,5 km` warns about a repeat nobody wrote. A repeat adverb is read
+  anywhere in the line, so `disdire il servizio pagato mensilmente` becomes a
+  monthly task — English has behaved this way since before the language packs. A
+  month abbreviation is also an ordinary word: `preparare 3 set di documenti`
+  schedules 3 September and loses two words from the title. And chrono offers
+  `the day` inside `the day-care visit`, which §5 refuses and then explains.
+
+- **Each language pack carries its counter-examples, and they are enforced.**
+  `negativeCorpus` is text §5 refuses out loud; `inertCorpus` is ordinary prose
+  the parser must not react to at all. Every entry runs through the whole
+  registry and the whole parser, both layers. The second list is new: the
+  recurrence layer had no counter-examples of any kind, which is how a set of
+  pattern widenings gated on 4325 corpus records still shipped false positives
+  on ordinary sentences. A gate proves what did not change; only
+  counter-examples prove what a new rule does not eat.
 
 - `#project` no longer matches inside another word: `close issue#3` stays a
   plain title instead of resolving a project. `#` was the only sigil without

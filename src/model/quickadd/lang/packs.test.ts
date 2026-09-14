@@ -6,6 +6,7 @@ import {
   DATE_GRAMMAR,
   RECURRENCE_GRAMMAR,
 } from "../grammar";
+import { parseQuickAdd, type QuickAddContext } from "../parse";
 import { matchRecurrence } from "../recurrence";
 import {
   MONTH_ANY,
@@ -20,6 +21,16 @@ import type { LanguagePack } from "./pack";
 
 const TZ = "Europe/Rome";
 const NOW = new Date("2026-09-09T08:00:00Z");
+
+/** For the counter-examples, which go through the whole parser, not one layer. */
+const CTX = (): QuickAddContext => ({
+  now: NOW,
+  timeZone: TZ,
+  defaultDueTime: null,
+  defaultProjectId: 1,
+  projects: [{ id: 1, title: "Inbox" }],
+  labels: [],
+});
 
 /*
  * The extraction gate.
@@ -126,24 +137,60 @@ describe("the pack decisions that look like omissions", () => {
   it("every pack carries counter-examples", () => {
     for (const pack of ACTIVE_PACKS) {
       expect(pack.negativeCorpus.length, pack.code).toBeGreaterThan(0);
+      expect(pack.inertCorpus.length, pack.code).toBeGreaterThan(0);
     }
   });
 });
 
 /*
  * Every pack's counter-examples, run through the WHOLE registry rather than
- * through their own language.
+ * through their own language, and through BOTH layers.
  *
  * This is the test that makes adding a language file safe. The §5 gate is
  * language-blind: a new pack's words are admitted for all text, so the risk is
  * never what the new language does to its own phrases - it is what it does to
  * every other language's. Reading one pack in isolation cannot show that.
+ *
+ * IT USED TO CHECK THE DATE LAYER ONLY, and that is how nine recurrence
+ * regressions shipped in one afternoon. Six fixes each widened a recurrence
+ * pattern; each widening was gated on a zero-diff run over 4325 corpus records
+ * and each passed, because that corpus is a DATE corpus with almost no ordinary
+ * prose carrying a recurrence word. An adversarial pass found what the gate
+ * could not: a gate proves what did NOT change, never what a new rule now eats.
+ *
+ * So: no date, no repeat, and no warning either. A warning on ordinary prose is
+ * the mild end of the same failure, and §5.1 already argues that over-warning
+ * trains the user to ignore the warnings that protect "sat" and "mar".
  */
-describe("no pack puts a date on another pack's ordinary words", () => {
+describe("no pack acts on another pack's ordinary words", () => {
   for (const pack of ACTIVE_PACKS) {
     for (const phrase of pack.negativeCorpus) {
       it(`${pack.code}: ${JSON.stringify(phrase)} is not a date`, () => {
-        expect(matchWhen(phrase, NOW, TZ).when).toBeNull();
+        expect(matchWhen(phrase, NOW, TZ).when, "date").toBeNull();
+        // The layer this list never covered, and the one that broke.
+        expect(matchRecurrence(phrase)?.repeatAfter, "repeat").toBeUndefined();
+      });
+    }
+  }
+});
+
+/*
+ * The stronger list: ordinary prose the parser must not react to at all.
+ *
+ * `negativeCorpus` above allows a warning, because refusing "sat" out loud is
+ * what §5.1 decided. These phrases are different - the user wrote a sentence,
+ * not a date, and there is nothing to explain. A warning here is the mild end
+ * of the same failure that put a repeat on "every other day-care visit".
+ */
+describe("no pack reacts to another pack's ordinary prose", () => {
+  for (const pack of ACTIVE_PACKS) {
+    for (const phrase of pack.inertCorpus) {
+      it(`${pack.code}: ${JSON.stringify(phrase)} is left alone`, () => {
+        const r = parseQuickAdd(phrase, CTX());
+        expect(r.title, "title").toBe(phrase);
+        expect(r.dueDate, "date").toBeNull();
+        expect(r.repeatAfter, "repeat").toBeUndefined();
+        expect(r.warnings, "warnings").toEqual([]);
       });
     }
   }
@@ -266,6 +313,11 @@ describe("the composed recurrence patterns are byte-identical", () => {
     "mon|tue|wed|thu|fri|sat|sun)(?!\\p{L})";
   // 1 to 31: zero is not a day of any month, so "every 0 and 1" is not a list.
   const LIST_ITEM = `(?:${WD}|(?:3[01]|[12]\\d|[1-9])(?![\\d\\p{L}]))`;
+  const MONTH_ANY =
+    "january|february|march|april|may|june|july|august|september|october|" +
+    "november|december|gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|" +
+    "agosto|settembre|ottobre|novembre|dicembre|jan|feb|mar|apr|jun|jul|aug|" +
+    "sep|sept|oct|nov|dec|gen|mag|giu|lug|ago|set|ott|dic";
 
   it("REJECTED, in order and complete", () => {
     expect(RECURRENCE_GRAMMAR.REJECTED.map((r: RegExp) => r.source)).toEqual([
@@ -283,11 +335,25 @@ describe("the composed recurrence patterns are byte-identical", () => {
       // F6 widened this one: the starting-word was English-only, so "ogni
       // giorno a partire da lunedì" kept its daily repeat AND gained a one-off
       // due date, with "a partire da" left as the title.
-      // The tail now reaches the end of the phrase, stopping before a sigil:
-      // the old `(?:\s+WD)?` left "dal 15 settembre" for the date layer to
-      // schedule after warning that the repeat was unsupported.
+      /*
+       * Two amendments live in this one row.
+       *
+       * The tail reaches the end of the phrase, stopping before a sigil: the
+       * old `(?:\s+WD)?` left "dal 15 settembre" for the date layer to
+       * schedule after warning that the repeat was unsupported.
+       *
+       * And the lookahead (F9) requires the tail to name a DATE. Without it
+       * "leggere ogni giorno a partire dalla prima pagina" was refused and a
+       * daily repeat that used to work was lost. The hint is the packs' own
+       * date words, because "starting next week" carries no digit, weekday or
+       * month.
+       */
       `\\b${EVERY}!?\\s+\\w+.*?\\b(?:starting|a\\s+partire\\s+da(?:ll['\u2019]|l|ll[ae])?` +
-        `|a\\s+cominciare\\s+da(?:ll['\u2019]|l|ll[ae])?)\\b\\S*(?:\\s+(?![@#*]|p[1-4]\\b)\\S+)*`,
+        `|a\\s+cominciare\\s+da(?:ll['\u2019]|l|ll[ae])?)\\b` +
+        `(?=.*?(?:\\d|${WD}|today|tomorrow|tonight|oggi|domani|dopodomani|stasera` +
+        `|next\\s+(?:week|month)|(?:la\\s+|il\\s+|lo\\s+)?(?:settimana|mese)\\s+prossim[ao]` +
+        `|prossim[ao]\\s+(?:settimana|mese)|${MONTH_ANY}))` +
+        `\\S*(?:\\s+(?![@#*]|p[1-4]\\b)\\S+)*`,
       `\\b${EVERY}!?\\s+(?:month|mese)\\s+on\\s+the\\s+\\d+(?:st|nd|rd|th)?`,
     ]);
   });

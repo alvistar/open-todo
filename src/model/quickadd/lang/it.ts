@@ -225,6 +225,24 @@ export const it: LanguagePack = {
 
   nativePhrases: [{ pattern: /\bfine\s+mese\b/i, resolve: lastDayOfMonth }],
 
+  /*
+   * "ogni" is a quantifier far more often than it is a schedule, and Italian
+   * decimals use the comma the day-number list rule reads as a separator.
+   */
+  inertCorpus: [
+    "controllare ogni fattura prima di pagarla",
+    "rispondere a ogni email del cliente",
+    "ogni tanto vado a correre",
+    "ogni cosa al suo posto",
+    "leggere ogni pagina del contratto",
+    "verificare ogni riga del bilancio",
+    "ogni quanto scade il contratto",
+    "salutare ogni collega",
+    "comprare il set di chiavi",
+    "comprare 2,5 kg di farina",
+    "tagliare la tavola a 1,5 metri",
+    "ripassare ogni capitolo a partire dal secondo",
+  ],
   negativeCorpus: [
     // "mar" is the sea at least as often as it is Tuesday.
     "il mar mosso",

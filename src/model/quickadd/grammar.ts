@@ -289,6 +289,29 @@ export function compileRecurrenceGrammar(
   const STARTING = oneOf(union(packs, (p) => p.startingWords));
 
   /*
+   * A starting clause has to start a DATE.
+   *
+   * The rule is `every <word> … <starting-word> <tail>`, and nothing used to
+   * require the tail to name a day, so "leggere ogni giorno a partire dalla
+   * prima pagina" - a daily task that starts at page one - was refused as an
+   * unsupported repeat, and a repeat that used to work was lost. English had
+   * the same hole: "review every chapter starting from the second".
+   *
+   * The hint has to admit everything §5 calls a date, not just a weekday:
+   * "starting next week" carries no digit, no weekday and no month. So it is
+   * built from the packs' own DATE words, read from the recurrence side. It
+   * scans the rest of the line rather than only the next token, because
+   * "starting ON monday" and "dal 15 settembre" both put words in between.
+   */
+  const START_DATE_HINT = alternatives([
+    "\\d",
+    WD,
+    ...union(packs, (p) => p.relativeDay),
+    ...union(packs, (p) => p.nextPeriod),
+    monthAnyOf(packs),
+  ]);
+
+  /*
    * Everything after the starting-word is the start date, and ALL of it has to
    * stay inside the rejected span. The tail used to be `(?:\s+WD)?` - a bare
    * weekday and nothing else - so "ogni giorno a partire dal 15 settembre"
@@ -362,7 +385,10 @@ export function compileRecurrenceGrammar(
   // schedules a one-off, which is what rejecting is meant to prevent.
   if (STARTING !== null) {
     REJECTED.push(
-      new RegExp(`\\b${EVERY}!?\\s+\\w+.*?\\b${STARTING}\\b${START_DATE_TAIL}`, "iu"),
+      new RegExp(
+        `\\b${EVERY}!?\\s+\\w+.*?\\b${STARTING}\\b(?=.*?(?:${START_DATE_HINT}))${START_DATE_TAIL}`,
+        "iu",
+      ),
     );
   }
 

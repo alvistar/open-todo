@@ -229,6 +229,28 @@ describe("parseQuickAdd — a rejected repeat never leaks a date", () => {
     expect(r.warnings).toHaveLength(1);
   });
 
+  it.each([
+    // Formerly F9. A starting clause has to name a DATE. These do not: the
+    // first starts at a page, the second at a chapter, and each used to lose
+    // the daily repeat the user did ask for.
+    ["leggere ogni giorno a partire dalla prima pagina", DAY],
+    ["leggere every day starting from the first page", DAY],
+  ])("keeps the repeat in %s, which starts no date", (text, expected) => {
+    const r = parse(text);
+    expect(r.repeatAfter).toBe(expected);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it.each([
+    "ripassare ogni capitolo a partire dal secondo",
+    "review every chapter starting from the second",
+  ])("leaves %s alone entirely", (text) => {
+    const r = parse(text);
+    expect(r.title).toBe(text);
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.warnings).toEqual([]);
+  });
+
   it("still lets a project through a rejected starting clause", () => {
     // The tail stops before a sigil rather than swallowing a project the user
     // did name. #Work is extracted after the recurrence layer runs.

@@ -76,8 +76,9 @@ describe("F7 — an Italian decimal comma is read as a list of day numbers", () 
 });
 
 /*
- * F8 to F10 come from an adversarial pass over the six fixes, not from the
- * corpus. Each is a case where a widened pattern now matches ORDINARY prose.
+ * F8 and F10 come from an adversarial pass over the six fixes, not from the
+ * corpus. F9 was in this list and is now fixed - a starting clause has to name
+ * a date, which is what stopped it refusing "a partire dalla prima pagina". Each is a case where a widened pattern now matches ORDINARY prose.
  * They are pinned rather than fixed because each one is a §5 decision with a
  * real trade-off, not a repair - and two of them are English behaviour that
  * predates this branch and that the Italian pack was given for parity.
@@ -106,30 +107,6 @@ describe("F8 — a repeat adverb is read anywhere in the line, context or not", 
   });
 });
 
-describe("F9 — a 'starting' clause need not start a DATE", () => {
-  /*
-   * The reject rule is `every <word> … <starting-word> <tail>` with nothing
-   * requiring the tail to be a date. English `starting` has always been
-   * unconditional this way; F6 gave Italian the same rule and the same hole.
-   *
-   * The second case is the costly one: a daily repeat that used to work is now
-   * refused. Narrowing the tail to date-shaped text is possible but has to
-   * admit "next week", which carries no digit, weekday or month - so it is a
-   * §5 grammar question, not a boundary tweak.
-   */
-  it("warns about a chapter list that is not a repeat", () => {
-    const r = parse("ripassare ogni capitolo a partire dal secondo");
-    expect(r.title).toBe("ripassare ogni capitolo a partire dal secondo");
-    expect(r.warnings).toHaveLength(1);
-  });
-
-  it("loses a daily repeat that used to work", () => {
-    const r = parse("leggere ogni giorno a partire dalla prima pagina");
-    expect(r.repeatAfter).toBeUndefined();
-    expect(r.warnings).toHaveLength(1);
-  });
-});
-
 describe("F10 — a month abbreviation is also an ordinary word", () => {
   /*
    * "set" is settembre; it is also the English noun and a count of exercise
@@ -145,5 +122,35 @@ describe("F10 — a month abbreviation is also an ordinary word", () => {
     expect(r.title).toBe("fai 10 flessioni");
     expect(r.repeatAfter).toBe(365 * 24 * 60 * 60);
     expect(r.warnings).toEqual([]);
+  });
+});
+
+describe("F11 — chrono reads 'the day' inside an ordinary English noun", () => {
+  /*
+   * Found by a sweep of ordinary prose, not by the corpus and not by the
+   * adversarial pass. Nothing to do with recurrence: chrono offers "the day" in
+   * "the day-care visit" as a date candidate, §5 correctly refuses it, and the
+   * composer then explains a refusal the user never asked for.
+   *
+   * PRE-EXISTING - the date layer has done this since D-vocab. It is the mild
+   * end of the F7/F8 family: a warning on ordinary text, nothing lost.
+   *
+   * Not fixed here because the fix is a §5 decision. `isInstantIdiom` already
+   * suppresses this class of warning (chrono certain of an hour, no digit in
+   * the span), and "the day" does not qualify - it is day-certain. Widening
+   * that predicate touches every silent refusal, so it is a grammar amendment,
+   * not a boundary tweak.
+   */
+  it.each(["book the day-care visit", "a day-care centre"])("warns about %s", (text) => {
+    const r = parse(text);
+    expect(r.title).toBe(text);
+    expect(r.dueDate).toBeNull();
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]).toMatch(/\bday\b/);
+  });
+
+  it("says nothing when the word is not split", () => {
+    // The counterpart. "daycare" is one word and draws no reaction at all.
+    expect(parse("book the daycare visit").warnings).toEqual([]);
   });
 });

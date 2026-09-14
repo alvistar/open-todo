@@ -253,16 +253,29 @@ export interface LanguagePack {
   nativePhrases: NativePhrase[];
 
   /**
-   * Phrases in THIS language that must NOT become a date.
+   * Text this language's words would wrongly turn into a DATE, if §5 let them.
    *
-   * They ship with the pack because the §5 gate is language-BLIND: every pack's
-   * words are admitted for all text, in every language, so adding a pack widens
-   * the gate for every other language too. French "mai" is the Italian for
-   * "never"; the day an fr pack lands, "non lo faccio mai" acquires a due date,
-   * and nothing in the fr pack read on its own would show it.
-   *
-   * The test runs every pack's list through the WHOLE registry, which is the
-   * only version of "one new file" that is safe.
+   * These are RECOGNISED and refused: "I sat down with the team" gets a warning
+   * naming "sat", because §5.1 decided a silent refusal there would leave the
+   * user wondering where their word went. A warning is the intended treatment;
+   * see `inertCorpus` for the text that must draw no reaction at all.
    */
   negativeCorpus: string[];
+
+  /**
+   * Ordinary prose the parser must not react to AT ALL - no date, no repeat, no
+   * warning.
+   *
+   * This list exists because of a specific failure. Six recurrence fixes each
+   * widened a pattern, each was gated on a zero-diff run over 4325 corpus
+   * records, and each passed - yet nine of them shipped a false positive on
+   * ordinary text. That corpus is a DATE corpus: it holds almost no prose
+   * carrying a recurrence word, so the gate was blind to exactly the thing the
+   * fixes could break. A gate proves what did NOT change; only counter-examples
+   * prove what a new rule does not eat.
+   *
+   * SO: WIDEN A PATTERN, ADD TO THIS LIST IN THE SAME COMMIT. Every entry runs
+   * through the whole registry and the whole parser, not just its own language.
+   */
+  inertCorpus: string[];
 }

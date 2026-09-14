@@ -173,6 +173,12 @@ behaviour shipping:
   sigil. It used to cover a bare weekday and nothing else, so
   `ogni giorno a partire dal 15 settembre` warned and then scheduled 15
   September.
+- A starting clause must **name a date**. `leggere ogni giorno a partire dalla
+  prima pagina` is a daily task that starts at page one, and refusing it lost a
+  repeat the user did ask for; the same held in English for
+  `review every chapter starting from the second`. The test is the packs' own
+  date words — a digit, a weekday, a relative day, a month, or a next-period
+  phrase — because `starting next week` carries none of the first four.
 
 **An anchored repeat cannot outlive its date (2026-09-14).** The yearly rule
 above takes only the every-word and leaves the date to the Date row. When that
@@ -191,17 +197,35 @@ is guesswork. Zero occurrences in the 4325-record corpus. Pinned as F7 in
 `known-defects.test.ts`. A day-of-month is 1 to 31, so
 `check every 0 and 1 in the output` is left alone.
 
-**Three limitations left open, pinned as F8 to F10 (2026-09-14).** Each is a
-widened pattern matching ordinary prose, and each is a §5 decision rather than a
+**Counter-examples are part of the grammar (2026-09-14).** Each pack carries two
+lists, and widening a pattern means adding to them in the same commit.
+`negativeCorpus` is text a pack's words would wrongly turn into a date and that
+§5 refuses **out loud** — `I sat down with the team` names `sat` in its warning,
+because a silent refusal would leave the user hunting for a missing word.
+`inertCorpus` is ordinary prose the parser must not react to **at all**: no
+date, no repeat, no warning. `controllare ogni fattura prima di pagarla` is a
+sentence, not a schedule, and there is nothing to explain.
+
+The second list exists because of a specific failure. Six recurrence fixes each
+widened a pattern, each was gated on a zero-diff run over 4325 corpus records,
+and each passed — yet nine shipped a false positive on ordinary text. That
+corpus is a *date* corpus: it holds almost no prose carrying a recurrence word,
+so the gate was blind to exactly what the fixes could break. A gate proves what
+did not change; only counter-examples prove what a new rule does not eat.
+
+**Three limitations left open, pinned as F8, F10 and F11 (2026-09-14).** Each is
+a pattern matching ordinary prose, and each is a §5 decision rather than a
 repair. A repeat adverb is read anywhere in the line, so
 `disdire il servizio pagato mensilmente` becomes a monthly task — English has
 behaved this way since before the language packs, and narrowing it would break
-the bare `daily` / `weekly` forms §5 lists. A `starting` clause need not start a
-date, so `leggere ogni giorno a partire dalla prima pagina` loses a daily repeat
-that used to work; narrowing the tail has to keep admitting `next week`, which
-carries no digit, weekday or month. And a month abbreviation is also an ordinary
-word: `ogni 3 set` schedules 3 September, the same tension as `mar` that §5
-already settled by excluding 3-letter weekdays while keeping 3-letter months.
+the bare `daily` / `weekly` forms §5 lists. A month abbreviation is also an
+ordinary word: `preparare 3 set di documenti` schedules 3 September and deletes
+two words from the title, the same tension as `mar` that §5 already settled by
+excluding 3-letter weekdays while keeping 3-letter months. And chrono offers
+`the day` inside `the day-care visit`, which §5 correctly refuses and then
+explains — `isInstantIdiom` suppresses this class of warning only when chrono is
+hour-certain, and `the day` is day-certain, so widening that predicate touches
+every silent refusal.
 
 ### 5.1 The date table is enforced, not merely documented (D-vocab, 2026-09-10)
 

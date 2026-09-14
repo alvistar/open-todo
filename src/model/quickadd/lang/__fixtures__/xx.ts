@@ -98,5 +98,7 @@ export const xx: LanguagePack = {
 
   nativePhrases: [{ pattern: /\bzzendofmonth\b/i, resolve: lastDayOfMonth }],
 
+  // Nothing invented here is an ordinary word in any language.
+  inertCorpus: [],
   negativeCorpus: ["nothing at all here"],
 };
