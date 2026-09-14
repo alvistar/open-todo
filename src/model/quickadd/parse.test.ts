@@ -198,6 +198,35 @@ describe("parseQuickAdd — recurrence", () => {
   });
 });
 
+describe("parseQuickAdd — workday and weekday are the same idea", () => {
+  /*
+   * Formerly known defect F3. "standup every workday" set nothing and said
+   * nothing, while "standup every weekday" became a weekly repeat with the
+   * approximation spelled out. Two words for one idea and only one in the
+   * grammar - a vocabulary gap, not a decision.
+   */
+  it.each([
+    "standup every weekday",
+    "standup every workday",
+    "standup every working day",
+    "standup ogni giorno feriale",
+    "standup ogni giorni lavorativi",
+  ])("approximates %s to weekly, out loud", (text) => {
+    const r = parse(text);
+    expect(r.repeatAfter).toBe(7 * DAY);
+    expect(r.title).toBe("standup");
+    expect(r.warnings.join(" ")).toMatch(/weekly/i);
+  });
+
+  it("gives Italian the adverbs English always had", () => {
+    // "report mensilmente" set nothing where "report monthly" set a repeat.
+    expect(parse("report mensilmente").repeatAfter).toBe(30 * DAY);
+    expect(parse("piante quotidianamente").repeatAfter).toBe(DAY);
+    expect(parse("report settimanalmente").repeatAfter).toBe(7 * DAY);
+    expect(parse("revisione annualmente").repeatAfter).toBe(365 * DAY);
+  });
+});
+
 describe("parseQuickAdd — a list of day numbers is refused, like a list of weekdays", () => {
   /*
    * Formerly known defect F4. The reject rule needed a weekday on BOTH sides of

@@ -16,6 +16,7 @@ import {
   wordBounded,
 } from "../vocabulary";
 import { ACTIVE_PACKS } from "./index";
+import type { LanguagePack } from "./pack";
 
 const TZ = "Europe/Rome";
 const NOW = new Date("2026-09-09T08:00:00Z");
@@ -289,8 +290,12 @@ describe("the composed recurrence patterns are byte-identical", () => {
 
   it("the accepted rules", () => {
     const g = RECURRENCE_GRAMMAR;
+    // F3 widened this one: "workday" and "working day" mean the same thing to a
+    // user and took the same approximation, but only "weekday" was in the
+    // grammar. Italian gained the plural and "giorni lavorativi".
     expect(g.WEEKDAY_UNIT.source).toBe(
-      `\\b${EVERY}!?\\s+(?:weekday|giorno\\s+feriale)\\b`,
+      `\\b${EVERY}!?\\s+(?:weekdays?|work\\s*days?|working\\s+days?` +
+        `|giorn[oi]\\s+ferial[ei]|giorn[oi]\\s+lavorativ[oi])\\b`,
     );
     expect(g.COUNTED.source).toBe(
       `\\b${EVERY}(!?)\\s+(\\d{1,3})\\s+(days?|giorni?|weeks?|settimane?|months?|mesi|mese|years?|anni?|anno)\\b`,
@@ -299,7 +304,12 @@ describe("the composed recurrence patterns are byte-identical", () => {
     expect(g.SINGULAR.source).toBe(
       `\\b${EVERY}(!?)\\s+(day|giorno|week|settimana|month|mese|year|anno)\\b`,
     );
-    expect(g.ADVERB?.source).toBe("\\b(daily|weekly|monthly|yearly|annually)\\b");
+    // F3 again: Italian had no adverbs at all, so "report mensilmente" set
+    // nothing where "report monthly" set a monthly repeat.
+    expect(g.ADVERB?.source).toBe(
+      "\\b(daily|quotidianamente|giornalmente|weekly|settimanalmente" +
+        "|monthly|mensilmente|yearly|annually|annualmente)\\b",
+    );
     // Plain `i`, like the literal it replaced. Nothing in it needs \p{L}.
     expect(g.ADVERB?.flags).toBe("i");
   });
@@ -316,12 +326,24 @@ describe("the composed recurrence patterns are byte-identical", () => {
   });
 
   it("drops a rule no pack feeds, rather than composing an empty one", () => {
-    // An Italian-only registry has no adverbs and no starting-word. Those rules
-    // must vanish, not become patterns that match nothing -- or everything.
-    const solo = ACTIVE_PACKS.filter((p) => p.code === "it");
-    const g = compileRecurrenceGrammar(solo);
+    /*
+     * A rule no pack feeds must VANISH, not become a pattern that matches
+     * nothing -- or, far worse, everything.
+     *
+     * This used to run against the Italian pack, which had no adverbs until F3
+     * filled them in. Both shipping packs now feed every rule, which is the
+     * point of the refactor, so the case is made with a pack that deliberately
+     * ships nothing for two rows.
+     */
+    const bare: LanguagePack = {
+      ...(ACTIVE_PACKS.find((p) => p.code === "it") as LanguagePack),
+      adverbs: { day: [], week: [], month: [], year: [] },
+      startingWords: [],
+    };
+    const g = compileRecurrenceGrammar([bare]);
     expect(g.ADVERB).toBeNull();
     expect(g.REJECTED.every((r: RegExp) => !r.source.includes("starting"))).toBe(true);
+    expect(g.REJECTED.every((r: RegExp) => !r.source.includes("partire"))).toBe(true);
     for (const pattern of g.REJECTED) expect(pattern.test("")).toBe(false);
   });
 });

@@ -196,7 +196,7 @@ export const it: LanguagePack = {
     "a\\s+cominciare\\s+da(?:l|ll[ae])?",
   ],
   monthOnTheNth: [],
-  weekdayUnit: ["giorno\\s+feriale"],
+  weekdayUnit: ["giorn[oi]\\s+ferial[ei]", "giorn[oi]\\s+lavorativ[oi]"],
   countedUnits: {
     day: ["giorni?"],
     week: ["settimane?"],
@@ -209,8 +209,18 @@ export const it: LanguagePack = {
     month: ["mese"],
     year: ["anno"],
   },
-  // See pack.ts, TODO(F3).
-  adverbs: { day: [], week: [], month: [], year: [] },
+  /*
+   * Italian had none, so "report mensilmente" set nothing while "report
+   * monthly" set a monthly repeat. Like the English ones these match without
+   * an every-word, which is why the list is short and unambiguous: each of
+   * these words means a repeat interval and nothing else.
+   */
+  adverbs: {
+    day: ["quotidianamente", "giornalmente"],
+    week: ["settimanalmente"],
+    month: ["mensilmente"],
+    year: ["annualmente"],
+  },
 
   nativePhrases: [{ pattern: /\bfine\s+mese\b/i, resolve: lastDayOfMonth }],
 

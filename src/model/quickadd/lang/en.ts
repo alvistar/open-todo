@@ -88,7 +88,9 @@ export const en: LanguagePack = {
   monthNoun: ["month"],
   startingWords: ["starting"],
   monthOnTheNth: ["on\\s+the\\s+\\d+(?:st|nd|rd|th)?"],
-  weekdayUnit: ["weekday"],
+  // "workday" and "working day" mean the same thing to a user and took the
+  // same approximation warning; only "weekday" was in the grammar.
+  weekdayUnit: ["weekdays?", "work\\s*days?", "working\\s+days?"],
   countedUnits: {
     day: ["days?"],
     week: ["weeks?"],

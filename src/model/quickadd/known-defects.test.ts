@@ -11,9 +11,10 @@ import { parseQuickAdd, type QuickAddContext } from "./parse";
  * can quietly change shape mid-refactor and be re-discovered later as something
  * new.
  *
- * F1, F4, F5 and F6 are FIXED and no longer live here. Their cases moved to
- * the ordinary suite: `recurrence.test.ts` for the rule, `parse.test.ts` for
- * the whole line.
+ * F1 and F3 to F6 are FIXED and no longer live here. Their cases moved to the
+ * ordinary suite: `recurrence.test.ts` for the rule, `parse.test.ts` for the
+ * whole line. F7 below is not a corpus finding at all - it is a limitation the
+ * F4 fix introduced knowingly.
  *
  * So the rule for this file is the opposite of every other test here:
  *
@@ -61,18 +62,6 @@ describe("F2 — 'every other <unit>' is dropped without a word", () => {
    */
   it("drops the English form", () => droppedInSilence("ping every other day"));
   it("drops the Italian form", () => droppedInSilence("ping ogni altro giorno"));
-});
-
-describe("F3 — 'workday' is unknown where 'weekday' is understood", () => {
-  it("drops 'every workday' silently", () => droppedInSilence("standup every workday"));
-
-  it("but understands 'every weekday', and says it approximated", () => {
-    // The counterpart. Two words for one idea, and only one is in the grammar.
-    const r = parse("standup every weekday");
-    expect(r.title).toBe("standup");
-    expect(r.repeatAfter).toBe(7 * 24 * 60 * 60);
-    expect(r.warnings.join(" ")).toMatch(/weekly/i);
-  });
 });
 
 describe("F7 — an Italian decimal comma is read as a list of day numbers", () => {
