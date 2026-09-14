@@ -8,11 +8,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Six quick-add defects found by a 4325-phrase corpus**, each one silent.
+  Every fix is a §5 grammar amendment recorded in `docs/data-model-mapping.md`.
+  - `tasse ogni 30 giugno` / `pay tax every 30 june` was ONE task called "tasse
+    ogni", due once in 2027. It is now a yearly repeat that keeps the date the
+    user typed. The rule consumes the every-word only, unlike every other
+    accepted repeat, because a yearly repeat with nothing to repeat from is no
+    more useful than the one-off it replaces. Vikunja's year is 365 days — the
+    same approximation `every year` already makes, so it is silent for the same
+    reason.
+  - `ogni secondo martedì` was scheduled for next Tuesday under the title "ogni
+    secondo". The ordinal words were English-only, so it matched neither the
+    reject list nor the accept list and the date layer read the weekday on its
+    own. Now refused and explained, as `every second tuesday` always was.
+  - `ogni giorno a partire da lunedì` produced a daily repeat the user did ask
+    for, a one-off due date they did not, and a task named "a partire da". The
+    starting-word was English-only. Now refused whole. NOT the bare `da`: it is
+    the commonest preposition in the language, and "ogni giorno da fare" is an
+    ordinary daily task.
+  - `ogni 5,6 alle 15` said nothing at all, where `every mon, wed` has always
+    been refused and explained. A list item may now be a day number, not only a
+    weekday. Nothing was being lost here — the fix is that the composer says
+    why nothing happened.
+  - `every workday` set nothing where `every weekday` became a weekly repeat
+    with the approximation spelled out. Two words for one idea. Italian gains
+    the plural and `giorni lavorativi`, and the repeat adverbs it never had:
+    `quotidianamente`, `giornalmente`, `settimanalmente`, `mensilmente`,
+    `annualmente`.
+  - `every other day` / `ogni altro giorno` set nothing. It means every 2 days,
+    which Vikunja stores exactly. `every other monday` stays refused — an
+    ordinal weekday is calendar-shaped, as `every 2nd monday` already was, and
+    `every other workday` / `ogni altro giorno lavorativo` is approximated to
+    every 2 weeks with the same warning `every weekday` has always carried.
+
+- **A rejected repeat no longer leaks a date.** `ogni giorno a partire dal 15
+  settembre` warned that the repeat was unsupported and then scheduled 15
+  September; `pay every 5,6 starting monday` did the same with Monday. Warning
+  about a phrase and acting on half of it is worse than either alone. Three
+  rules now hold: every rejected shape tolerates the `every!` form, the widest
+  matching rejection wins rather than the first one tested, and a starting
+  clause reaches the end of the phrase, stopping only before a sigil so a
+  `#project` the user did name still gets through.
+
+- **A repeat that names the day it repeats on cannot outlive that day.**
+  `pay tax every sep 15` stored a yearly repeat with no due date, because §5.1
+  reads the 15 as a year and refuses it. `every 31 june` did the same with no
+  warning at all. The repeat is now dropped with the date, and the every-word
+  returns to the title.
+
+  Four limitations are left open and pinned as F7 to F10 in
+  `known-defects.test.ts`, each one a widened pattern matching ordinary prose
+  and each a §5 decision rather than a repair. Italian writes decimals with a
+  comma, so `corri ogni 1,5 km` warns about a repeat nobody wrote. A repeat
+  adverb is read anywhere in the line, so `disdire il servizio pagato
+  mensilmente` becomes a monthly task — English has behaved this way since
+  before the language packs. A `starting` clause need not start a date, so
+  `leggere ogni giorno a partire dalla prima pagina` loses a daily repeat that
+  used to work. And a month abbreviation is also an ordinary word: `ogni 3 set`
+  schedules 3 September, the same tension as `mar` that §5 already settled by
+  excluding 3-letter weekdays while keeping 3-letter months.
+
 - `#project` no longer matches inside another word: `close issue#3` stays a
   plain title instead of resolving a project. `#` was the only sigil without
   the lookbehind that `@label` and `p1` already used.
 
 ### Changed
+- **The quick-add parser now has a concept of "a language".** Italian and
+  English words were inlined across five files and the union type `"it" | "en"`
+  turned a third language into a compile error in five more. Each language is
+  now one file under `src/model/quickadd/lang/`, and adding one needs no engine
+  change. A pack contributes WORDS; the engine owns the SHAPE of each §5.1 row.
+  That split is not the obvious design and it is load-bearing: §5's shapes are
+  bilingual, so `next venerdì` and `prossimo friday` both resolve because the
+  prefixes and the weekday names cross. Per-pack finished fragments would have
+  dropped every mixed combination in silence.
+
+  A pack's date vocabulary NARROWS what its resolver produced; it never creates
+  matches. §5 is an acceptor over chrono's output, so a date word the resolver
+  does not know is dead on arrival. Recurrence and the native phrases are ours
+  end to end and do take invented words.
+
+  Still Italian and English only. A test-only fixture pack proves the seam
+  without adding a language or its corpus maintenance, and it earned its place
+  immediately by finding a real bug: two grammar rows read the weekday and
+  month names from the shipping registry instead of the pack passed in, so
+  compiling a grammar for any other pack list silently carried production's
+  lists. Nothing testing the two shipping languages could have surfaced it.
+
+  Every stage was gated on a zero-diff run over all 4325 corpus records at both
+  parser layers. The refactor itself changed nothing; the six fixes above moved
+  18 rows, every one enumerated in its commit message.
+
+- **`ore` is taught to chrono instead of rewritten around it.** The old path
+  rewrote the user's text before parsing and carried an offset map back to the
+  original coordinates — 57 lines reinventing chrono's own `parsers` and
+  `refiners` arrays. Two overrides replace it, identified by a regex source
+  literal rather than a class name, because the production bundle is minified
+  and `constructor.name` is `""` there. A count canary fails loudly if a chrono
+  upgrade changes how many parts match.
+
+- **A committed 738-record golden corpus** (`__fixtures__/corpus.golden.jsonl`)
+  replays the whole parser through vitest, so a behaviour change fails in CI
+  and bisects. Drawn from Microsoft Recognizers-Text (MIT), Duckling (BSD-3)
+  and chrono (MIT), with attribution in `THIRD_PARTY_NOTICES.md`. Nothing
+  Todoist-derived enters the repo — see HANDOVER §6.
+
 - **Quick-add dates and times are parsed by `chrono-node`** (D-parser). The
   hand-written date matchers are gone; recurrence and the sigils are unchanged.
   Costs 16.1 kB gzip and brings both an Italian and an English locale, proper
@@ -45,11 +145,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sat`.
 - **`ore 15` now sets a time, like `alle 15`.** chrono's Italian parser knows
   `alle` and not `ore`, so "dentista domenica ore 15" came back as Sunday with
-  no time and left "ore 15" in the task name. `ore` is rewritten before parsing,
-  but only when a number follows it — in "tra 2 ore" the same word is the unit
-  "hours", which §5 excludes and which must keep being recognised so its warning
-  still explains itself, and `alle ore 15` — the most formal Italian phrasing —
-  drops the redundant word instead. Reported from real use.
+  no time and left "ore 15" in the task name. chrono is now taught the word
+  through its own extension points rather than by rewriting the user's text
+  before it — see below. "tra 2 ore" is untouched: there the same word is the
+  unit "hours", which §5 excludes and which must keep being recognised so its
+  warning still explains itself. `alle ore 15`, the most formal Italian
+  phrasing, reads as one time. Reported from real use.
 - **A leap day now resolves wherever it sits in the line.** The retry appended
   the year to the whole string and required the match to reach the end of it,
   so `party 29 feb` worked while `29 feb party` and `party 29 feb please`
