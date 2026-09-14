@@ -40,6 +40,29 @@
  *     (`datePhrase.ts`, `normalise`), so an entry that is case-sensitive or
  *     carries a double space can never match anything.
  */
+/** Calendar parts of a day, in the user's zone. */
+export interface DateParts {
+  year: number;
+  month: number;
+  day: number;
+}
+
+/** A phrase no chrono locale knows, with how it resolves. */
+export interface NativePhrase {
+  /** Unanchored. The leftmost match across ALL packs wins. */
+  pattern: RegExp;
+  resolve: (today: DateParts) => DateParts;
+}
+
+/** Day 0 of the next month is the last day of this one. */
+export function lastDayOfMonth(today: DateParts): DateParts {
+  return {
+    year: today.year,
+    month: today.month,
+    day: new Date(Date.UTC(today.year, today.month, 0)).getUTCDate(),
+  };
+}
+
 export interface LanguagePack {
   /** Stable id, for diagnostics and test names. Never shown to a user. */
   code: string;
@@ -64,6 +87,69 @@ export interface LanguagePack {
    * is not.
    */
   monthShort: string[];
+
+  /* ------------------------------------------------- §5.1 date shapes ---- */
+
+  /** §5.1 "relative day" and "tonight". */
+  relativeDay: string[];
+
+  /** §5.1 "day part suffix": the words that may follow a day. */
+  dayPart: string[];
+
+  /**
+   * What may stand BEFORE a weekday: "next venerdì", "prossimo friday".
+   *
+   * Kept apart from the weekday names, rather than shipped as a finished
+   * "weekday phrase", because the two cross. §5's shapes are bilingual, so an
+   * English prefix on an Italian weekday resolves today and must keep doing so.
+   */
+  weekdayPrefixes: string[];
+
+  /** What may stand AFTER one: "venerdì prossimo". English has none. */
+  weekdayPostfixes: string[];
+
+  /** §5.1 "numeric offset": the prepositions, "in 3 days" / "tra 3 giorni". */
+  offsetPrepositions: string[];
+
+  /** Word forms of "one" admissible in an offset. English has none: §5 lists
+   *  "tra un mese" but not "in a month". */
+  offsetWordNumbers: string[];
+
+  /** The units an offset may count. */
+  offsetUnits: string[];
+
+  /**
+   * §5.1 "next period", as FINISHED fragments rather than words.
+   *
+   * The one row that cannot be composed from word lists: English has a single
+   * word order ("next week"), Italian has two and an optional article
+   * ("la settimana prossima", "prossima settimana"). A schema that fitted both
+   * would be a schema built for exactly two languages.
+   */
+  nextPeriod: string[];
+
+  /* -------------------------------------------------- §5.1 time row ------ */
+
+  /** What introduces a clock time: "at 10", "alle 10", "ore 10". */
+  timePrepositions: string[];
+
+  /** A second preposition that may follow the first: "alle ore 15". */
+  timePrepositionSuffixes: string[];
+
+  /** "am", "pm". Empty for a language that writes no meridiem. */
+  meridiem: string[];
+
+  /* ------------------------------------------------- outside chrono ------ */
+
+  /**
+   * Phrases chrono has in NO locale, resolved here before it runs.
+   *
+   * These resolve in CALENDAR terms, in the user's zone. That is the whole
+   * reason they are not chrono custom parsers: a parser sees `refDate` only as
+   * an instant, and at 00:30 in Rome that instant is still the previous month in
+   * UTC, so "end of month" would name the wrong month for half an hour a night.
+   */
+  nativePhrases: NativePhrase[];
 
   /**
    * Phrases in THIS language that must NOT become a date.

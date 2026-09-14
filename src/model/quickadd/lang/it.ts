@@ -1,4 +1,4 @@
-import type { LanguagePack } from "./pack";
+import { type LanguagePack, lastDayOfMonth } from "./pack";
 
 export const it: LanguagePack = {
   code: "it",
@@ -40,6 +40,35 @@ export const it: LanguagePack = {
   // Only the ones Italian does not share with English: "feb", "mar", "apr" and
   // "nov" are spelled the same in both and are carried by the English pack.
   monthShort: ["gen", "mag", "giu", "lug", "ago", "set", "ott", "dic"],
+
+  relativeDay: ["oggi", "domani", "dopodomani", "stasera"],
+
+  dayPart: ["mattina", "pomeriggio", "sera", "notte"],
+
+  // Gender-inflected, and Italian puts it on either side of the weekday.
+  weekdayPrefixes: ["prossim[ao]"],
+  weekdayPostfixes: ["prossim[ao]"],
+
+  offsetPrepositions: ["tra", "fra"],
+  // "tra un mese" is §5; the English pack has no counterpart to these.
+  offsetWordNumbers: ["un", "uno", "una"],
+  offsetUnits: ["giorni", "giorno", "settimane", "settimana", "mesi", "mese"],
+
+  // Two word orders and an optional article, which is why this row is a
+  // fragment rather than a word list. See pack.ts.
+  nextPeriod: [
+    "(?:la\\s+|il\\s+|lo\\s+)?(?:settimana|mese)\\s+prossim[ao]",
+    "prossim[ao]\\s+(?:settimana|mese)",
+  ],
+
+  timePrepositions: ["alle", "ore"],
+  // "alle ore 15" carries both, and is how Italian writes an appointment most
+  // formally.
+  timePrepositionSuffixes: ["ore"],
+
+  meridiem: [],
+
+  nativePhrases: [{ pattern: /\bfine\s+mese\b/i, resolve: lastDayOfMonth }],
 
   negativeCorpus: [
     // "mar" is the sea at least as often as it is Tuesday.

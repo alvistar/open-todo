@@ -1,4 +1,4 @@
-import type { LanguagePack } from "./pack";
+import { type LanguagePack, lastDayOfMonth } from "./pack";
 
 export const en: LanguagePack = {
   code: "en",
@@ -47,6 +47,30 @@ export const en: LanguagePack = {
     "oct",
     "nov",
     "dec",
+  ],
+
+  relativeDay: ["today", "tomorrow", "tonight"],
+
+  dayPart: ["morning", "afternoon", "evening", "night"],
+
+  weekdayPrefixes: ["next"],
+  // "friday next" is not English.
+  weekdayPostfixes: [],
+
+  offsetPrepositions: ["in"],
+  // §5 lists "in 3 days" but never "in a month", so no word forms here.
+  offsetWordNumbers: [],
+  offsetUnits: ["days?", "weeks?", "months?"],
+
+  nextPeriod: ["next\\s+(?:week|month)"],
+
+  timePrepositions: ["at"],
+  timePrepositionSuffixes: [],
+
+  meridiem: ["am", "pm"],
+
+  nativePhrases: [
+    { pattern: /\bend\s+of\s+(?:the\s+)?month\b/i, resolve: lastDayOfMonth },
   ],
 
   negativeCorpus: [

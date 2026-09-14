@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { matchWhen } from "../datePhrase";
+import { compileDateGrammar, DATE_GRAMMAR } from "../grammar";
 import {
   MONTH_ANY,
   MONTH_FULL,
@@ -139,4 +140,97 @@ describe("no pack puts a date on another pack's ordinary words", () => {
       });
     }
   }
+});
+
+/*
+ * The §5.1 shapes, composed from the packs' words by templates the engine owns.
+ * Frozen against what they were when each row was a hand-written literal, for
+ * the same reason as the vocabulary above: if the string is the same, nothing
+ * downstream can behave differently.
+ *
+ * ACCEPTED_SHAPE is checked whole rather than row by row. The rows are spliced
+ * into one another, so a grouping mistake in any of them shows up here - and
+ * grouping is exactly what goes wrong: `(?:a|b)?` and `a?` mean different things
+ * the moment a pack ships one word instead of two.
+ */
+describe("the composed §5.1 shapes are byte-identical to the literals they replaced", () => {
+  it("ACCEPTED_SHAPE", () => {
+    expect(DATE_GRAMMAR.ACCEPTED_SHAPE.source).toBe(
+      "^(?:(?:today|tomorrow|tonight|oggi|domani|dopodomani|stasera|" +
+        "(?:next\\s+|prossim[ao]\\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|" +
+        "luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica)(?:\\s+prossim[ao])?)" +
+        "(?:\\s+(?:morning|afternoon|evening|night|mattina|pomeriggio|sera|notte))?|" +
+        "(?:in|tra|fra)\\s+(?:\\d+|un|uno|una)\\s+" +
+        "(?:days?|weeks?|months?|giorni|giorno|settimane|settimana|mesi|mese)|" +
+        "next\\s+(?:week|month)|(?:la\\s+|il\\s+|lo\\s+)?(?:settimana|mese)\\s+prossim[ao]|" +
+        "prossim[ao]\\s+(?:settimana|mese)|" +
+        `(?:\\d{1,2}\\s+(?:${MONTH_ANY})|(?:${MONTH_ANY})\\s+\\d{1,2})(?:\\s+\\d{4})?|` +
+        "\\d{4}-\\d{2}-\\d{2}|\\d{1,2}\\/\\d{1,2})" +
+        "(?:\\s+(?:at|alle|ore)(?:\\s+ore)?\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?|" +
+        "\\s+\\d{1,2}:\\d{2}|\\s*\\d{1,2}\\s*(?:am|pm))?$",
+    );
+    expect(DATE_GRAMMAR.ACCEPTED_SHAPE.flags).toBe("iu");
+  });
+
+  it("NAMES_A_MONTH", () => {
+    expect(DATE_GRAMMAR.NAMES_A_MONTH.source).toBe(`\\b${wordBounded(MONTH_ANY)}`);
+    expect(DATE_GRAMMAR.NAMES_A_MONTH.flags).toBe("iu");
+  });
+
+  it("TIME_MARKER — one union over the user's text, and still plain `i`", () => {
+    expect(DATE_GRAMMAR.TIME_MARKER.source).toBe(
+      ":|\\d\\s*(?:am|pm)\\b|\\b(?:at|alle|ore)\\b",
+    );
+    // Not "iu". Nothing here needs \p{L}, and adding u changes escape handling.
+    expect(DATE_GRAMMAR.TIME_MARKER.flags).toBe("i");
+  });
+});
+
+/*
+ * The splice rules from grammar.ts, exercised on a registry of one.
+ *
+ * Every shape above is composed from TWO packs, so a helper that only breaks on
+ * a single-entry list would pass everything. These are the cases that catch
+ * `next\s+?` and `am?`.
+ */
+describe("a one-pack registry composes into valid patterns", () => {
+  const solo = ACTIVE_PACKS.filter((p) => p.code === "en");
+
+  it("does not turn a lone prefix's quantifier lazy", () => {
+    const { ACCEPTED_SHAPE } = compileDateGrammar(solo);
+    expect(ACCEPTED_SHAPE.source).toContain("(?:next\\s+)?");
+    expect(ACCEPTED_SHAPE.source).not.toContain("next\\s+?");
+  });
+
+  it("still refuses what §5 refuses, with one pack as with two", () => {
+    const { ACCEPTED_SHAPE } = compileDateGrammar(solo);
+    expect(ACCEPTED_SHAPE.test("")).toBe(false);
+    expect(ACCEPTED_SHAPE.test("sat")).toBe(false);
+    expect(ACCEPTED_SHAPE.test("tomorrow")).toBe(true);
+    expect(ACCEPTED_SHAPE.test("next friday")).toBe(true);
+  });
+});
+
+/*
+ * Native phrases are resolved before chrono, and the LEFTMOST match wins.
+ *
+ * A single combined regex gave that for free. Iterating the packs and returning
+ * on the first that matched would let registry order decide, which is a
+ * regression on any line carrying both languages' phrase - and the patterns do
+ * not have to overlap for it to happen.
+ */
+describe("native phrases resolve leftmost, not by registry order", () => {
+  it("takes whichever phrase comes first in the text", () => {
+    const both = matchWhen("end of month fine mese", NOW, TZ).when;
+    expect(both?.text).toBe("end of month");
+
+    const reversed = matchWhen("fine mese end of month", NOW, TZ).when;
+    expect(reversed?.text).toBe("fine mese");
+  });
+
+  it("resolves the same day either way", () => {
+    const a = matchWhen("end of month fine mese", NOW, TZ).when;
+    const b = matchWhen("fine mese end of month", NOW, TZ).when;
+    expect(a?.date.getTime()).toBe(b?.date.getTime());
+  });
 });

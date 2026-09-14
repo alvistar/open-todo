@@ -19,7 +19,7 @@
 import type { Chrono, ParsedResult } from "chrono-node";
 import * as chronoEn from "chrono-node/en";
 import * as chronoIt from "chrono-node/it";
-import { MONTH_ANY, WEEKDAY_FULL, wordBounded } from "./vocabulary";
+import { DATE_GRAMMAR } from "./grammar";
 
 export interface WhenMatch {
   /** Midnight of the matched day in `timeZone`, or the instant when hasTime. */
@@ -138,83 +138,6 @@ function addDays(base: Date, days: number, timeZone: string): Date {
   );
 }
 
-/*
- * Phrases chrono has in neither locale. Handled here rather than as a chrono
- * custom parser because a parser only sees `refDate` as an instant: at 00:30 in
- * Rome that instant still reads as the previous month in UTC, and "end of
- * month" would resolve to the wrong month for half an hour every night.
- */
-const END_OF_MONTH = /(?:\bend\s+of\s+(?:the\s+)?month\b|\bfine\s+mese\b)/i;
-
-/*
- * A clock time only counts when the text marks one, as it did before chrono.
- * "3pm" has no word boundary before "pm", so the meridiem is anchored to its
- * digits instead.
- *
- * "ore" is here because §5 admits it as a time preposition alongside "at" and
- * "alle"; chrono is taught the same word in `italianWithOre` below.
- */
-const TIME_MARKER = /:|\d\s*(?:am|pm)\b|\b(?:at|alle|ore)\b/i;
-
-/*
- * The grammar gate (D-vocab, docs/data-model-mapping.md §5.1).
- *
- * chrono resolves; §5 decides what is admissible. chrono's vocabulary is far
- * wider than ours and cannot be configured per word, so left alone it reads
- * "sat" in "I sat down with the team" as Saturday and "mar" in "il mar mosso"
- * as Tuesday - and because parse.ts removes whatever matched from the title,
- * the user loses a word AND gains a date they never asked for.
- *
- * Each constant below is one row of the §5.1 table. Keep them in that order,
- * and keep the names matching, so the two can be diffed by reading.
- */
-
-const RELATIVE_DAY = "today|tomorrow|tonight|oggi|domani|dopodomani|stasera";
-
-/** Only the full weekday names - see the note in vocabulary.ts. */
-const WEEKDAY_PHRASE = `(?:next\\s+|prossim[ao]\\s+)?(?:${WEEKDAY_FULL})(?:\\s+prossim[ao])?`;
-
-const DAY_PART = "morning|afternoon|evening|night|mattina|pomeriggio|sera|notte";
-
-const DAY_SHAPE = `(?:${RELATIVE_DAY}|${WEEKDAY_PHRASE})(?:\\s+(?:${DAY_PART}))?`;
-
-/** "in 3 days", "tra un mese", "fra 2 settimane". */
-const OFFSET_SHAPE =
-  "(?:in|tra|fra)\\s+(?:\\d+|un|uno|una)\\s+" +
-  "(?:days?|weeks?|months?|giorni|giorno|settimane|settimana|mesi|mese)";
-
-/** "next week", "la settimana prossima", "prossimo mese". */
-const NEXT_PERIOD_SHAPE =
-  "next\\s+(?:week|month)|" +
-  "(?:la\\s+|il\\s+|lo\\s+)?(?:settimana|mese)\\s+prossim[ao]|" +
-  "prossim[ao]\\s+(?:settimana|mese)";
-
-/** A month name always needs a day number beside it: "apr" alone is a period. */
-const MONTH_DAY_SHAPE = `(?:\\d{1,2}\\s+(?:${MONTH_ANY})|(?:${MONTH_ANY})\\s+\\d{1,2})(?:\\s+\\d{4})?`;
-
-const ISO_SHAPE = "\\d{4}-\\d{2}-\\d{2}";
-
-/** Day-first, which is what §5 specifies. chrono's Italian parser agrees. */
-const SLASH_SHAPE = "\\d{1,2}/\\d{1,2}";
-
-/** The Time row of §5, admissible only as a suffix on one of the shapes above. */
-const CLOCK = "\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?";
-// "alle ore 15" carries both prepositions, and is how Italian writes an
-// appointment most formally.
-const TIME_PREPOSITION = "(?:at|alle|ore)(?:\\s+ore)?";
-const TIME_CLAUSE = `(?:\\s+${TIME_PREPOSITION}\\s+${CLOCK}|\\s+\\d{1,2}:\\d{2}|\\s*\\d{1,2}\\s*(?:am|pm))?`;
-
-const ACCEPTED_SHAPE = new RegExp(
-  `^(?:${DAY_SHAPE}|${OFFSET_SHAPE}|${NEXT_PERIOD_SHAPE}|${MONTH_DAY_SHAPE}|${ISO_SHAPE}|${SLASH_SHAPE})${TIME_CLAUSE}$`,
-  "iu",
-);
-
-/*
- * Whether the span names a month at all. `word()` closes the alternation, so
- * the abbreviation "mar" does not match inside "martedì".
- */
-const NAMES_A_MONTH = new RegExp(`\\b${wordBounded(MONTH_ANY)}`, "iu");
-
 /** Sigil masking leaves multi-space gaps: "domani       alle 10" is one span. */
 function normalise(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
@@ -292,12 +215,13 @@ function isAdmissible(
   if (result.end) return false;
 
   const norm = normalise(spanText);
-  if (!ACCEPTED_SHAPE.test(norm)) return false;
+  if (!DATE_GRAMMAR.ACCEPTED_SHAPE.test(norm)) return false;
 
   // chrono reads a trailing number after a month as a YEAR: "feb 29" comes
   // back as 1 February 2029 and "Sep 15" as 1 September 2015, both with the
   // day merely implied. Both pass the shape test on text alone.
-  if (NAMES_A_MONTH.test(norm) && !result.start.isCertain("day")) return false;
+  if (DATE_GRAMMAR.NAMES_A_MONTH.test(norm) && !result.start.isCertain("day"))
+    return false;
 
   // A due date in the past is not a task. This is also what refuses
   // "yesterday" / "ieri", so they need no special case.
@@ -428,17 +352,38 @@ interface Candidate {
 export function matchWhen(text: string, now: Date, timeZone: string): WhenResult {
   const today = partsIn(now, timeZone);
 
-  const endOfMonth = END_OF_MONTH.exec(text);
-  if (endOfMonth) {
-    const lastDay = new Date(Date.UTC(today.year, today.month, 0)).getUTCDate();
+  /*
+   * Phrases chrono has in no locale, resolved before it runs. They resolve in
+   * CALENDAR terms in the user's zone: a chrono custom parser sees `refDate`
+   * only as an instant, and at 00:30 in Rome that instant is still the previous
+   * month in UTC, so "end of month" would name the wrong month every night.
+   *
+   * The LEFTMOST match across every pack wins, which is what a single combined
+   * regex used to do for free. Returning on the first pack that matched would
+   * make registry order decide "end of month fine mese", picking the later
+   * phrase and cutting the wrong words out of the title.
+   */
+  const native = DATE_GRAMMAR.NATIVE_PHRASES.map((phrase) => ({
+    phrase,
+    match: phrase.pattern.exec(text),
+  }))
+    .filter((candidate) => candidate.match !== null)
+    .sort(
+      (a, b) => (a.match as RegExpExecArray).index - (b.match as RegExpExecArray).index,
+    )[0];
+
+  if (native) {
+    const match = native.match as RegExpExecArray;
+    const resolved = native.phrase.resolve(today);
     return {
       when: {
-        date: midnight(today.year, today.month, lastDay, timeZone),
+        date: midnight(resolved.year, resolved.month, resolved.day, timeZone),
         hasTime: false,
-        start: endOfMonth.index,
-        end: endOfMonth.index + endOfMonth[0].length,
-        text: endOfMonth[0],
+        start: match.index,
+        end: match.index + match[0].length,
+        text: match[0],
       },
+      // The one path where the gate never runs, so nothing was turned down.
       rejected: [],
     };
   }
@@ -528,7 +473,8 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
   // Tested against the user's text, not against what chrono matched: it is the
   // word the user typed that decides whether they named a time.
   const hasTime =
-    result.start.isCertain("hour") && TIME_MARKER.test(text.slice(best.start, best.end));
+    result.start.isCertain("hour") &&
+    DATE_GRAMMAR.TIME_MARKER.test(text.slice(best.start, best.end));
 
   const parts = partsIn(instant, timeZone);
   const date = hasTime
@@ -617,7 +563,7 @@ function monthWindows(text: string): [number, number][] {
       const end = tokens[i + size - 1]?.[1] ?? 0;
       const span = text.slice(start, end);
       if (!/\d/.test(span)) continue;
-      if (!NAMES_A_MONTH.test(span)) continue;
+      if (!DATE_GRAMMAR.NAMES_A_MONTH.test(span)) continue;
       windows.push([start, end]);
     }
   }
