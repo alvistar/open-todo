@@ -191,9 +191,9 @@ export const it: LanguagePack = {
    * would have to know the weekday list, which is the engine's job.
    */
   startingWords: [
-    // da / dal / dalla / dalle.
-    "a\\s+partire\\s+da(?:l|ll[ae])?",
-    "a\\s+cominciare\\s+da(?:l|ll[ae])?",
+    // da / dal / dalla / dalle, plus the elided "dall'11" with either apostrophe.
+    "a\\s+partire\\s+da(?:ll['\u2019]|l|ll[ae])?",
+    "a\\s+cominciare\\s+da(?:ll['\u2019]|l|ll[ae])?",
   ],
   monthOnTheNth: [],
   weekdayUnit: ["giorn[oi]\\s+ferial[ei]", "giorn[oi]\\s+lavorativ[oi]"],

@@ -207,6 +207,9 @@ function parseQuickAddIn(
   // matcher, which would schedule it once instead of repeating it.
   let repeatAfter: number | undefined;
   let repeatMode: number | undefined;
+  /* Set when the repeat named the day it repeats ON. See the check after the
+   * date layer runs. */
+  let repeatNeedsDate = false;
   const recurrence = recurrence_(rest);
   if (recurrence) {
     if (recurrence.rejected) {
@@ -222,6 +225,7 @@ function parseQuickAddIn(
     } else {
       repeatAfter = recurrence.repeatAfter;
       repeatMode = recurrence.repeatMode;
+      repeatNeedsDate = recurrence.needsDate === true;
       if (recurrence.warning) warnings.push(recurrence.warning);
       consume(recurrence.start, recurrence.end, "recurrence");
     }
@@ -338,6 +342,27 @@ function parseQuickAddIn(
       );
       allDay = true;
     }
+  }
+
+  /*
+   * An ANCHORED repeat that lost its date goes with it.
+   *
+   * "every 30 june" is a year counted FROM 30 June: the recurrence rule takes
+   * only the every-word and leaves the date for the layer below. When that
+   * layer then refuses the date - "every sep 15" reads the 15 as a year and
+   * fails §5.1's certain-day rule, "every 31 june" is not a day at all,
+   * "every april 3rd" carries an ordinal the month + day row does not admit -
+   * the repeat is left with nothing to repeat from. Keeping it would store a
+   * yearly task with no due date and, in the silent cases, no warning either.
+   *
+   * Dropping the span as well as the field puts the every-word back in the
+   * title, so the line reads exactly as the user typed it.
+   */
+  if (repeatNeedsDate && dueDate === null) {
+    repeatAfter = undefined;
+    repeatMode = undefined;
+    const i = spans.findIndex((s) => s.kind === "recurrence");
+    if (i !== -1) spans.splice(i, 1);
   }
 
   spans.sort((a, b) => a.start - b.start);

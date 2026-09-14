@@ -156,6 +156,31 @@ has no field for the month and day, so the two agree on the kind, the interval
 and the first occurrence, and differ only in the calendar detail Vikunja cannot
 hold.
 
+**A rejected repeat must consume the whole phrase (2026-09-14).** Rejecting a
+recurrence and then letting the next layer read what is left over is worse than
+either alone: the user gets a warning *and* a due date they never typed. Three
+rules follow from it, each added after an adversarial pass found the opposite
+behaviour shipping:
+
+- Every rejected shape tolerates the `!` form. `every! … starting monday` used
+  to slip past all five reject rules, because they required whitespace straight
+  after the every-word.
+- When more than one rejected shape matches, the **widest** span wins, not the
+  first one tested. `pay every 5,6 starting monday` matches both the list rule
+  and the starting rule; the list rule masked less and let `starting monday` be
+  scheduled.
+- A starting clause reaches the **end of the phrase**, stopping only before a
+  sigil. It used to cover a bare weekday and nothing else, so
+  `ogni giorno a partire dal 15 settembre` warned and then scheduled 15
+  September.
+
+**An anchored repeat cannot outlive its date (2026-09-14).** The yearly rule
+above takes only the every-word and leaves the date to the Date row. When that
+row refuses the date — `every sep 15` reads the 15 as a year, `every 31 june` is
+not a day, `every april 3rd` carries an ordinal — the repeat is dropped too, and
+the every-word goes back into the title. A yearly task with no due date repeats
+from nothing.
+
 **Known limitation of the list rule (2026-09-14).** A list item is a weekday or
 a day-of-month number, so `ogni 5,6` is refused like `every mon, wed`. Italian
 writes decimals with a comma, so `corri ogni 1,5 km` takes the same refusal and
@@ -163,7 +188,20 @@ shows a warning about a repeat the user never wrote. Nothing is lost — the tit
 is untouched and no date is set — and the alternatives are worse: a space after
 the comma does not separate the two cases, and gating on a following unit noun
 is guesswork. Zero occurrences in the 4325-record corpus. Pinned as F7 in
-`known-defects.test.ts`.
+`known-defects.test.ts`. A day-of-month is 1 to 31, so
+`check every 0 and 1 in the output` is left alone.
+
+**Three limitations left open, pinned as F8 to F10 (2026-09-14).** Each is a
+widened pattern matching ordinary prose, and each is a §5 decision rather than a
+repair. A repeat adverb is read anywhere in the line, so
+`disdire il servizio pagato mensilmente` becomes a monthly task — English has
+behaved this way since before the language packs, and narrowing it would break
+the bare `daily` / `weekly` forms §5 lists. A `starting` clause need not start a
+date, so `leggere ogni giorno a partire dalla prima pagina` loses a daily repeat
+that used to work; narrowing the tail has to keep admitting `next week`, which
+carries no digit, weekday or month. And a month abbreviation is also an ordinary
+word: `ogni 3 set` schedules 3 September, the same tension as `mar` that §5
+already settled by excluding 3-letter weekdays while keeping 3-letter months.
 
 ### 5.1 The date table is enforced, not merely documented (D-vocab, 2026-09-10)
 

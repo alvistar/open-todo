@@ -50,7 +50,6 @@ const ctx = (): QuickAddContext => ({
 
 const parse = (text: string) => parseQuickAdd(text, ctx());
 
-
 describe("F7 — an Italian decimal comma is read as a list of day numbers", () => {
   /*
    * NOT found by the corpus. Introduced knowingly by the F4 fix, and written
@@ -73,5 +72,78 @@ describe("F7 — an Italian decimal comma is read as a list of day numbers", () 
     expect(r.dueDate).toBeNull();
     expect(r.repeatAfter).toBeUndefined();
     expect(r.warnings).toHaveLength(1);
+  });
+});
+
+/*
+ * F8 to F10 come from an adversarial pass over the six fixes, not from the
+ * corpus. Each is a case where a widened pattern now matches ORDINARY prose.
+ * They are pinned rather than fixed because each one is a §5 decision with a
+ * real trade-off, not a repair - and two of them are English behaviour that
+ * predates this branch and that the Italian pack was given for parity.
+ */
+
+describe("F8 — a repeat adverb is read anywhere in the line, context or not", () => {
+  /*
+   * English has done this since before the language packs existed: "cancel the
+   * service paid monthly" has always become a monthly task. F3 gave Italian the
+   * adverbs it never had, and with them this flaw.
+   *
+   * Fixing it means requiring an every-word near the adverb, which would change
+   * English too and would break the bare "daily" / "weekly" forms §5 lists. A
+   * §5 decision, not a repair.
+   */
+  it("turns a cancellation into a monthly task", () => {
+    const r = parse("disdire il servizio pagato mensilmente");
+    expect(r.title).toBe("disdire il servizio pagato");
+    expect(r.repeatAfter).toBe(30 * 24 * 60 * 60);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("does the same in English, which is where the behaviour came from", () => {
+    const r = parse("cancel the service paid monthly");
+    expect(r.repeatAfter).toBe(30 * 24 * 60 * 60);
+  });
+});
+
+describe("F9 — a 'starting' clause need not start a DATE", () => {
+  /*
+   * The reject rule is `every <word> … <starting-word> <tail>` with nothing
+   * requiring the tail to be a date. English `starting` has always been
+   * unconditional this way; F6 gave Italian the same rule and the same hole.
+   *
+   * The second case is the costly one: a daily repeat that used to work is now
+   * refused. Narrowing the tail to date-shaped text is possible but has to
+   * admit "next week", which carries no digit, weekday or month - so it is a
+   * §5 grammar question, not a boundary tweak.
+   */
+  it("warns about a chapter list that is not a repeat", () => {
+    const r = parse("ripassare ogni capitolo a partire dal secondo");
+    expect(r.title).toBe("ripassare ogni capitolo a partire dal secondo");
+    expect(r.warnings).toHaveLength(1);
+  });
+
+  it("loses a daily repeat that used to work", () => {
+    const r = parse("leggere ogni giorno a partire dalla prima pagina");
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.warnings).toHaveLength(1);
+  });
+});
+
+describe("F10 — a month abbreviation is also an ordinary word", () => {
+  /*
+   * "set" is settembre; it is also the English noun and a count of exercise
+   * sets. The WRONG DATE here predates this branch - the month + day row has
+   * always read "3 set" as 3 September. F1 added the yearly repeat on top.
+   *
+   * The same tension as `mar` (Tuesday and the sea), which §5 already decided
+   * by excluding 3-letter WEEKDAYS while keeping 3-letter MONTHS. Revisiting it
+   * means reopening that decision.
+   */
+  it("schedules a set of push-ups for September", () => {
+    const r = parse("fai 10 flessioni ogni 3 set");
+    expect(r.title).toBe("fai 10 flessioni");
+    expect(r.repeatAfter).toBe(365 * 24 * 60 * 60);
+    expect(r.warnings).toEqual([]);
   });
 });

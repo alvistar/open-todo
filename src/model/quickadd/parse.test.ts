@@ -198,6 +198,77 @@ describe("parseQuickAdd — recurrence", () => {
   });
 });
 
+describe("parseQuickAdd — a rejected repeat never leaks a date", () => {
+  /*
+   * Every case here was introduced by the six fixes above and found by an
+   * adversarial pass, not by the 4325-record corpus. The corpus is a DATE
+   * corpus: it has almost no ordinary prose carrying a recurrence word, so the
+   * false-positive tail of each widened pattern went unmeasured.
+   *
+   * All four are the same failure - the parser warns that a repeat is
+   * unsupported and then schedules part of the phrase anyway. Warning about a
+   * phrase and acting on half of it is worse than either alone.
+   */
+  it.each([
+    // The "!" form slipped past every reject rule, which demanded whitespace
+    // straight after the every-word. "every other" then accepted it.
+    "ping every! other day starting monday",
+    "ping ogni! altro giorno a partire da lunedì",
+    // Two reject rules match; the first in array order masked less text.
+    "pay every 5,6 starting monday",
+    "board ogni secondo martedì starting monday",
+    // The starting-clause tail covered a bare weekday and nothing else.
+    "allenarsi ogni giorno a partire dal 15 settembre",
+    "allenarsi ogni giorno a partire da lunedì 14 settembre",
+    "allenarsi ogni giorno a partire dall'11 settembre",
+  ])("refuses %s whole, with no date and no repeat", (text) => {
+    const r = parse(text);
+    expect(r.title).toBe(text);
+    expect(r.dueDate).toBeNull();
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.warnings).toHaveLength(1);
+  });
+
+  it("still lets a project through a rejected starting clause", () => {
+    // The tail stops before a sigil rather than swallowing a project the user
+    // did name. #Work is extracted after the recurrence layer runs.
+    const r = parse("ogni giorno a partire da lunedì #Work");
+    expect(r.projectId).toBe(3);
+    expect(r.title).toBe("ogni giorno a partire da lunedì");
+  });
+});
+
+describe("parseQuickAdd — an anchored repeat cannot outlive its date", () => {
+  /*
+   * "every 30 june" is a year counted FROM 30 June, so the rule takes only the
+   * every-word and leaves the date for the layer below. When that layer refuses
+   * the date, the repeat has nothing to repeat from. It used to survive anyway:
+   * a yearly task with no due date, and in the silent cases no warning either.
+   */
+  it.each([
+    // §5.1 reads "sep 15" as September 2015 and refuses it: day not certain.
+    "pay tax every sep 15",
+    // 31 June is not a day. chrono returns nothing, so nothing warns either.
+    "pay tax every 31 june",
+    // An ordinal suffix the month + day row does not admit.
+    "pay tax every april 3rd",
+    // A named year contradicts a repeat; the comma slipped past the guard.
+    "tasse ogni 30 giugno, 2028",
+  ])("drops the repeat and the every-word for %s", (text) => {
+    const r = parse(text);
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.dueDate).toBeNull();
+    expect(r.title).toBe(text);
+  });
+
+  it("keeps both when the date IS accepted", () => {
+    const r = parse("tasse ogni 30 giugno");
+    expect(r.repeatAfter).toBe(YEAR);
+    expect(ymd(due(r))).toBe("2027-06-30");
+    expect(r.title).toBe("tasse");
+  });
+});
+
 describe("parseQuickAdd — 'every other X' is twice the interval", () => {
   /*
    * Formerly known defect F2. "ping every other day" set nothing and said
@@ -215,6 +286,23 @@ describe("parseQuickAdd — 'every other X' is twice the interval", () => {
     expect(it_.repeatAfter).toBe(2 * DAY);
     expect(it_.title).toBe("ping");
     expect(it_.warnings).toEqual([]);
+  });
+
+  it("does not eat the first half of a hyphenated word", () => {
+    // "day" in "day-care" ends on a word boundary, so the old `\b` matched and
+    // left "-care visit" in the title with a two-day repeat attached.
+    const r = parse("bring snacks to every other day-care visit");
+    expect(r.title).toBe("bring snacks to every other day-care visit");
+    expect(r.repeatAfter).toBeUndefined();
+  });
+
+  it("reads 'every other workday' as the weekday unit, not a bare day", () => {
+    // Without the other-word on WEEKDAY_UNIT this matched "ogni altro giorno",
+    // returned a plain two-day repeat, and dropped "lavorativo" from the title.
+    const r = parse("allenarsi ogni altro giorno lavorativo");
+    expect(r.title).toBe("allenarsi");
+    expect(r.repeatAfter).toBe(14 * DAY);
+    expect(r.warnings.join(" ")).toMatch(/2 weeks/i);
   });
 
   it("still refuses an ordinal weekday, which is a different shape", () => {
@@ -274,6 +362,11 @@ describe("parseQuickAdd — a list of day numbers is refused, like a list of wee
 
   it("still refuses a weekday list, as it always did", () => {
     expect(parse("standup every mon, wed").warnings).toHaveLength(1);
+  });
+
+  it("does not refuse a pair of numbers that cannot be days", () => {
+    // Zero is not a day of any month.
+    expect(parse("check every 0 and 1 in the output").warnings).toEqual([]);
   });
 
   it("does not refuse an ordinary counted repeat", () => {

@@ -264,27 +264,31 @@ describe("the composed recurrence patterns are byte-identical", () => {
     "(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|" +
     "luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica|" +
     "mon|tue|wed|thu|fri|sat|sun)(?!\\p{L})";
-  const LIST_ITEM = `(?:${WD}|\\d{1,2}(?![\\d\\p{L}]))`;
+  // 1 to 31: zero is not a day of any month, so "every 0 and 1" is not a list.
+  const LIST_ITEM = `(?:${WD}|(?:3[01]|[12]\\d|[1-9])(?![\\d\\p{L}]))`;
 
   it("REJECTED, in order and complete", () => {
     expect(RECURRENCE_GRAMMAR.REJECTED.map((r: RegExp) => r.source)).toEqual([
       // F4 widened this one: a list item may be a day-of-month number, not only
       // a weekday. "ogni 5,6" matched nothing at all and said nothing, where
       // "every mon, wed" has always been refused and explained.
-      `\\b${EVERY}\\s+${LIST_ITEM}\\s*(?:,|and|e)\\s*${LIST_ITEM}`,
+      `\\b${EVERY}!?\\s+${LIST_ITEM}\\s*(?:,|and|e)\\s*${LIST_ITEM}`,
       // F5 widened this one: the ordinal WORDS and the "of the month" tail were
       // English-only, so "ogni secondo martedì" fell through to the date layer
       // and became a one-off. The shape is unchanged; the vocabulary is not.
-      `\\b${EVERY}\\s+(?:\\d+(?:st|nd|rd|th|°)?|second|third|fourth|fifth|last|first|other|next|` +
+      `\\b${EVERY}!?\\s+(?:\\d+(?:st|nd|rd|th|°)?|second|third|fourth|fifth|last|first|other|next|` +
         `prim[oa]|second[oa]|terz[oa]|quart[oa]|quint[oa]|ultim[oa]|altr[oa]|prossim[oa])` +
         `\\s+${WD}(?:\\s+(?:of\\s+(?:the\\s+)?month|del\\s+mese))?`,
-      `\\b${EVERY}\\s+(?:last|first|ultimo|primo)\\s+\\w+\\s+(?:of|del)\\s+(?:month|mese)`,
+      `\\b${EVERY}!?\\s+(?:last|first|ultimo|primo)\\s+\\w+\\s+(?:of|del)\\s+(?:month|mese)`,
       // F6 widened this one: the starting-word was English-only, so "ogni
       // giorno a partire da lunedì" kept its daily repeat AND gained a one-off
       // due date, with "a partire da" left as the title.
-      `\\b${EVERY}\\s+\\w+.*?\\b(?:starting|a\\s+partire\\s+da(?:l|ll[ae])?` +
-        `|a\\s+cominciare\\s+da(?:l|ll[ae])?)\\b(?:\\s+${WD})?`,
-      `\\b${EVERY}\\s+(?:month|mese)\\s+on\\s+the\\s+\\d+(?:st|nd|rd|th)?`,
+      // The tail now reaches the end of the phrase, stopping before a sigil:
+      // the old `(?:\s+WD)?` left "dal 15 settembre" for the date layer to
+      // schedule after warning that the repeat was unsupported.
+      `\\b${EVERY}!?\\s+\\w+.*?\\b(?:starting|a\\s+partire\\s+da(?:ll['\u2019]|l|ll[ae])?` +
+        `|a\\s+cominciare\\s+da(?:ll['\u2019]|l|ll[ae])?)\\b\\S*(?:\\s+(?![@#*]|p[1-4]\\b)\\S+)*`,
+      `\\b${EVERY}!?\\s+(?:month|mese)\\s+on\\s+the\\s+\\d+(?:st|nd|rd|th)?`,
     ]);
   });
 
@@ -293,8 +297,12 @@ describe("the composed recurrence patterns are byte-identical", () => {
     // F3 widened this one: "workday" and "working day" mean the same thing to a
     // user and took the same approximation, but only "weekday" was in the
     // grammar. Italian gained the plural and "giorni lavorativi".
+    // The optional other-word keeps this rule ahead of OTHER on "ogni altro
+    // giorno lavorativo", which OTHER otherwise read as a plain 2-day repeat
+    // with "lavorativo" eaten out of the title.
     expect(g.WEEKDAY_UNIT.source).toBe(
-      `\\b${EVERY}!?\\s+(?:weekdays?|work\\s*days?|working\\s+days?` +
+      `\\b${EVERY}!?\\s+((?:other|altr[oa]))?\\s*` +
+        `(?:weekdays?|work\\s*days?|working\\s+days?` +
         `|giorn[oi]\\s+ferial[ei]|giorn[oi]\\s+lavorativ[oi])\\b`,
     );
     expect(g.COUNTED.source).toBe(
@@ -304,7 +312,7 @@ describe("the composed recurrence patterns are byte-identical", () => {
     // stores exactly, and which fell through both lists in silence.
     expect(g.OTHER?.source).toBe(
       `\\b${EVERY}(!?)\\s+(?:other|altr[oa])\\s+` +
-        "(day|giorno|week|settimana|month|mese|year|anno)\\b",
+        "(day|giorno|week|settimana|month|mese|year|anno)(?![-\\p{L}\\p{N}])",
     );
     expect(g.BARE_WEEKDAY.source).toBe(`\\b${EVERY}(!?)\\s+${WD}`);
     expect(g.SINGULAR.source).toBe(

@@ -229,7 +229,10 @@ export const UNITS: readonly Unit[] = ["day", "week", "month", "year"];
 export interface RecurrenceGrammar {
   /** Shapes Vikunja cannot store. Checked BEFORE any accepted form. */
   REJECTED: RegExp[];
-  /** "every weekday" - approximated to weekly, and said out loud. */
+  /**
+   * "every weekday" - approximated to weekly, and said out loud. Captures:
+   * 1 = the other-word, when the phrase is "every OTHER workday".
+   */
   WEEKDAY_UNIT: RegExp;
   /** "every 3 days". Captures: 1 = "!", 2 = count, 3 = unit. */
   COUNTED: RegExp;
@@ -284,6 +287,24 @@ export function compileRecurrenceGrammar(
   const OF_THE = required(group(union(packs, (p) => p.ofThe)), "ofThe");
   const MONTH_NOUN = required(group(union(packs, (p) => p.monthNoun)), "monthNoun");
   const STARTING = oneOf(union(packs, (p) => p.startingWords));
+
+  /*
+   * Everything after the starting-word is the start date, and ALL of it has to
+   * stay inside the rejected span. The tail used to be `(?:\s+WD)?` - a bare
+   * weekday and nothing else - so "ogni giorno a partire dal 15 settembre"
+   * warned that the repeat was unsupported and then let the date layer read
+   * "15 settembre" and schedule it anyway. Warning about a phrase and then
+   * acting on half of it is worse than either alone.
+   *
+   * A sigil is not part of the date. "#Lavoro" and "@telefono" belong to no
+   * language and are extracted after this runs, so the tail stops before one
+   * rather than swallowing a project the user did name.
+   *
+   * The leading `\S*` catches an elision: Italian writes "dall'11 settembre"
+   * with no space after the apostrophe, so a tail that began with `\s+` left
+   * the "11" behind for the date layer.
+   */
+  const START_DATE_TAIL = "\\S*(?:\\s+(?![@#*]|p[1-4]\\b)\\S+)*";
   const OTHER_WORDS = oneOf(union(packs, (p) => p.otherWords));
   const MONTH_ON_THE_NTH = alternatives(union(packs, (p) => p.monthOnTheNth));
 
@@ -302,11 +323,17 @@ export function compileRecurrenceGrammar(
    * "ogni 15,30 alle 9" would match on "1" and "3" and report a span two
    * characters wide.
    */
-  const LIST_ITEM = `(?:${WD}|\\d{1,2}(?![\\d\\p{L}]))`;
+  // 1 to 31, not `\d{1,2}`: "check every 0 and 1 in the output" is a pair of
+  // binary values, and zero is not a day of any month.
+  const DAY_OF_MONTH = "(?:3[01]|[12]\\d|[1-9])(?![\\d\\p{L}])";
+  const LIST_ITEM = `(?:${WD}|${DAY_OF_MONTH})`;
 
   const REJECTED: RegExp[] = [
     // A list of weekdays or day numbers: "every mon, wed", "ogni 5,6"
-    new RegExp(`\\b${EVERY}\\s+${LIST_ITEM}\\s*${LIST_SEPARATOR}\\s*${LIST_ITEM}`, "iu"),
+    new RegExp(
+      `\\b${EVERY}!?\\s+${LIST_ITEM}\\s*${LIST_SEPARATOR}\\s*${LIST_ITEM}`,
+      "iu",
+    ),
   ];
 
   // An ordinal weekday, in digits or words: "every 2nd tuesday", "every second
@@ -315,7 +342,7 @@ export function compileRecurrenceGrammar(
   if (ORDINAL_WORDS !== null) {
     REJECTED.push(
       new RegExp(
-        `\\b${EVERY}\\s+(?:\\d+${ORDINAL_SUFFIX === null ? "" : `${ORDINAL_SUFFIX}?`}|${ORDINAL_WORDS})` +
+        `\\b${EVERY}!?\\s+(?:\\d+${ORDINAL_SUFFIX === null ? "" : `${ORDINAL_SUFFIX}?`}|${ORDINAL_WORDS})` +
           `\\s+${WD}${ORDINAL_TAIL === null ? "" : `(?:\\s+${ORDINAL_TAIL})?`}`,
         "iu",
       ),
@@ -325,7 +352,7 @@ export function compileRecurrenceGrammar(
   // "every last/first day of month"
   REJECTED.push(
     new RegExp(
-      `\\b${EVERY}\\s+${FIRST_LAST}\\s+\\w+\\s+${OF_THE}\\s+${MONTH_NOUN}`,
+      `\\b${EVERY}!?\\s+${FIRST_LAST}\\s+\\w+\\s+${OF_THE}\\s+${MONTH_NOUN}`,
       "iu",
     ),
   );
@@ -335,7 +362,7 @@ export function compileRecurrenceGrammar(
   // schedules a one-off, which is what rejecting is meant to prevent.
   if (STARTING !== null) {
     REJECTED.push(
-      new RegExp(`\\b${EVERY}\\s+\\w+.*?\\b${STARTING}\\b(?:\\s+${WD})?`, "iu"),
+      new RegExp(`\\b${EVERY}!?\\s+\\w+.*?\\b${STARTING}\\b${START_DATE_TAIL}`, "iu"),
     );
   }
 
@@ -343,7 +370,7 @@ export function compileRecurrenceGrammar(
   // before this rule existed.
   if (MONTH_ON_THE_NTH !== null) {
     REJECTED.push(
-      new RegExp(`\\b${EVERY}\\s+${MONTH_NOUN}\\s+${MONTH_ON_THE_NTH}`, "iu"),
+      new RegExp(`\\b${EVERY}!?\\s+${MONTH_NOUN}\\s+${MONTH_ON_THE_NTH}`, "iu"),
     );
   }
 
@@ -382,13 +409,30 @@ export function compileRecurrenceGrammar(
 
   return {
     REJECTED,
-    WEEKDAY_UNIT: new RegExp(`\\b${EVERY}!?\\s+${WEEKDAY_UNIT_WORDS}\\b`, "iu"),
+    /*
+     * The optional other-word is what keeps this rule ahead of OTHER on "ogni
+     * altro giorno lavorativo". Without it OTHER matched "ogni altro giorno",
+     * returned a plain two-day repeat, and left "lavorativo" in the title - a
+     * word eaten and an interval invented.
+     */
+    WEEKDAY_UNIT: new RegExp(
+      `\\b${EVERY}!?\\s+${OTHER_WORDS === null ? "" : `(${OTHER_WORDS})?\\s*`}${WEEKDAY_UNIT_WORDS}\\b`,
+      "iu",
+    ),
     COUNTED: new RegExp(`\\b${EVERY}(!?)\\s+(\\d{1,3})\\s+(${COUNTED_UNITS})\\b`, "iu"),
     YEARLY_DATE: new RegExp(`\\b${EVERY}(!?)(?=\\s+${FIXED_DATE})`, "iu"),
     OTHER:
       OTHER_WORDS === null
         ? null
-        : new RegExp(`\\b${EVERY}(!?)\\s+${OTHER_WORDS}\\s+(${SINGULAR_UNITS})\\b`, "iu"),
+        : /*
+           * `(?![-\p{L}\p{N}])`, not `\b`: "day" in "every other day-care
+           * visit" ends on a word boundary, so `\b` let the rule eat the first
+           * half of a hyphenated word and leave "-care visit" in the title.
+           */
+          new RegExp(
+            `\\b${EVERY}(!?)\\s+${OTHER_WORDS}\\s+(${SINGULAR_UNITS})(?![-\\p{L}\\p{N}])`,
+            "iu",
+          ),
     BARE_WEEKDAY: new RegExp(`\\b${EVERY}(!?)\\s+${WD}`, "iu"),
     SINGULAR: new RegExp(`\\b${EVERY}(!?)\\s+(${SINGULAR_UNITS})\\b`, "iu"),
     ADVERB: ADVERB_WORDS === null ? null : new RegExp(`\\b(${ADVERB_WORDS})\\b`, "i"),

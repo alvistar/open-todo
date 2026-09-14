@@ -29,6 +29,14 @@ export interface RecurrenceMatch {
   warning?: string;
   /** Set when the phrase is recognised as recurrence Vikunja cannot express. */
   rejected?: boolean;
+  /**
+   * Set when the repeat is meaningless on its own, because the phrase named the
+   * day it repeats ON rather than an interval. "every 30 june" is a year
+   * counted FROM 30 June; if the date layer then refuses "30 june" - because it
+   * carries an ordinal, or a year, or names a day that does not exist - the
+   * repeat has nothing to repeat from and must go with it.
+   */
+  needsDate?: boolean;
   start: number;
   end: number;
   text: string;
@@ -56,17 +64,40 @@ function matchRecurrenceIn(g: RecurrenceGrammar, text: string): RecurrenceMatch 
    * substring "month", so an accepted rule running first would match it and
    * round a calendar-shaped repeat to monthly in silence.
    */
+  /*
+   * ALL of them, then the WIDEST match - not the first one that hits.
+   *
+   * Array order is arbitrary here, and two rejected shapes can both match one
+   * line: "pay every 5,6 starting monday" is a day-number list AND a starting
+   * clause. Returning the first match masked only "every 5,6", and the date
+   * layer then read "starting monday" and scheduled it. Whatever a rejection
+   * leaves behind is re-read by the next layer, so the rejection has to take
+   * the most text, not the earliest.
+   *
+   * Leftmost breaks a tie on width, so the span still starts where the user's
+   * unsupported phrase starts.
+   */
+  let widest: RecurrenceMatch | null = null;
   for (const pattern of g.REJECTED) {
     const m = text.match(pattern);
-    if (m) {
-      return {
-        rejected: true,
-        start: m.index ?? 0,
-        end: (m.index ?? 0) + m[0].length,
-        text: m[0],
-      };
+    if (!m) continue;
+    const start = m.index ?? 0;
+    const candidate: RecurrenceMatch = {
+      rejected: true,
+      start,
+      end: start + m[0].length,
+      text: m[0],
+    };
+    if (
+      widest === null ||
+      candidate.end - candidate.start > widest.end - widest.start ||
+      (candidate.end - candidate.start === widest.end - widest.start &&
+        candidate.start < widest.start)
+    ) {
+      widest = candidate;
     }
   }
+  if (widest) return widest;
 
   const hit = (
     m: RegExpMatchArray,
@@ -109,9 +140,13 @@ function matchRecurrenceIn(g: RecurrenceGrammar, text: string): RecurrenceMatch 
       // Approximated, and it says so out loud rather than pretending.
       re: g.WEEKDAY_UNIT,
       run: (m) =>
-        hit(m, WEEK, {
-          warning: "Vikunja cannot repeat on weekdays only; saved as weekly.",
-        }),
+        m[1]
+          ? hit(m, 2 * WEEK, {
+              warning: "Vikunja cannot repeat on weekdays only; saved as every 2 weeks.",
+            })
+          : hit(m, WEEK, {
+              warning: "Vikunja cannot repeat on weekdays only; saved as weekly.",
+            }),
     },
     {
       re: g.COUNTED,
@@ -148,7 +183,7 @@ function matchRecurrenceIn(g: RecurrenceGrammar, text: string): RecurrenceMatch 
        * earlier after each leap year - early, never late.
        */
       re: g.YEARLY_DATE,
-      run: (m) => hit(m, YEAR),
+      run: (m) => hit(m, YEAR, { needsDate: true }),
     },
     {
       re: g.BARE_WEEKDAY,
