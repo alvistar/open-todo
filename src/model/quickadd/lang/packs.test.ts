@@ -263,10 +263,14 @@ describe("the composed recurrence patterns are byte-identical", () => {
     "(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|" +
     "luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica|" +
     "mon|tue|wed|thu|fri|sat|sun)(?!\\p{L})";
+  const LIST_ITEM = `(?:${WD}|\\d{1,2}(?![\\d\\p{L}]))`;
 
   it("REJECTED, in order and complete", () => {
     expect(RECURRENCE_GRAMMAR.REJECTED.map((r: RegExp) => r.source)).toEqual([
-      `\\b${EVERY}\\s+${WD}\\s*(?:,|and|e)\\s*${WD}`,
+      // F4 widened this one: a list item may be a day-of-month number, not only
+      // a weekday. "ogni 5,6" matched nothing at all and said nothing, where
+      // "every mon, wed" has always been refused and explained.
+      `\\b${EVERY}\\s+${LIST_ITEM}\\s*(?:,|and|e)\\s*${LIST_ITEM}`,
       // F5 widened this one: the ordinal WORDS and the "of the month" tail were
       // English-only, so "ogni secondo martedì" fell through to the date layer
       // and became a one-off. The shape is unchanged; the vocabulary is not.

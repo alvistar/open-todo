@@ -110,10 +110,25 @@ describe("matchRecurrence — rejected, never approximated", () => {
     "ogni giorno a partire da lunedì",
     "ogni giorno a partire dal 15",
     "ogni settimana a cominciare da lunedì",
+    // Formerly F4: a list of day NUMBERS matched nothing and said nothing,
+    // because the rule needed a weekday either side of the separator.
+    "ogni 5,6 alle 15",
+    "every 5,6 at 3pm",
+    "ogni 15, 30",
+    "paga every 1 and 15",
   ])("rejects %s", (text) => {
     const match = r(text);
     expect(match?.rejected).toBe(true);
     expect(match?.repeatAfter).toBeUndefined();
+  });
+
+  it("bounds a day number on both sides", () => {
+    // Without the right-hand boundary "ogni 15,30 alle 9" matched on "1" and
+    // "3" and reported a span two characters wide.
+    const text = "ogni 15,30 alle 9";
+    const m = r(text);
+    if (!m) throw new Error("expected a rejection");
+    expect(text.slice(m.start, m.end)).toBe("ogni 15,30");
   });
 
   it("keeps the Italian rejection span whole, tail included", () => {

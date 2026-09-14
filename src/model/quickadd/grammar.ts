@@ -290,9 +290,20 @@ export function compileRecurrenceGrammar(
    * the substring "month", so an accepted rule running first would match it and
    * round a calendar-shaped repeat to monthly in silence.
    */
+  /*
+   * A list item is a weekday or a day-of-month number: "every mon, wed",
+   * "ogni 5,6". Vikunja stores one interval, so a list of ANY kind is
+   * calendar-shaped and refused.
+   *
+   * The digits are bounded on both sides. Without the right-hand boundary
+   * "ogni 15,30 alle 9" would match on "1" and "3" and report a span two
+   * characters wide.
+   */
+  const LIST_ITEM = `(?:${WD}|\\d{1,2}(?![\\d\\p{L}]))`;
+
   const REJECTED: RegExp[] = [
-    // A list of weekdays: "every mon, wed"
-    new RegExp(`\\b${EVERY}\\s+${WD}\\s*${LIST_SEPARATOR}\\s*${WD}`, "iu"),
+    // A list of weekdays or day numbers: "every mon, wed", "ogni 5,6"
+    new RegExp(`\\b${EVERY}\\s+${LIST_ITEM}\\s*${LIST_SEPARATOR}\\s*${LIST_ITEM}`, "iu"),
   ];
 
   // An ordinal weekday, in digits or words: "every 2nd tuesday", "every second

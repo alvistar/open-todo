@@ -117,7 +117,7 @@ text written for Vikunja's UI still parses.
 | Date | See the enforced table below | `due_date` |
 | Time | `at 10`, `alle 10`, `ore 10`, `alle ore 10`, `10:30`, `3pm` — as a suffix on a Date row, never alone | time part of `due_date` |
 | Recurrence | `every day/week/month/year`, `daily…yearly`, `every N days/weeks/months`, `every monday` (single weekday), `every weekday` (approximated as weekly — **flag in UI**), `every <day> <month>` / `ogni <giorno> <mese>` (yearly on a fixed date — see below), `every! …` → `repeat_mode 2` | `repeat_after` + `repeat_mode` |
-| Recurrence, **rejected** | `every mon, wed`, `every 2nd tuesday` / `ogni secondo martedì` / `ogni 2° martedì` (+ optional `of the month` / `del mese`), `every last day of month`, `every workday at 9 starting …` / `ogni giorno a partire da …` (also `a cominciare da`; NOT a bare `da`, which is ordinary Italian) | Shown as "not supported by Vikunja"; text stays in the title. |
+| Recurrence, **rejected** | `every mon, wed` / `ogni 5,6` (a list of weekdays **or** day numbers), `every 2nd tuesday` / `ogni secondo martedì` / `ogni 2° martedì` (+ optional `of the month` / `del mese`), `every last day of month`, `every workday at 9 starting …` / `ogni giorno a partire da …` (also `a cominciare da`; NOT a bare `da`, which is ordinary Italian) | Shown as "not supported by Vikunja"; text stays in the title. |
 | Literal | the **whole** line wrapped in matching `"` or `'` | nothing is parsed; the quoted text becomes the title verbatim |
 | Reminder | `!` alone (Todoist's reminder sigil) | not in v1; chip in the composer instead |
 
@@ -155,6 +155,15 @@ Todoist stores the same phrase as `FREQ=YEARLY;BYMONTH=4;BYMONTHDAY=2`. Vikunja
 has no field for the month and day, so the two agree on the kind, the interval
 and the first occurrence, and differ only in the calendar detail Vikunja cannot
 hold.
+
+**Known limitation of the list rule (2026-09-14).** A list item is a weekday or
+a day-of-month number, so `ogni 5,6` is refused like `every mon, wed`. Italian
+writes decimals with a comma, so `corri ogni 1,5 km` takes the same refusal and
+shows a warning about a repeat the user never wrote. Nothing is lost — the title
+is untouched and no date is set — and the alternatives are worse: a space after
+the comma does not separate the two cases, and gating on a following unit noun
+is guesswork. Zero occurrences in the 4325-record corpus. Pinned as F7 in
+`known-defects.test.ts`.
 
 ### 5.1 The date table is enforced, not merely documented (D-vocab, 2026-09-10)
 

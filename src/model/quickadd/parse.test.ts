@@ -198,6 +198,34 @@ describe("parseQuickAdd — recurrence", () => {
   });
 });
 
+describe("parseQuickAdd — a list of day numbers is refused, like a list of weekdays", () => {
+  /*
+   * Formerly known defect F4. The reject rule needed a weekday on BOTH sides of
+   * the separator, so "5,6" matched nothing at all: no date, no repeat, and no
+   * word of explanation, while "every mon, wed" was refused and explained. Not
+   * an Italian asymmetry - both languages were silent on digits.
+   *
+   * Nothing was ever LOST here, unlike F1, F5 and F6. The whole fix is that the
+   * composer now says why nothing happened.
+   */
+  it.each(["ogni 5,6 alle 15", "every 5,6 at 3pm"])("explains %s", (text) => {
+    const r = parse(text);
+    expect(r.title).toBe(text);
+    expect(r.dueDate).toBeNull();
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.warnings).toHaveLength(1);
+  });
+
+  it("still refuses a weekday list, as it always did", () => {
+    expect(parse("standup every mon, wed").warnings).toHaveLength(1);
+  });
+
+  it("does not refuse an ordinary counted repeat", () => {
+    expect(parse("ping every 2 weeks").warnings).toEqual([]);
+    expect(parse("ping ogni 3 giorni").warnings).toEqual([]);
+  });
+});
+
 describe("parseQuickAdd — a 'starting' clause is refused in both languages", () => {
   /*
    * Formerly known defect F6, and the worst of the six. `\bstarting\b` was

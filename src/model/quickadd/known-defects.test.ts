@@ -11,9 +11,9 @@ import { parseQuickAdd, type QuickAddContext } from "./parse";
  * can quietly change shape mid-refactor and be re-discovered later as something
  * new.
  *
- * F1, F5 and F6 are FIXED and no longer live here. Their cases moved to the
- * ordinary suite: `recurrence.test.ts` for the rule, `parse.test.ts` for the
- * whole line.
+ * F1, F4, F5 and F6 are FIXED and no longer live here. Their cases moved to
+ * the ordinary suite: `recurrence.test.ts` for the rule, `parse.test.ts` for
+ * the whole line.
  *
  * So the rule for this file is the opposite of every other test here:
  *
@@ -45,7 +45,6 @@ const ctx = (): QuickAddContext => ({
 
 const parse = (text: string) => parseQuickAdd(text, ctx());
 
-
 /** Neither a date, nor a repeat, nor a word of explanation. */
 const droppedInSilence = (text: string) => {
   const r = parse(text);
@@ -76,21 +75,27 @@ describe("F3 — 'workday' is unknown where 'weekday' is understood", () => {
   });
 });
 
-describe("F4 — a comma list of DAY NUMBERS is silent, where weekdays warn", () => {
+describe("F7 — an Italian decimal comma is read as a list of day numbers", () => {
   /*
-   * The reject pattern needs a weekday on both sides of the comma, so "5,6"
-   * matches nothing at all. Not an Italian asymmetry: both languages are silent
-   * on digits and both warn on weekdays.
+   * NOT found by the corpus. Introduced knowingly by the F4 fix, and written
+   * down here rather than discovered later.
+   *
+   * F4 taught the list rule that a day-of-month number is a list item, so
+   * "ogni 5,6" is refused like "every mon, wed". Italian writes decimals with a
+   * comma, so "corri ogni 1,5 km" now takes the same refusal. Nothing is lost -
+   * the title is untouched and no date is set, exactly as before - but the
+   * composer shows a warning about a repeat the user never wrote.
+   *
+   * Accepted because the alternatives are worse: a space after the comma does
+   * not separate the two cases ("ogni 5,6" has none), and gating on a following
+   * unit noun is guesswork. Zero occurrences in the 4325-record corpus. Revisit
+   * if a real user hits it.
    */
-  it("says nothing about the Italian digit list", () =>
-    droppedInSilence("ogni 5,6 alle 15"));
-  it("says nothing about the English digit list", () =>
-    droppedInSilence("every 5,6 at 3pm"));
-
-  it("but does warn about a weekday list", () => {
-    const r = parse("standup every mon, wed");
-    expect(r.title).toBe("standup every mon, wed");
+  it("warns about a distance that is not a repeat", () => {
+    const r = parse("corri ogni 1,5 km");
+    expect(r.title).toBe("corri ogni 1,5 km");
     expect(r.dueDate).toBeNull();
+    expect(r.repeatAfter).toBeUndefined();
     expect(r.warnings).toHaveLength(1);
   });
 });
