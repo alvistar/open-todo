@@ -252,7 +252,7 @@ Every row is one shape. A row may carry a time clause from the Time row above.
 | next period | `next week`, `next month` | `la settimana prossima`, `prossima settimana`, `il mese prossimo` |
 | end of month | `end of month` | `fine mese` |
 | month + day | `Apr 30`, `30 apr`, `1 jan`, `29 feb` | `15 settembre`, `settembre 15`, `30 dic`, `29 febbraio` |
-| month + day + year | `15 sep 2027` | `15 set 2027` |
+| month + day + year | `15 sep 2027` | `15 ott 2027` |
 | ISO | `2026-09-15` | `2026-09-15` |
 | slash, day-first | `15/9`, `13/10` | `15/9`, `13/10` |
 
@@ -271,6 +271,7 @@ purpose:
 | Excluded | Why |
 |---|---|
 | 3-letter weekdays: `sat`, `mon`, `wed`, `lun`, `mar`, `ven`, `gio`, `sab`, `dom` | Every one is also an ordinary word in one of the two languages. This removes a capability that worked before chrono, and is the single biggest reason D-vocab exists. |
+| the month abbreviation `set` (settembre) | **Removed 2026-09-14**, the same trade as the weekdays above and for the same reason: `set` is an ordinary noun in *both* languages, so `preparare 3 set di documenti` and `order 2 set of keys` each lost two words from the title and gained a September date, silently. It costs `15 set 2027`, which Todoist reads and we no longer do; the month + day + year row now reads `15 ott 2027`. The other abbreviations stay — they bite only beside a digit, and `30 mar`, `5 mag`, `4 lug`, `3 gen` are not ordinary phrases the way `3 set` is. The weak cases are pinned rather than argued away. |
 | `this Wednesday`, `this weekend`, `weekend`, `fine settimana` | `this Wednesday` currently resolves a week out — the *wrong* date, not merely an undocumented one. |
 | `yesterday`, `ieri`, `last friday` | A due date in the past is not a task. |
 | `next year` | Nothing useful to schedule; a year is not a due date. |

@@ -340,7 +340,9 @@ describe("matchWhen — §5.1 rows that must resolve", () => {
 
   it("month + day + year", () => {
     expect(day(when("15 sep 2027").date)).toBe("2027-09-15");
-    expect(day(when("15 set 2027").date)).toBe("2027-09-15");
+    // "15 set 2027" until 2026-09-14: "set" left the vocabulary because it is
+    // an ordinary noun in both languages. See §5.1's exclusion table.
+    expect(day(when("15 ott 2027").date)).toBe("2027-10-15");
   });
 });
 

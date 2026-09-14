@@ -128,6 +128,11 @@ export const en: LanguagePack = {
     "bring snacks to every other day-care visit",
     "check every 0 and 1 in the output",
     "review every chapter starting from the second",
+    "book the day-care visit",
+    "a day-care centre",
+    "the medicine is taken daily by the patient",
+    "a weekly report from the vendor",
+    "order a new set of keys",
   ],
   negativeCorpus: [
     // The two that made the case for D-vocab in the first place.
@@ -140,5 +145,7 @@ export const en: LanguagePack = {
     "March report",
     // Digits that are not a date.
     "buy 3 apples",
+    // chrono's Italian locale reads "set" as settembre even in English text.
+    "order 2 set of keys",
   ],
 };

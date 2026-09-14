@@ -67,7 +67,9 @@ describe("the composed vocabulary is byte-identical to the hand-written lists", 
 
   it("MONTH_SHORT", () => {
     expect(MONTH_SHORT).toBe(
-      "jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|gen|mag|giu|lug|ago|set|ott|dic",
+      // No "set" since 2026-09-14: settembre, and also the ordinary noun in
+      // both languages. See the exclusion table in §5.1.
+      "jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|gen|mag|giu|lug|ago|ott|dic",
     );
   });
 
@@ -313,18 +315,24 @@ describe("the composed recurrence patterns are byte-identical", () => {
     "mon|tue|wed|thu|fri|sat|sun)(?!\\p{L})";
   // 1 to 31: zero is not a day of any month, so "every 0 and 1" is not a list.
   const LIST_ITEM = `(?:${WD}|(?:3[01]|[12]\\d|[1-9])(?![\\d\\p{L}]))`;
+  // What may follow a COMPLETE schedule: a time, a sigil, or nothing.
+  const TAIL =
+    "(?=\\s*$|\\s+(?:at|alle|ore)\\b|\\s*\\d{1,2}:\\d{2}|\\s*[@#*]|\\s+p[1-4]\\b)";
   const MONTH_ANY =
     "january|february|march|april|may|june|july|august|september|october|" +
     "november|december|gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|" +
     "agosto|settembre|ottobre|novembre|dicembre|jan|feb|mar|apr|jun|jul|aug|" +
-    "sep|sept|oct|nov|dec|gen|mag|giu|lug|ago|set|ott|dic";
+    "sep|sept|oct|nov|dec|gen|mag|giu|lug|ago|ott|dic";
 
   it("REJECTED, in order and complete", () => {
     expect(RECURRENCE_GRAMMAR.REJECTED.map((r: RegExp) => r.source)).toEqual([
       // F4 widened this one: a list item may be a day-of-month number, not only
       // a weekday. "ogni 5,6" matched nothing at all and said nothing, where
       // "every mon, wed" has always been refused and explained.
-      `\\b${EVERY}!?\\s+${LIST_ITEM}\\s*(?:,|and|e)\\s*${LIST_ITEM}`,
+      // F7: the tail is what keeps the Italian decimal comma out. "corri ogni
+      // 1,5 km" is followed by its unit; a day list is followed by a time or
+      // by nothing.
+      `\\b${EVERY}!?\\s+${LIST_ITEM}\\s*(?:,|and|e)\\s*${LIST_ITEM}${TAIL}`,
       // F5 widened this one: the ordinal WORDS and the "of the month" tail were
       // English-only, so "ogni secondo martedì" fell through to the date layer
       // and became a one-off. The shape is unchanged; the vocabulary is not.
@@ -386,9 +394,11 @@ describe("the composed recurrence patterns are byte-identical", () => {
     );
     // F3 again: Italian had no adverbs at all, so "report mensilmente" set
     // nothing where "report monthly" set a monthly repeat.
+    // F8: the same tail. "a weekly report from the vendor" describes the
+    // report, not the task, and the adverb is not the end of a schedule.
     expect(g.ADVERB?.source).toBe(
       "\\b(daily|quotidianamente|giornalmente|weekly|settimanalmente" +
-        "|monthly|mensilmente|yearly|annually|annualmente)\\b",
+        `|monthly|mensilmente|yearly|annually|annualmente)\\b${TAIL}`,
     );
     // Plain `i`, like the literal it replaced. Nothing in it needs \p{L}.
     expect(g.ADVERB?.flags).toBe("i");

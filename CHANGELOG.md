@@ -61,15 +61,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `review every chapter starting from the second` is left alone — an English
   hole that predates the language packs.
 
-  Four limitations are left open and pinned as F7, F8, F10 and F11 in
-  `known-defects.test.ts`, each one a pattern matching ordinary prose and each a
-  §5 decision rather than a repair. Italian writes decimals with a comma, so
-  `corri ogni 1,5 km` warns about a repeat nobody wrote. A repeat adverb is read
-  anywhere in the line, so `disdire il servizio pagato mensilmente` becomes a
-  monthly task — English has behaved this way since before the language packs. A
-  month abbreviation is also an ordinary word: `preparare 3 set di documenti`
-  schedules 3 September and loses two words from the title. And chrono offers
-  `the day` inside `the day-care visit`, which §5 refuses and then explains.
+- **A schedule ends the line, and ordinary prose is left alone.** Four patterns
+  were reacting to sentences rather than to schedules:
+  - `corri ogni 1,5 km` warned about a repeat, because Italian writes decimals
+    with the comma the day-number list reads as a separator. A day list is now
+    required to be the end of the schedule — followed by a clock time, a sigil,
+    or nothing. A distance is followed by its unit.
+  - `a weekly report from the vendor` and `the medicine is taken daily by the
+    patient` became repeating tasks. The same rule applies to the bare adverb
+    §5 accepts: `standup daily` and `standup daily at 9` still work, because
+    nothing but a time follows them.
+  - `book the day-care visit` explained a refusal nobody asked for: chrono reads
+    `the day` out of `day-care`, §5 refuses it, and the refusal was spoken. A
+    span that is only a bare unit noun is now refused in silence. `the day after
+    tomorrow` still warns, and so do `sat` and `mar` — those two warnings are
+    the whole reason D-vocab exists.
+  - **`set` has left the month vocabulary.** It is settembre and it is also the
+    ordinary noun in both languages, so `preparare 3 set di documenti` and
+    `order 2 set of keys` each lost two words from the title and gained a
+    September date, silently. The same trade §5.1 already made for the 3-letter
+    weekdays, and it costs the same thing: `15 set 2027` no longer resolves, and
+    the month + day + year row now reads `15 ott 2027`.
+
+  One limitation is left, pinned as F8: an adverb that ENDS the line is read as
+  a schedule whatever it modifies, so `disdire il servizio pagato mensilmente`
+  becomes a monthly task. It is the same shape as `report mensilmente`, which is
+  exactly what the user means, and no syntax separates them. Fixing it means
+  withdrawing the bare-adverb row from §5, which is a grammar amendment.
 
 - **Each language pack carries its counter-examples, and they are enforced.**
   `negativeCorpus` is text §5 refuses out loud; `inertCorpus` is ordinary prose

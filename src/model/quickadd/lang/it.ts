@@ -124,7 +124,19 @@ export const it: LanguagePack = {
 
   // Only the ones Italian does not share with English: "feb", "mar", "apr" and
   // "nov" are spelled the same in both and are carried by the English pack.
-  monthShort: ["gen", "mag", "giu", "lug", "ago", "set", "ott", "dic"],
+  /*
+   * NO "set". It is settembre, and it is also the ordinary noun in BOTH
+   * languages: "preparare 3 set di documenti" and "order 2 set of keys" each
+   * lost two words from the title and gained a date in September, silently.
+   * The same trade §5.1 already made for the 3-letter WEEKDAYS, for the same
+   * reason - and it costs the same thing, "15 set 2027", which Todoist reads
+   * and we no longer do.
+   *
+   * The rest stay. They only bite beside a digit, and "30 mar", "5 mag",
+   * "4 lug", "3 gen" are not ordinary phrases the way "3 set" is. The weak
+   * cases are pinned in known-defects.test.ts rather than argued away.
+   */
+  monthShort: ["gen", "mag", "giu", "lug", "ago", "ott", "dic"],
 
   relativeDay: ["oggi", "domani", "dopodomani", "stasera"],
 
@@ -242,6 +254,9 @@ export const it: LanguagePack = {
     "comprare 2,5 kg di farina",
     "tagliare la tavola a 1,5 metri",
     "ripassare ogni capitolo a partire dal secondo",
+    "chiamare il 5,6 volte se non risponde",
+    "comprare il set di chiavi",
+    "report aggiornato settimanalmente dal fornitore",
   ],
   negativeCorpus: [
     // "mar" is the sea at least as often as it is Tuesday.
@@ -254,6 +269,10 @@ export const it: LanguagePack = {
     "chiama tra 2 ore",
     // A bare month name.
     "marzo report",
+    "il mare mosso a giugno",
+    // chrono's Italian still knows "set" as settembre; §5 no longer does, so
+    // this is refused out loud exactly as "il mar mosso" is.
+    "preparare 3 set di documenti",
     // "fine settimana" is a period, not a day.
     "fine settimana",
   ],

@@ -111,7 +111,20 @@ export interface DateGrammar {
   TIME_MARKER: RegExp;
   /** Phrases resolved before chrono runs. Leftmost match across all packs wins. */
   NATIVE_PHRASES: NativePhrase[];
+  /**
+   * A span that is only a bare unit noun, with or without the words that
+   * ordinarily sit in front of one. See `isBareUnit` in datePhrase.ts.
+   */
+  BARE_UNIT: RegExp;
 }
+
+/*
+ * The words that may sit in front of a bare unit noun without making it a date.
+ * Articles and the prepositions chrono drags in. Engine-owned rather than
+ * per pack: they carry no date meaning on their own, and a pack that omitted
+ * one would get a warning it did not choose.
+ */
+const LEADING_WORDS = "the|a|an|in|il|lo|la|un|uno|una|nel|nella";
 
 export function compileDateGrammar(packs: readonly LanguagePack[]): DateGrammar {
   const WEEKDAY_FULL = weekdayFullOf(packs);
@@ -214,10 +227,35 @@ export function compileDateGrammar(packs: readonly LanguagePack[]): DateGrammar 
     "i",
   );
 
+  /*
+   * "the day", "a day", "in a day", "il giorno".
+   *
+   * chrono offers these as date candidates - "the day" out of "the day-care
+   * visit" is the one that started this - and §5 rightly refuses them, because
+   * a unit with no number and no direction is not a date. The refusal used to
+   * be spoken, which meant an ordinary English noun drew an explanation the
+   * user never asked for.
+   *
+   * Deliberately NARROW. It is the unit words only, with the determiners and
+   * prepositions that may precede one, anchored at both ends. "the day after
+   * tomorrow" keeps its warning because it carries a date word; "sat" and "mar"
+   * keep theirs because they are not units, and those two warnings are the
+   * whole reason D-vocab exists.
+   */
+  const UNIT_NOUN = required(
+    oneOf([
+      ...union(packs, (p) => p.offsetUnits),
+      ...UNITS.flatMap((u) => union(packs, (p) => p.singularUnits[u])),
+    ]),
+    "offsetUnits",
+  );
+  const BARE_UNIT = new RegExp(`^(?:(?:${LEADING_WORDS})\\s+)*${UNIT_NOUN}$`, "iu");
+
   return {
     ACCEPTED_SHAPE,
     NAMES_A_MONTH,
     TIME_MARKER,
+    BARE_UNIT,
     NATIVE_PHRASES: packs.flatMap((p) => p.nativePhrases),
   };
 }
@@ -329,6 +367,29 @@ export function compileRecurrenceGrammar(
    */
   const START_DATE_TAIL = "\\S*(?:\\s+(?![@#*]|p[1-4]\\b)\\S+)*";
   const OTHER_WORDS = oneOf(union(packs, (p) => p.otherWords));
+
+  /*
+   * What may follow a COMPLETE schedule specification, and nothing else.
+   *
+   * A repeat phrase ends the scheduling part of the line. What can legitimately
+   * come after it is a clock time, a sigil, or nothing. An ordinary WORD after
+   * it is evidence the match was not a schedule at all:
+   *
+   *   "ogni 5,6 alle 15"            a day list, then a time        -> a repeat
+   *   "corri ogni 1,5 km"           a decimal, then a unit noun    -> not one
+   *   "standup daily at 9"          an adverb, then a time         -> a repeat
+   *   "a weekly report from the vendor"  an adverb, then a noun    -> not one
+   *
+   * This is what separates the Italian decimal comma from a list of month days,
+   * and a scheduling adverb from one describing the task's object. It is not a
+   * general truth about language - it is a statement that quick-add lines put
+   * the schedule last, which is how §5's shapes are written.
+   */
+  const TIME_PREP = required(
+    oneOf(union(packs, (p) => p.timePrepositions)),
+    "timePrepositions",
+  );
+  const NOTHING_BUT_A_TIME = `(?=\\s*$|\\s+${TIME_PREP}\\b|\\s*\\d{1,2}:\\d{2}|\\s*[@#*]|\\s+p[1-4]\\b)`;
   const MONTH_ON_THE_NTH = alternatives(union(packs, (p) => p.monthOnTheNth));
 
   /*
@@ -352,9 +413,16 @@ export function compileRecurrenceGrammar(
   const LIST_ITEM = `(?:${WD}|${DAY_OF_MONTH})`;
 
   const REJECTED: RegExp[] = [
-    // A list of weekdays or day numbers: "every mon, wed", "ogni 5,6"
+    /*
+     * A list of weekdays or day numbers: "every mon, wed", "ogni 5,6".
+     *
+     * `NOTHING_BUT_A_TIME` is what keeps "corri ogni 1,5 km" out of it. Italian
+     * writes decimals with the same comma this rule reads as a separator, and
+     * no syntax distinguishes 1,5 from 5,6 - but a distance is followed by its
+     * unit, and a day list is followed by a time or by nothing.
+     */
     new RegExp(
-      `\\b${EVERY}!?\\s+${LIST_ITEM}\\s*${LIST_SEPARATOR}\\s*${LIST_ITEM}`,
+      `\\b${EVERY}!?\\s+${LIST_ITEM}\\s*${LIST_SEPARATOR}\\s*${LIST_ITEM}${NOTHING_BUT_A_TIME}`,
       "iu",
     ),
   ];
@@ -461,7 +529,17 @@ export function compileRecurrenceGrammar(
           ),
     BARE_WEEKDAY: new RegExp(`\\b${EVERY}(!?)\\s+${WD}`, "iu"),
     SINGULAR: new RegExp(`\\b${EVERY}(!?)\\s+(${SINGULAR_UNITS})\\b`, "iu"),
-    ADVERB: ADVERB_WORDS === null ? null : new RegExp(`\\b(${ADVERB_WORDS})\\b`, "i"),
+    /*
+     * The adverb has to END the schedule. Without that, "a weekly report from
+     * the vendor" and "the medicine is taken daily by the patient" both became
+     * repeating tasks: the adverb described the report and the medicine, not
+     * the task. §5 lists the bare "daily" form, so requiring an every-word is
+     * not available; requiring that nothing but a time follows is.
+     */
+    ADVERB:
+      ADVERB_WORDS === null
+        ? null
+        : new RegExp(`\\b(${ADVERB_WORDS})\\b${NOTHING_BUT_A_TIME}`, "i"),
     unitOf: (pick, word) => {
       const needle = word.toLowerCase();
       for (const unit of UNITS) {

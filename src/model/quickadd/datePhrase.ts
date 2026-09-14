@@ -165,6 +165,23 @@ function isInstantIdiom(result: ParsedResult, spanText: string): boolean {
   );
 }
 
+/*
+ * The second silent shape: a bare unit noun.
+ *
+ * chrono reads "the day" out of "the day-care visit" and offers it as a date.
+ * §5 refuses it - a unit with no number and no direction is not a date - but
+ * the refusal was spoken, so an ordinary English noun produced an explanation
+ * about a date the user never typed.
+ *
+ * Kept separate from isInstantIdiom rather than folded into it. That predicate
+ * is about chrono's certainty; this one is about the words. Widening the first
+ * to cover the second would have silenced every day-certain refusal, and "sat"
+ * and "mar" are day-certain refusals.
+ */
+function isBareUnit(g: DateGrammar, spanText: string): boolean {
+  return g.BARE_UNIT.test(spanText.trim());
+}
+
 interface Offsets {
   start: number;
   end: number;
@@ -375,7 +392,7 @@ function matchWhenIn(
       start,
       end,
       text: spanText,
-      silent: isInstantIdiom(result, spanText),
+      silent: isInstantIdiom(result, spanText) || isBareUnit(DATE_GRAMMAR, spanText),
     });
   }
 

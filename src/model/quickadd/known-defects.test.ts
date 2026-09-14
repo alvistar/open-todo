@@ -50,49 +50,19 @@ const ctx = (): QuickAddContext => ({
 
 const parse = (text: string) => parseQuickAdd(text, ctx());
 
-describe("F7 — an Italian decimal comma is read as a list of day numbers", () => {
+describe("F8 — an adverb ENDING the line is a schedule, whatever it modifies", () => {
   /*
-   * NOT found by the corpus. Introduced knowingly by the F4 fix, and written
-   * down here rather than discovered later.
+   * What is left of F8 after requiring the adverb to end the schedule. That
+   * rule removed the cases where something followed - "a weekly report from the
+   * vendor", "the medicine is taken daily by the patient" - and those are now
+   * in the packs' inert corpus.
    *
-   * F4 taught the list rule that a day-of-month number is a list item, so
-   * "ogni 5,6" is refused like "every mon, wed". Italian writes decimals with a
-   * comma, so "corri ogni 1,5 km" now takes the same refusal. Nothing is lost -
-   * the title is untouched and no date is set, exactly as before - but the
-   * composer shows a warning about a repeat the user never wrote.
-   *
-   * Accepted because the alternatives are worse: a space after the comma does
-   * not separate the two cases ("ogni 5,6" has none), and gating on a following
-   * unit noun is guesswork. Zero occurrences in the 4325-record corpus. Revisit
-   * if a real user hits it.
-   */
-  it("warns about a distance that is not a repeat", () => {
-    const r = parse("corri ogni 1,5 km");
-    expect(r.title).toBe("corri ogni 1,5 km");
-    expect(r.dueDate).toBeNull();
-    expect(r.repeatAfter).toBeUndefined();
-    expect(r.warnings).toHaveLength(1);
-  });
-});
-
-/*
- * F8 and F10 come from an adversarial pass over the six fixes, not from the
- * corpus. F9 was in this list and is now fixed - a starting clause has to name
- * a date, which is what stopped it refusing "a partire dalla prima pagina". Each is a case where a widened pattern now matches ORDINARY prose.
- * They are pinned rather than fixed because each one is a §5 decision with a
- * real trade-off, not a repair - and two of them are English behaviour that
- * predates this branch and that the Italian pack was given for parity.
- */
-
-describe("F8 — a repeat adverb is read anywhere in the line, context or not", () => {
-  /*
-   * English has done this since before the language packs existed: "cancel the
-   * service paid monthly" has always become a monthly task. F3 gave Italian the
-   * adverbs it never had, and with them this flaw.
-   *
-   * Fixing it means requiring an every-word near the adverb, which would change
-   * English too and would break the bare "daily" / "weekly" forms §5 lists. A
-   * §5 decision, not a repair.
+   * This case is IRREDUCIBLE, and that is the point of pinning it. "disdire il
+   * servizio pagato mensilmente" and "report mensilmente" are the same shape:
+   * words, then an adverb, then the end of the line. One is a monthly task and
+   * the other is a cancellation of a monthly service, and no syntax separates
+   * them. §5 lists the bare adverb as an accepted form, so the only fix is to
+   * withdraw that row - a grammar amendment, not a repair.
    */
   it("turns a cancellation into a monthly task", () => {
     const r = parse("disdire il servizio pagato mensilmente");
@@ -101,56 +71,8 @@ describe("F8 — a repeat adverb is read anywhere in the line, context or not", 
     expect(r.warnings).toEqual([]);
   });
 
-  it("does the same in English, which is where the behaviour came from", () => {
-    const r = parse("cancel the service paid monthly");
-    expect(r.repeatAfter).toBe(30 * 24 * 60 * 60);
-  });
-});
-
-describe("F10 — a month abbreviation is also an ordinary word", () => {
-  /*
-   * "set" is settembre; it is also the English noun and a count of exercise
-   * sets. The WRONG DATE here predates this branch - the month + day row has
-   * always read "3 set" as 3 September. F1 added the yearly repeat on top.
-   *
-   * The same tension as `mar` (Tuesday and the sea), which §5 already decided
-   * by excluding 3-letter WEEKDAYS while keeping 3-letter MONTHS. Revisiting it
-   * means reopening that decision.
-   */
-  it("schedules a set of push-ups for September", () => {
-    const r = parse("fai 10 flessioni ogni 3 set");
-    expect(r.title).toBe("fai 10 flessioni");
-    expect(r.repeatAfter).toBe(365 * 24 * 60 * 60);
-    expect(r.warnings).toEqual([]);
-  });
-});
-
-describe("F11 — chrono reads 'the day' inside an ordinary English noun", () => {
-  /*
-   * Found by a sweep of ordinary prose, not by the corpus and not by the
-   * adversarial pass. Nothing to do with recurrence: chrono offers "the day" in
-   * "the day-care visit" as a date candidate, §5 correctly refuses it, and the
-   * composer then explains a refusal the user never asked for.
-   *
-   * PRE-EXISTING - the date layer has done this since D-vocab. It is the mild
-   * end of the F7/F8 family: a warning on ordinary text, nothing lost.
-   *
-   * Not fixed here because the fix is a §5 decision. `isInstantIdiom` already
-   * suppresses this class of warning (chrono certain of an hour, no digit in
-   * the span), and "the day" does not qualify - it is day-certain. Widening
-   * that predicate touches every silent refusal, so it is a grammar amendment,
-   * not a boundary tweak.
-   */
-  it.each(["book the day-care visit", "a day-care centre"])("warns about %s", (text) => {
-    const r = parse(text);
-    expect(r.title).toBe(text);
-    expect(r.dueDate).toBeNull();
-    expect(r.warnings).toHaveLength(1);
-    expect(r.warnings[0]).toMatch(/\bday\b/);
-  });
-
-  it("says nothing when the word is not split", () => {
-    // The counterpart. "daycare" is one word and draws no reaction at all.
-    expect(parse("book the daycare visit").warnings).toEqual([]);
+  it("cannot be told apart from the form §5 accepts", () => {
+    // Identical shape, and this one is exactly what the user meant.
+    expect(parse("report mensilmente").repeatAfter).toBe(30 * 24 * 60 * 60);
   });
 });
