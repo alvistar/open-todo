@@ -17,9 +17,9 @@
 // stating which two of the fourteen locales we depend on, not about size.
 // The two together cost 16.1 kB gzip.
 import type { Chrono, ParsedResult } from "chrono-node";
-import * as chronoEn from "chrono-node/en";
-import * as chronoIt from "chrono-node/it";
-import { DATE_GRAMMAR } from "./grammar";
+import { compileDateGrammar, DATE_GRAMMAR, type DateGrammar } from "./grammar";
+import { ACTIVE_PACKS } from "./lang";
+import type { LanguagePack } from "./lang/pack";
 
 export interface WhenMatch {
   /** Midnight of the matched day in `timeZone`, or the instant when hasTime. */
@@ -205,6 +205,7 @@ function collapse(rejected: RejectedSpan[], accepted: Offsets[]): RejectedSpan[]
  * "I sat with the team tomorrow" still resolves to tomorrow.
  */
 function isAdmissible(
+  DATE_GRAMMAR: DateGrammar,
   result: ParsedResult,
   spanText: string,
   today: DateParts,
@@ -229,85 +230,6 @@ function isAdmissible(
 }
 
 /*
- * "ore" is how Italian writes an appointment - "domenica ore 15" - and §5 lists
- * it. chrono's Italian locale does not know the word, so the phrase used to come
- * back as Sunday with no time and "ore 15" left sitting in the task name.
- *
- * This is fixed inside chrono rather than by rewriting the text before it. The
- * old fix built a probe string with "ore" replaced by "alle", parsed that, and
- * mapped every offset back; chrono's indices were then in probe coordinates and
- * nothing downstream was allowed to use them. Teaching chrono the word instead
- * means the indices are already the user's own, which deletes the probe, the
- * offset map, and the rule that guarded them.
- *
- * Two overrides, both on the pieces chrono exposes for exactly this:
- *
- *   - the date/time merge refiner decides what may sit BETWEEN a date and a
- *     time. Its list is `T|alle?|dopo\s*le|prima\s*delle?|,|-|.|∙|:` and "ore"
- *     was simply missing, which is why "domenica" and "15" never joined up.
- *   - the time parser's prefix decides what may introduce a clock time. It had
- *     "alle"/"dalle" and not "ore", so a bare "ore 9" produced no time at all.
- *
- * Neither class is exported and the package export map blocks a deep import, so
- * each is reached through the instance chrono itself built. They are identified
- * by the SOURCE of the regex they return, never by `constructor.name`: the
- * production bundle is minified by rolldown, which emits anonymous class
- * expressions, so every `constructor.name` there is the empty string and a
- * name-based lookup would silently match nothing while the tests still passed.
- * A regex source is a string literal and survives minification intact.
- *
- * `dopo\s*le` appears in exactly one of the four Italian refiners that expose
- * `patternBetween`, which is what makes it a safe discriminator - matching on
- * the method alone would also hit the relative-date and date-range mergers and
- * turn them into date/time mergers.
- */
-const ORE_MERGE_PATTERN =
-  /^\s*(T|alle?|(?:alle\s+)?ore|dopo\s*le|prima\s*delle?|,|-|\.|∙|:)?\s*$/;
-const ORE_TIME_PREFIX = "(?:(?:alle?|dalle?|(?:alle\\s+)?ore)\\s*)??";
-
-/** Shadows one method on a chrono part, leaving the original untouched. */
-function overriding<T extends object>(part: T, methods: Partial<T>): T {
-  return Object.assign(Object.create(part), methods) as T;
-}
-
-interface MergeRefiner {
-  patternBetween(): RegExp;
-}
-interface TimeParser {
-  primaryPrefix(): string;
-}
-
-const isDateTimeMerge = (part: unknown): part is MergeRefiner =>
-  typeof (part as MergeRefiner).patternBetween === "function" &&
-  /dopo\\s\*le/.test((part as MergeRefiner).patternBetween().source);
-
-const isTimeParser = (part: unknown): part is TimeParser =>
-  typeof (part as TimeParser).primaryPrefix === "function";
-
-/** How many parts the patch actually replaced. Pinned by the tests. */
-export const ORE_PATCH_COUNTS = { refiners: 0, parsers: 0 };
-
-function italianWithOre(): Chrono {
-  // Fresh instances, not the ones behind `chronoIt.casual`, so shadowing them
-  // cannot leak into any other consumer of the locale.
-  const config = chronoIt.configuration.createCasualConfiguration();
-
-  config.refiners = config.refiners.map((refiner) => {
-    if (!isDateTimeMerge(refiner)) return refiner;
-    ORE_PATCH_COUNTS.refiners += 1;
-    return overriding(refiner, { patternBetween: () => ORE_MERGE_PATTERN });
-  });
-
-  config.parsers = config.parsers.map((parser) => {
-    if (!isTimeParser(parser)) return parser;
-    ORE_PATCH_COUNTS.parsers += 1;
-    return overriding(parser, { primaryPrefix: () => ORE_TIME_PREFIX });
-  });
-
-  return new chronoIt.Chrono(config);
-}
-
-/*
  * Both locales run, because the owner types both languages in one line and
  * neither parser understands the other's words. "next venerdì" and "prossimo
  * friday" both resolve today, because the §5 shapes are bilingual rather than
@@ -319,17 +241,22 @@ function italianWithOre(): Chrono {
  * there, but with `day` uncertain, so `isAdmissible` drops it before the sort
  * runs. "15/9" is day-first in en-GB as well as in Italian.
  */
-const PARSERS: { name: "it" | "en"; chrono: Chrono }[] = [
-  { name: "it", chrono: italianWithOre() },
-  { name: "en", chrono: chronoEn.GB },
-];
+type Resolvers = { name: string; chrono: Chrono; preference: number }[];
 
-const PREFERENCE: Record<"it" | "en", number> = { it: 0, en: 1 };
+const resolversOf = (packs: readonly LanguagePack[]): Resolvers =>
+  packs.map((pack) => ({
+    name: pack.code,
+    chrono: pack.resolver,
+    preference: pack.preference,
+  }));
+
+const PARSERS = resolversOf(ACTIVE_PACKS);
 
 const DATE_COMPONENTS = ["day", "month", "year", "weekday"] as const;
 
 interface Candidate {
-  name: "it" | "en";
+  name: string;
+  preference: number;
   result: ParsedResult;
   /**
    * The span in the USER's text.
@@ -350,6 +277,33 @@ interface Candidate {
  * the user a due date AND an explanation of what happened to "sat".
  */
 export function matchWhen(text: string, now: Date, timeZone: string): WhenResult {
+  return matchWhenIn(DATE_GRAMMAR, PARSERS, text, now, timeZone);
+}
+
+/**
+ * The same, against a registry of your choosing.
+ *
+ * The acceptance test for the whole pack design drives this: proving a new pack
+ * COMPILES says nothing about whether it reaches resolution, the §5 gate, span
+ * collapsing or the leap-day retry. Not for production use - the module
+ * constants are compiled once, this recompiles per call.
+ */
+export function matchWhenWith(
+  packs: readonly LanguagePack[],
+  text: string,
+  now: Date,
+  timeZone: string,
+): WhenResult {
+  return matchWhenIn(compileDateGrammar(packs), resolversOf(packs), text, now, timeZone);
+}
+
+function matchWhenIn(
+  DATE_GRAMMAR: DateGrammar,
+  PARSERS: Resolvers,
+  text: string,
+  now: Date,
+  timeZone: string,
+): WhenResult {
   const today = partsIn(now, timeZone);
 
   /*
@@ -389,13 +343,15 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
   }
 
   const reference = { instant: now, timezone: timeZone };
-  const candidates: Candidate[] = PARSERS.flatMap(({ name, chrono: parser }) =>
-    parser.parse(text, reference, { forwardDate: true }).map((result) => ({
-      name,
-      result,
-      start: result.index,
-      end: result.index + result.text.length,
-    })),
+  const candidates: Candidate[] = PARSERS.flatMap(
+    ({ name, preference, chrono: parser }) =>
+      parser.parse(text, reference, { forwardDate: true }).map((result) => ({
+        name,
+        preference,
+        result,
+        start: result.index,
+        end: result.index + result.text.length,
+      })),
   ).filter(({ result }) =>
     // A time on its own is not a due date: "call at 10" leaves the text in the
     // title, exactly as it did before chrono. `isCertain` is true only for the
@@ -411,7 +367,7 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
     // differs from what chrono matched, and `retryWithExplicitYear` parses a
     // probe of its own, so the gate reads the source text every time.
     const spanText = text.slice(start, end);
-    if (isAdmissible(result, spanText, today, timeZone)) {
+    if (isAdmissible(DATE_GRAMMAR, result, spanText, today, timeZone)) {
       admissible.push(candidate);
       continue;
     }
@@ -426,7 +382,7 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
   admissible.sort((a, b) => {
     if (a.start !== b.start) return a.start - b.start;
     if (a.end - a.start !== b.end - b.start) return b.end - b.start - (a.end - a.start);
-    return PREFERENCE[a.name] - PREFERENCE[b.name];
+    return a.preference - b.preference;
   });
 
   /*
@@ -437,7 +393,15 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
   const best =
     admissible[0] ??
     (candidates.length === 0
-      ? retryWithExplicitYear(text, today.year, reference, today, timeZone)
+      ? retryWithExplicitYear(
+          PARSERS,
+          DATE_GRAMMAR,
+          text,
+          today.year,
+          reference,
+          today,
+          timeZone,
+        )
       : null);
 
   const accepted = admissible.map(({ start, end }) => ({ start, end }));
@@ -515,17 +479,19 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
  * original text, so the span needs no translating back.
  */
 function retryWithExplicitYear(
+  PARSERS: Resolvers,
+  DATE_GRAMMAR: DateGrammar,
   text: string,
   fromYear: number,
   reference: { instant: Date; timezone: string },
   today: DateParts,
   timeZone: string,
 ): Candidate | null {
-  for (const [start, end] of monthWindows(text)) {
+  for (const [start, end] of monthWindows(DATE_GRAMMAR, text)) {
     for (let year = fromYear; year <= fromYear + 8; year += 1) {
       const suffix = ` ${year}`;
       const probe = text.slice(0, end) + suffix + text.slice(end);
-      for (const { name, chrono: parser } of PARSERS) {
+      for (const { name, preference, chrono: parser } of PARSERS) {
         const result = parser.parse(probe, reference, { forwardDate: true })[0];
         if (!result) continue;
         // The match must start inside the window and run through the year we
@@ -534,12 +500,20 @@ function retryWithExplicitYear(
         if (result.index + result.text.length !== end + suffix.length) continue;
         // The gate must see the user's text, not the probe: result.text here
         // reads "29 feb 2028", a year the user never typed.
-        if (!isAdmissible(result, text.slice(result.index, end), today, timeZone)) {
+        if (
+          !isAdmissible(
+            DATE_GRAMMAR,
+            result,
+            text.slice(result.index, end),
+            today,
+            timeZone,
+          )
+        ) {
           continue;
         }
         // The probe only inserts text AFTER the window, so an index inside it
         // already means the same position in the user's text.
-        return { name, result, start: result.index, end };
+        return { name, preference, result, start: result.index, end };
       }
     }
   }
@@ -552,7 +526,7 @@ function retryWithExplicitYear(
  * chosen on a digit alone would put "buy 3 apples" through about a hundred
  * chrono parses per keystroke, for a phrase that is not a date in any year.
  */
-function monthWindows(text: string): [number, number][] {
+function monthWindows(DATE_GRAMMAR: DateGrammar, text: string): [number, number][] {
   const tokens = [...text.matchAll(/\S+/g)].map(
     (m) => [m.index, m.index + m[0].length] as [number, number],
   );

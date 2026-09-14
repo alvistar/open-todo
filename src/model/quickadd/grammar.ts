@@ -22,7 +22,6 @@
 
 import { ACTIVE_PACKS } from "./lang";
 import type { LanguagePack, NativePhrase, Unit, UnitWords } from "./lang/pack";
-import { MONTH_ANY, WEEKDAY_FULL, WEEKDAY_RECURRENCE, wordBounded } from "./vocabulary";
 
 /*
  * Three ways to splice a word list into a pattern. WHICH ONE IS CORRECT DEPENDS
@@ -60,6 +59,43 @@ function group(parts: readonly string[]): string | null {
 const union = (packs: readonly LanguagePack[], pick: (p: LanguagePack) => string[]) =>
   packs.flatMap(pick);
 
+/**
+ * Closes an alternation against a longer word. Without it the alternative
+ * "mon" matches the start of "month", and `every 2 months` — an accepted
+ * recurrence — was rejected as a weekday list.
+ */
+export function wordBounded(alternation: string): string {
+  return `(?:${alternation})(?!\\p{L})`;
+}
+
+/*
+ * The shared name lists, composed FROM THE PACKS PASSED IN.
+ *
+ * These used to be read from vocabulary.ts, whose exports are bound to the
+ * shipping registry. That made two rows of the grammar silently unparameterised:
+ * `compileDateGrammar(somePacks)` returned a pattern carrying the PRODUCTION
+ * weekday and month lists. Nothing in the two shipping languages could show it,
+ * because they are the production registry. The fixture-pack acceptance test is
+ * what found it.
+ */
+export const weekdayFullOf = (packs: readonly LanguagePack[]) =>
+  required(alternatives(union(packs, (p) => p.weekdayFull)), "weekdayFull");
+
+export const weekdayRecurrenceOf = (packs: readonly LanguagePack[]) => {
+  const abbreviations = alternatives(union(packs, (p) => p.recurrenceOnlyAbbreviations));
+  const full = weekdayFullOf(packs);
+  return abbreviations === null ? full : `${full}|${abbreviations}`;
+};
+
+export const monthFullOf = (packs: readonly LanguagePack[]) =>
+  required(alternatives(union(packs, (p) => p.monthFull)), "monthFull");
+
+export const monthShortOf = (packs: readonly LanguagePack[]) =>
+  required(alternatives(union(packs, (p) => p.monthShort)), "monthShort");
+
+export const monthAnyOf = (packs: readonly LanguagePack[]) =>
+  `${monthFullOf(packs)}|${monthShortOf(packs)}`;
+
 /** For a row every pack must feed: absence is a broken registry, not a choice. */
 function required(value: string | null, row: string): string {
   if (value === null) throw new Error(`quickadd grammar: no pack contributes ${row}`);
@@ -78,6 +114,9 @@ export interface DateGrammar {
 }
 
 export function compileDateGrammar(packs: readonly LanguagePack[]): DateGrammar {
+  const WEEKDAY_FULL = weekdayFullOf(packs);
+  const MONTH_ANY = monthAnyOf(packs);
+
   /* ---------------------------------------------------- §5.1 rows ------- */
 
   // Bare: DAY_SHAPE's own `(?:…|…)` is the group.
@@ -219,7 +258,7 @@ export function compileRecurrenceGrammar(
    * not do something it does. The boundary belongs around the ALTERNATION, not
    * around the phrase: moving it outward is commit 6637ddd all over again.
    */
-  const WD = wordBounded(WEEKDAY_RECURRENCE);
+  const WD = wordBounded(weekdayRecurrenceOf(packs));
 
   /** Unit-major, not pack-major: "days?|giorni?|weeks?|settimane?|…". */
   const byUnit = (pick: (p: LanguagePack) => UnitWords) =>

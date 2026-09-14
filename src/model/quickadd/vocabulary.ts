@@ -16,63 +16,37 @@
  * every consumer builds a pattern out of it.
  */
 
-import { ACTIVE_PACKS, type LanguagePack } from "./lang";
+import {
+  monthAnyOf,
+  monthFullOf,
+  monthShortOf,
+  weekdayFullOf,
+  weekdayRecurrenceOf,
+  wordBounded,
+} from "./grammar";
+import { ACTIVE_PACKS } from "./lang";
 
-/**
- * Joins one field across every active pack.
- *
- * Returns null rather than "" when nothing is contributed. An empty alternation
- * spliced into a pattern would either leave a dangling `|` - which matches the
- * EMPTY STRING and turns a gate into something that admits everything - or a
- * `(?:)` that does the same. Callers must handle the null case explicitly, so
- * that failure cannot happen quietly.
+/*
+ * The composition itself lives in grammar.ts, PARAMETERISED by a pack list.
+ * These are that composition applied to the shipping registry, and nothing more.
+ * Keeping them here, with the names and the exact strings they always had, is
+ * what lets scripts/quickadd-corpus-diff.mjs check out an older datePhrase.ts
+ * against the current tree.
  */
-function alternation(pick: (pack: LanguagePack) => string[]): string | null {
-  const words = ACTIVE_PACKS.flatMap(pick);
-  return words.length === 0 ? null : words.join("|");
-}
-
-/** Present in every pack, so a missing one is a broken registry, not a choice. */
-function required(value: string | null, field: string): string {
-  if (value === null) {
-    throw new Error(`quickadd vocabulary: no pack contributes ${field}`);
-  }
-  return value;
-}
 
 /** Full weekday names. Unambiguous in both languages. */
-export const WEEKDAY_FULL = required(
-  alternation((pack) => pack.weekdayFull),
-  "weekdayFull",
-);
+export const WEEKDAY_FULL = weekdayFullOf(ACTIVE_PACKS);
 
 /** Recurrence's vocabulary: the full names plus the abbreviations packs allow. */
-const RECURRENCE_ABBREVIATIONS = alternation((pack) => pack.recurrenceOnlyAbbreviations);
-export const WEEKDAY_RECURRENCE =
-  RECURRENCE_ABBREVIATIONS === null
-    ? WEEKDAY_FULL
-    : `${WEEKDAY_FULL}|${RECURRENCE_ABBREVIATIONS}`;
+export const WEEKDAY_RECURRENCE = weekdayRecurrenceOf(ACTIVE_PACKS);
 
 /** Full month names, both languages. */
-export const MONTH_FULL = required(
-  alternation((pack) => pack.monthFull),
-  "monthFull",
-);
+export const MONTH_FULL = monthFullOf(ACTIVE_PACKS);
 
 /** Month abbreviations. See `lang/pack.ts` for why a pack may omit a shared one. */
-export const MONTH_SHORT = required(
-  alternation((pack) => pack.monthShort),
-  "monthShort",
-);
+export const MONTH_SHORT = monthShortOf(ACTIVE_PACKS);
 
 /** Every month form. */
-export const MONTH_ANY = `${MONTH_FULL}|${MONTH_SHORT}`;
+export const MONTH_ANY = monthAnyOf(ACTIVE_PACKS);
 
-/**
- * Closes an alternation against a longer word. Without it the alternative
- * "mon" matches the start of "month", and `every 2 months` — an accepted
- * recurrence — was rejected as a weekday list.
- */
-export function wordBounded(alternation: string): string {
-  return `(?:${alternation})(?!\\p{L})`;
-}
+export { wordBounded };

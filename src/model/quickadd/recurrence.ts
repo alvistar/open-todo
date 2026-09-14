@@ -8,8 +8,12 @@
  * would put the task on the wrong day for most of the year.
  */
 
-import { RECURRENCE_GRAMMAR } from "./grammar";
-import type { Unit } from "./lang/pack";
+import {
+  compileRecurrenceGrammar,
+  RECURRENCE_GRAMMAR,
+  type RecurrenceGrammar,
+} from "./grammar";
+import type { LanguagePack, Unit } from "./lang/pack";
 
 export const DAY = 24 * 60 * 60;
 export const WEEK = 7 * DAY;
@@ -34,8 +38,18 @@ export interface RecurrenceMatch {
 const SECONDS: Record<Unit, number> = { day: DAY, week: WEEK, month: MONTH, year: YEAR };
 
 export function matchRecurrence(text: string): RecurrenceMatch | null {
-  const g = RECURRENCE_GRAMMAR;
+  return matchRecurrenceIn(RECURRENCE_GRAMMAR, text);
+}
 
+/** The same, against a registry of your choosing. See `matchWhenWith`. */
+export function matchRecurrenceWith(
+  packs: readonly LanguagePack[],
+  text: string,
+): RecurrenceMatch | null {
+  return matchRecurrenceIn(compileRecurrenceGrammar(packs), text);
+}
+
+function matchRecurrenceIn(g: RecurrenceGrammar, text: string): RecurrenceMatch | null {
   /*
    * Rejected shapes first, ALL of them, before any accepted one. The ordering is
    * global rather than per language: "every last day of month" also contains the

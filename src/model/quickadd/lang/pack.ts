@@ -40,6 +40,8 @@
  *     (`datePhrase.ts`, `normalise`), so an entry that is case-sensitive or
  *     carries a double space can never match anything.
  */
+import type { Chrono } from "chrono-node";
+
 /** The four repeat units Vikunja's `repeat_after` can express. */
 export type Unit = "day" | "week" | "month" | "year";
 
@@ -72,6 +74,25 @@ export function lastDayOfMonth(today: DateParts): DateParts {
 export interface LanguagePack {
   /** Stable id, for diagnostics and test names. Never shown to a user. */
   code: string;
+
+  /**
+   * Tie-break when two locales match the SAME span exactly. Lower wins.
+   *
+   * Explicit rather than array position, so inserting a language cannot silently
+   * reorder the others. It only ever breaks an exact tie: earliest start and
+   * then longest span are decided first, and `isAdmissible` has already thrown
+   * out readings §5 does not accept. "Apr 30" is settled by that gate, not here.
+   */
+  preference: number;
+
+  /**
+   * What actually RESOLVES this language's phrases.
+   *
+   * Vocabulary alone resolves nothing: §5 is an acceptor over what some parser
+   * produced, so a pack with words and no resolver would widen the gate without
+   * ever contributing a date - a net loss.
+   */
+  resolver: Chrono;
 
   /** Full weekday names. BOTH layers admit these. */
   weekdayFull: string[];

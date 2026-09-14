@@ -1,7 +1,16 @@
+import * as chronoEn from "chrono-node/en";
 import { type LanguagePack, lastDayOfMonth } from "./pack";
 
 export const en: LanguagePack = {
   code: "en",
+
+  preference: 1,
+  /*
+   * GB, not `casual`. It is day-first, which is what §5 specifies for "15/9" -
+   * and it is the reason that reading does NOT depend on the Italian parser
+   * winning a tie, contrary to what the old comment on PREFERENCE claimed.
+   */
+  resolver: chronoEn.GB,
 
   weekdayFull: [
     "monday",

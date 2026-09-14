@@ -1,7 +1,8 @@
 import { DEFAULT_ALL_DAY_TIME } from "../dates";
 import { type Priority, priorityToVikunja } from "../priority";
-import { matchWhen, zonedDate } from "./datePhrase";
-import { matchRecurrence } from "./recurrence";
+import { matchWhen, matchWhenWith, zonedDate } from "./datePhrase";
+import type { LanguagePack } from "./lang/pack";
+import { matchRecurrence, matchRecurrenceWith } from "./recurrence";
 
 /*
  * Quick-add parsing (D-map-3, docs/data-model-mapping.md §5).
@@ -105,6 +106,37 @@ function wholeInputInQuotes(input: string): string | null {
 }
 
 export function parseQuickAdd(input: string, context: QuickAddContext): QuickAddResult {
+  return parseQuickAddIn(null, input, context);
+}
+
+/**
+ * The same, against a registry of your choosing.
+ *
+ * This exists so the pack design can be PROVEN rather than asserted: a fixture
+ * pack driven through here exercises resolution, the §5 gate, recurrence
+ * dispatch, sigil masking and title extraction, which is the whole claim that
+ * adding a language is one new file. Not for production - it recompiles the
+ * grammar per call.
+ */
+export function parseQuickAddWith(
+  packs: readonly LanguagePack[],
+  input: string,
+  context: QuickAddContext,
+): QuickAddResult {
+  return parseQuickAddIn(packs, input, context);
+}
+
+function parseQuickAddIn(
+  packs: readonly LanguagePack[] | null,
+  input: string,
+  context: QuickAddContext,
+): QuickAddResult {
+  const when_ = (text: string) =>
+    packs === null
+      ? matchWhen(text, context.now, context.timeZone)
+      : matchWhenWith(packs, text, context.now, context.timeZone);
+  const recurrence_ = (text: string) =>
+    packs === null ? matchRecurrence(text) : matchRecurrenceWith(packs, text);
   const quoted = wholeInputInQuotes(input);
   if (quoted !== null) {
     return {
@@ -175,7 +207,7 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
   // matcher, which would schedule it once instead of repeating it.
   let repeatAfter: number | undefined;
   let repeatMode: number | undefined;
-  const recurrence = matchRecurrence(rest);
+  const recurrence = recurrence_(rest);
   if (recurrence) {
     if (recurrence.rejected) {
       // The text stays in the title on purpose, so the user can see and fix
@@ -267,7 +299,7 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
   // Date and time. A time on its own is not a due date.
   let dueDate: Date | null = null;
   let allDay = false;
-  const { when, rejected } = matchWhen(rest, context.now, context.timeZone);
+  const { when, rejected } = when_(rest);
   /*
    * A span the §5 gate turned down keeps its text in the title and says why,
    * exactly as a rejected recurrence does above. mask() has no consumer today
