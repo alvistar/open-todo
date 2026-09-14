@@ -81,6 +81,7 @@ export const xx: LanguagePack = {
   startingWords: [],
   monthOnTheNth: [],
   weekdayUnit: ["zzworkday"],
+  otherWords: ["zzother"],
   countedUnits: {
     day: ["zzdays?"],
     week: ["zzweeks?"],

@@ -300,6 +300,12 @@ describe("the composed recurrence patterns are byte-identical", () => {
     expect(g.COUNTED.source).toBe(
       `\\b${EVERY}(!?)\\s+(\\d{1,3})\\s+(days?|giorni?|weeks?|settimane?|months?|mesi|mese|years?|anni?|anno)\\b`,
     );
+    // F2 added this one: "every other day" is "every 2 days", which Vikunja
+    // stores exactly, and which fell through both lists in silence.
+    expect(g.OTHER?.source).toBe(
+      `\\b${EVERY}(!?)\\s+(?:other|altr[oa])\\s+` +
+        "(day|giorno|week|settimana|month|mese|year|anno)\\b",
+    );
     expect(g.BARE_WEEKDAY.source).toBe(`\\b${EVERY}(!?)\\s+${WD}`);
     expect(g.SINGULAR.source).toBe(
       `\\b${EVERY}(!?)\\s+(day|giorno|week|settimana|month|mese|year|anno)\\b`,
@@ -339,9 +345,11 @@ describe("the composed recurrence patterns are byte-identical", () => {
       ...(ACTIVE_PACKS.find((p) => p.code === "it") as LanguagePack),
       adverbs: { day: [], week: [], month: [], year: [] },
       startingWords: [],
+      otherWords: [],
     };
     const g = compileRecurrenceGrammar([bare]);
     expect(g.ADVERB).toBeNull();
+    expect(g.OTHER).toBeNull();
     expect(g.REJECTED.every((r: RegExp) => !r.source.includes("starting"))).toBe(true);
     expect(g.REJECTED.every((r: RegExp) => !r.source.includes("partire"))).toBe(true);
     for (const pattern of g.REJECTED) expect(pattern.test("")).toBe(false);

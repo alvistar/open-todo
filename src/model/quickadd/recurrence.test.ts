@@ -48,6 +48,23 @@ describe("matchRecurrence — accepted", () => {
     expect(match?.warning).toMatch(/weekly/i);
   });
 
+  it("reads 'every other X' as twice the interval", () => {
+    // Formerly F2. "every other day" IS "every 2 days", which Vikunja stores
+    // exactly, and §5.1 never listed it as rejected - it was simply missing.
+    expect(r("ping every other day")).toMatchObject({ repeatAfter: 2 * DAY });
+    expect(r("ping every other week")).toMatchObject({ repeatAfter: 2 * WEEK });
+    expect(r("ping ogni altro giorno")).toMatchObject({ repeatAfter: 2 * DAY });
+    expect(r("ping ogni altra settimana")).toMatchObject({ repeatAfter: 2 * WEEK });
+    expect(r("rent ogni altro mese")).toMatchObject({ repeatAfter: 2 * MONTH });
+  });
+
+  it("leaves 'every other <weekday>' rejected, as 'every 2nd monday' is", () => {
+    // The other-word sits beside a UNIT, never a weekday. An ordinal weekday is
+    // calendar-shaped and stays refused in both languages.
+    expect(r("gym every other monday")).toMatchObject({ rejected: true });
+    expect(r("gym ogni altro lunedì")).toMatchObject({ rejected: true });
+  });
+
   it("understands a fixed calendar date as yearly, in both orders", () => {
     expect(r("tasse ogni 30 giugno")).toMatchObject({ repeatAfter: YEAR });
     expect(r("pay tax every 30 june")).toMatchObject({ repeatAfter: YEAR });

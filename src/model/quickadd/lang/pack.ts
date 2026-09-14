@@ -216,6 +216,16 @@ export interface LanguagePack {
   /** "every WEEKDAY" - approximated to weekly, and warned about. */
   weekdayUnit: string[];
 
+  /**
+   * "every OTHER day" - the word that means twice the interval.
+   *
+   * It sits beside a SINGULAR unit, never a weekday: "every other monday" is an
+   * ordinal weekday and stays rejected, which is what "every 2nd monday"
+   * already is. A pack that has no such word ships an empty list and the rule
+   * is dropped, not composed empty.
+   */
+  otherWords: string[];
+
   /** Units after a count: "every 3 DAYS". */
   countedUnits: UnitWords;
 

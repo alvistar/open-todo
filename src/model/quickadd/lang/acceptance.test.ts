@@ -110,6 +110,12 @@ describe("the layers that are ours end to end take invented words", () => {
     });
   });
 
+  it("doubles an interval with its own other-word", () => {
+    expect(matchRecurrenceWith(soloXx, "ping zzevery zzother zzday")).toMatchObject({
+      repeatAfter: 2 * 24 * 60 * 60,
+    });
+  });
+
   it("rejects what Vikunja cannot store, in its own words", () => {
     expect(
       matchRecurrenceWith(soloXx, "x zzevery zzlast whatever zzof zzmonth"),

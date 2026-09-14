@@ -197,6 +197,7 @@ export const it: LanguagePack = {
   ],
   monthOnTheNth: [],
   weekdayUnit: ["giorn[oi]\\s+ferial[ei]", "giorn[oi]\\s+lavorativ[oi]"],
+  otherWords: ["altr[oa]"],
   countedUnits: {
     day: ["giorni?"],
     week: ["settimane?"],

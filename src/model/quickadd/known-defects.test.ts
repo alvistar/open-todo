@@ -11,10 +11,14 @@ import { parseQuickAdd, type QuickAddContext } from "./parse";
  * can quietly change shape mid-refactor and be re-discovered later as something
  * new.
  *
- * F1 and F3 to F6 are FIXED and no longer live here. Their cases moved to the
- * ordinary suite: `recurrence.test.ts` for the rule, `parse.test.ts` for the
- * whole line. F7 below is not a corpus finding at all - it is a limitation the
- * F4 fix introduced knowingly.
+ * ALL SIX ARE NOW FIXED, and none of them lives here any more. Their cases
+ * moved to the ordinary suite: `recurrence.test.ts` for the rule,
+ * `parse.test.ts` for the whole line.
+ *
+ * What is left is F7, which is not a corpus finding at all - it is a limitation
+ * the F4 fix introduced knowingly, written down here rather than discovered
+ * later. The file keeps its rule: what is pinned below is WRONG, and the commit
+ * that fixes it flips the block.
  *
  * So the rule for this file is the opposite of every other test here:
  *
@@ -46,23 +50,6 @@ const ctx = (): QuickAddContext => ({
 
 const parse = (text: string) => parseQuickAdd(text, ctx());
 
-/** Neither a date, nor a repeat, nor a word of explanation. */
-const droppedInSilence = (text: string) => {
-  const r = parse(text);
-  expect(r.title, text).toBe(text);
-  expect(r.dueDate, text).toBeNull();
-  expect(r.repeatAfter, text).toBeUndefined();
-  expect(r.warnings, text).toEqual([]);
-};
-
-describe("F2 — 'every other <unit>' is dropped without a word", () => {
-  /*
-   * It means "every 2 <unit>", which IS supported, and §5.1 does not list it as
-   * rejected. A vocabulary gap rather than a decision - and a silent one.
-   */
-  it("drops the English form", () => droppedInSilence("ping every other day"));
-  it("drops the Italian form", () => droppedInSilence("ping ogni altro giorno"));
-});
 
 describe("F7 — an Italian decimal comma is read as a list of day numbers", () => {
   /*

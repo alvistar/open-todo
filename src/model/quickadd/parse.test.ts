@@ -198,6 +198,33 @@ describe("parseQuickAdd — recurrence", () => {
   });
 });
 
+describe("parseQuickAdd — 'every other X' is twice the interval", () => {
+  /*
+   * Formerly known defect F2. "ping every other day" set nothing and said
+   * nothing, in both languages. It means "every 2 days", which Vikunja stores
+   * exactly, and §5.1 never listed it as rejected - a vocabulary gap, and a
+   * silent one.
+   */
+  it("stores it and cleans the title, in both languages", () => {
+    const en = parse("ping every other day");
+    expect(en.repeatAfter).toBe(2 * DAY);
+    expect(en.title).toBe("ping");
+    expect(en.warnings).toEqual([]);
+
+    const it_ = parse("ping ogni altro giorno");
+    expect(it_.repeatAfter).toBe(2 * DAY);
+    expect(it_.title).toBe("ping");
+    expect(it_.warnings).toEqual([]);
+  });
+
+  it("still refuses an ordinal weekday, which is a different shape", () => {
+    const r = parse("gym every other monday");
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.dueDate).toBeNull();
+    expect(r.warnings).toHaveLength(1);
+  });
+});
+
 describe("parseQuickAdd — workday and weekday are the same idea", () => {
   /*
    * Formerly known defect F3. "standup every workday" set nothing and said

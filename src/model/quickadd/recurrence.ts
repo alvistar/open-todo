@@ -119,6 +119,19 @@ function matchRecurrenceIn(g: RecurrenceGrammar, text: string): RecurrenceMatch 
     },
     {
       /*
+       * "every other day" is "every 2 days", which Vikunja stores exactly.
+       * §5.1 never listed it as rejected; it was simply not in the grammar, and
+       * fell through both lists in silence.
+       *
+       * Before SINGULAR, which would otherwise be reached with the other-word
+       * still in the text, and before BARE_WEEKDAY for the same reason the
+       * yearly rule is: shapes with more words in them go first.
+       */
+      re: g.OTHER,
+      run: (m) => byUnit(m, m[2] ?? "", g.singularUnits, 2),
+    },
+    {
+      /*
        * "ogni 30 giugno" - yearly on a fixed calendar date.
        *
        * Two things make this rule unlike every other one here. Its span covers

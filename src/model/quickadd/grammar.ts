@@ -239,6 +239,8 @@ export interface RecurrenceGrammar {
    * for the date layer to read, so the repeat keeps the anchor the user typed.
    */
   YEARLY_DATE: RegExp;
+  /** "every other day" - twice the interval. Captures: 1 = "!", 2 = unit. */
+  OTHER: RegExp | null;
   /** "every monday". Captures: 1 = "!". */
   BARE_WEEKDAY: RegExp;
   /** "every day". Captures: 1 = "!", 2 = unit. */
@@ -282,6 +284,7 @@ export function compileRecurrenceGrammar(
   const OF_THE = required(group(union(packs, (p) => p.ofThe)), "ofThe");
   const MONTH_NOUN = required(group(union(packs, (p) => p.monthNoun)), "monthNoun");
   const STARTING = oneOf(union(packs, (p) => p.startingWords));
+  const OTHER_WORDS = oneOf(union(packs, (p) => p.otherWords));
   const MONTH_ON_THE_NTH = alternatives(union(packs, (p) => p.monthOnTheNth));
 
   /*
@@ -382,6 +385,10 @@ export function compileRecurrenceGrammar(
     WEEKDAY_UNIT: new RegExp(`\\b${EVERY}!?\\s+${WEEKDAY_UNIT_WORDS}\\b`, "iu"),
     COUNTED: new RegExp(`\\b${EVERY}(!?)\\s+(\\d{1,3})\\s+(${COUNTED_UNITS})\\b`, "iu"),
     YEARLY_DATE: new RegExp(`\\b${EVERY}(!?)(?=\\s+${FIXED_DATE})`, "iu"),
+    OTHER:
+      OTHER_WORDS === null
+        ? null
+        : new RegExp(`\\b${EVERY}(!?)\\s+${OTHER_WORDS}\\s+(${SINGULAR_UNITS})\\b`, "iu"),
     BARE_WEEKDAY: new RegExp(`\\b${EVERY}(!?)\\s+${WD}`, "iu"),
     SINGULAR: new RegExp(`\\b${EVERY}(!?)\\s+(${SINGULAR_UNITS})\\b`, "iu"),
     ADVERB: ADVERB_WORDS === null ? null : new RegExp(`\\b(${ADVERB_WORDS})\\b`, "i"),
