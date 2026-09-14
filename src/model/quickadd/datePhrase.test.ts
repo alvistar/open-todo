@@ -119,7 +119,11 @@ describe("matchWhen — explicit dates", () => {
 
   it("reads month-day as a date, not a year", () => {
     // chrono's en-GB parser returns 1 April 2030 for this: it reads the "30" as
-    // a year. The Italian parser is right, and wins the tie on an equal span.
+    // a year. It does NOT lose a tie-break - it never reaches the sort. The
+    // year reading leaves `day` uncertain, and §5.1's "a month name needs a
+    // certain day" rule drops it in isAdmissible. Measured at this clock:
+    //   Apr 30  it: 2027-04-30 dayCertain=true | en.GB: 2030-04-01 dayCertain=false
+    // The registry tie-break settles exact ties only, and makes the sort total.
     expect(day(when("deploy Apr 30").date)).toBe("2027-04-30");
   });
 
