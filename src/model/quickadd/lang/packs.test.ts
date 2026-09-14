@@ -251,6 +251,12 @@ describe("native phrases resolve leftmost, not by registry order", () => {
  * per pack -- for each pack, its rejects then its accepts -- would still compile,
  * still match, and be wrong only for the phrases the rejects exist to catch.
  */
+/*
+ * "Byte-identical" means identical to the hand-written literals this
+ * composition replaced, EXCEPT where a named fix has since amended the grammar
+ * on purpose. Each such row carries the finding that changed it. A row that
+ * moves without a comment naming a finding is a refactor that changed behaviour.
+ */
 describe("the composed recurrence patterns are byte-identical", () => {
   const EVERY = "(?:every|ogni)";
   const WD =
@@ -261,7 +267,12 @@ describe("the composed recurrence patterns are byte-identical", () => {
   it("REJECTED, in order and complete", () => {
     expect(RECURRENCE_GRAMMAR.REJECTED.map((r: RegExp) => r.source)).toEqual([
       `\\b${EVERY}\\s+${WD}\\s*(?:,|and|e)\\s*${WD}`,
-      `\\b${EVERY}\\s+(?:\\d+(?:st|nd|rd|th|°)?|second|third|fourth|fifth|last|first|other|next)\\s+${WD}(?:\\s+of\\s+(?:the\\s+)?month)?`,
+      // F5 widened this one: the ordinal WORDS and the "of the month" tail were
+      // English-only, so "ogni secondo martedì" fell through to the date layer
+      // and became a one-off. The shape is unchanged; the vocabulary is not.
+      `\\b${EVERY}\\s+(?:\\d+(?:st|nd|rd|th|°)?|second|third|fourth|fifth|last|first|other|next|` +
+        `prim[oa]|second[oa]|terz[oa]|quart[oa]|quint[oa]|ultim[oa]|altr[oa]|prossim[oa])` +
+        `\\s+${WD}(?:\\s+(?:of\\s+(?:the\\s+)?month|del\\s+mese))?`,
       `\\b${EVERY}\\s+(?:last|first|ultimo|primo)\\s+\\w+\\s+(?:of|del)\\s+(?:month|mese)`,
       `\\b${EVERY}\\s+\\w+.*?\\bstarting\\b(?:\\s+${WD})?`,
       `\\b${EVERY}\\s+(?:month|mese)\\s+on\\s+the\\s+\\d+(?:st|nd|rd|th)?`,

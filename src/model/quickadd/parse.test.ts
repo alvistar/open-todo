@@ -198,6 +198,42 @@ describe("parseQuickAdd — recurrence", () => {
   });
 });
 
+describe("parseQuickAdd — an ordinal weekday is refused in both languages", () => {
+  /*
+   * Formerly known defect F5. "ogni secondo martedì" used to be scheduled for
+   * next Tuesday under the title "ogni secondo", in silence, because the ordinal
+   * WORDS were English-only: the phrase matched neither the reject list nor the
+   * accept list, nothing was masked, and the date layer then read "martedì" on
+   * its own. The English half was already correct, which is what made it a gap
+   * rather than a decision.
+   */
+  it("refuses the Italian form and explains, as it always did the English", () => {
+    const it_ = parse("board ogni secondo martedì");
+    expect(it_.title).toBe("board ogni secondo martedì");
+    expect(it_.dueDate).toBeNull();
+    expect(it_.repeatAfter).toBeUndefined();
+    expect(it_.warnings).toHaveLength(1);
+
+    const en = parse("board every second tuesday");
+    expect(en.title).toBe("board every second tuesday");
+    expect(en.dueDate).toBeNull();
+    expect(en.warnings).toHaveLength(1);
+  });
+
+  it("does not let the weekday escape into a one-off date", () => {
+    expect(parse("board ogni ultimo venerdì del mese").dueDate).toBeNull();
+  });
+
+  it("leaves a bare ordinal alone when no weekday follows", () => {
+    // "ogni secondo" is "every second", not an ordinal phrase. The rule needs a
+    // weekday after the ordinal, and this must stay a plain unparsed title.
+    const r = parse("conta ogni secondo");
+    expect(r.title).toBe("conta ogni secondo");
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.dueDate).toBeNull();
+  });
+});
+
 describe("parseQuickAdd — a yearly repeat on a fixed date keeps its anchor", () => {
   /*
    * Formerly known defect F1. "tasse ogni 30 giugno" used to produce a task

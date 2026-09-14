@@ -99,10 +99,26 @@ describe("matchRecurrence — rejected, never approximated", () => {
     "board every 2nd tuesday",
     "payroll every last day of month",
     "shift every workday at 9 starting monday",
+    // Formerly F5: the ordinal words were English-only, so each of these fell
+    // through to the date layer and became a one-off on the named weekday.
+    "board ogni secondo martedì",
+    "board ogni seconda domenica",
+    "board ogni 2° martedì",
+    "board ogni ultimo venerdì del mese",
+    "board ogni altro lunedì",
   ])("rejects %s", (text) => {
     const match = r(text);
     expect(match?.rejected).toBe(true);
     expect(match?.repeatAfter).toBeUndefined();
+  });
+
+  it("keeps the Italian rejection span whole, tail included", () => {
+    // The tail must be inside the span, or "del mese" survives for the date
+    // layer to read - which is the silent re-interpretation rejecting prevents.
+    const text = "board ogni secondo martedì del mese";
+    const m = r(text);
+    if (!m) throw new Error("expected a rejection");
+    expect(text.slice(m.start, m.end)).toBe("ogni secondo martedì del mese");
   });
 
   it("returns null when there is no recurrence at all", () => {

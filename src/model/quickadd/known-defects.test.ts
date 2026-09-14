@@ -11,8 +11,9 @@ import { parseQuickAdd, type QuickAddContext } from "./parse";
  * can quietly change shape mid-refactor and be re-discovered later as something
  * new.
  *
- * F1 is FIXED and no longer lives here. Its cases moved to the ordinary suite:
- * `recurrence.test.ts` for the rule, `parse.test.ts` for the whole line.
+ * F1 and F5 are FIXED and no longer live here. Their cases moved to the
+ * ordinary suite: `recurrence.test.ts` for the rule, `parse.test.ts` for the
+ * whole line.
  *
  * So the rule for this file is the opposite of every other test here:
  *
@@ -96,28 +97,6 @@ describe("F4 — a comma list of DAY NUMBERS is silent, where weekdays warn", ()
   it("but does warn about a weekday list", () => {
     const r = parse("standup every mon, wed");
     expect(r.title).toBe("standup every mon, wed");
-    expect(r.dueDate).toBeNull();
-    expect(r.warnings).toHaveLength(1);
-  });
-});
-
-describe("F5 — an Italian ordinal weekday becomes a one-off date, silently", () => {
-  /*
-   * ORDINAL_WORD in recurrence.ts is English-only, so "secondo" matches neither
-   * the reject list nor the accept list. matchRecurrence returns null, nothing
-   * is masked, and the date layer then reads "martedì" on its own.
-   */
-  it("schedules 'ogni secondo martedì' for next Tuesday, titled 'ogni secondo'", () => {
-    const r = parse("ogni secondo martedì");
-    expect(r.title).toBe("ogni secondo");
-    expect(ymd(r.dueDate as Date)).toBe("2026-09-15");
-    expect(r.repeatAfter).toBeUndefined();
-    expect(r.warnings).toEqual([]);
-  });
-
-  it("while the English equivalent is correctly refused and explained", () => {
-    const r = parse("board every second tuesday");
-    expect(r.title).toBe("board every second tuesday");
     expect(r.dueDate).toBeNull();
     expect(r.warnings).toHaveLength(1);
   });

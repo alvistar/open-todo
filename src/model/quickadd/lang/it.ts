@@ -155,11 +155,30 @@ export const it: LanguagePack = {
 
   every: ["ogni"],
   listAnd: ["e"],
-  // See pack.ts, TODO(F5). Empty is the defect, not the decision.
-  ordinalWords: [],
+  /*
+   * Gender-inflected, like the weekday prefixes. "ultimo" and "primo" are here
+   * AND in firstLast, exactly as "last" and "first" are in the English pack:
+   * the two rules read different shapes out of the same words.
+   *
+   * "altr[oa]" makes "ogni altro lunedì" rejected, which is what "every other
+   * monday" already is. It does NOT touch "ogni altro giorno", because this
+   * rule needs a weekday after the ordinal and "giorno" is not one.
+   */
+  ordinalWords: [
+    "prim[oa]",
+    "second[oa]",
+    "terz[oa]",
+    "quart[oa]",
+    "quint[oa]",
+    "ultim[oa]",
+    "altr[oa]",
+    "prossim[oa]",
+  ],
   // The Romance degree sign: "2° martedì".
   ordinalSuffixes: ["°"],
-  ordinalWeekdayTail: [],
+  // "ogni secondo martedì del mese" - the tail is kept inside the rejected span
+  // so none of it survives to be re-read as a one-off date.
+  ordinalWeekdayTail: ["del\\s+mese"],
   firstLast: ["ultimo", "primo"],
   ofThe: ["del"],
   monthNoun: ["mese"],
