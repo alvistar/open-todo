@@ -4,12 +4,15 @@ import { parseQuickAdd, type QuickAddContext } from "./parse";
 /*
  * EVERY ASSERTION IN THIS FILE PINS BEHAVIOUR THAT IS WRONG.
  *
- * These are six defects found by running the quick-add parser against a
- * 4325-phrase corpus (research-external/corpus/FINDINGS.md). None of them is
- * fixed yet. They are written down first, as tests that pass, for one reason: a
- * refactor is about to move this code, and a defect nobody has pinned is a
- * defect that can quietly change shape mid-refactor and be re-discovered later
- * as something new.
+ * These are the defects still open from the six found by running the quick-add
+ * parser against a 4325-phrase corpus (research-external/corpus/FINDINGS.md).
+ * They are written down first, as tests that pass, for one reason: a refactor
+ * was about to move this code, and a defect nobody has pinned is a defect that
+ * can quietly change shape mid-refactor and be re-discovered later as something
+ * new.
+ *
+ * F1 is FIXED and no longer lives here. Its cases moved to the ordinary suite:
+ * `recurrence.test.ts` for the rule, `parse.test.ts` for the whole line.
  *
  * So the rule for this file is the opposite of every other test here:
  *
@@ -57,29 +60,6 @@ const droppedInSilence = (text: string) => {
   expect(r.repeatAfter, text).toBeUndefined();
   expect(r.warnings, text).toEqual([]);
 };
-
-describe("F1 — a yearly repeat on a fixed date becomes a one-off, silently", () => {
-  /*
-   * The recurrence matcher has no shape for "ogni <day> <month>", so the date
-   * layer takes "30 giugno" and the every-word is left stranded in the title.
-   * The user asked for a yearly repeat and gets one task, a broken name, and no
-   * message. Vikunja can express this: yearly is repeat_after = 365 days.
-   */
-  it("reads 'tasse ogni 30 giugno' as a single task called 'tasse ogni'", () => {
-    const r = parse("tasse ogni 30 giugno");
-    expect(r.title).toBe("tasse ogni");
-    expect(ymd(r.dueDate as Date)).toBe("2027-06-30");
-    expect(r.repeatAfter).toBeUndefined();
-    expect(r.warnings).toEqual([]);
-  });
-
-  it("does the same in English, so this is not an Italian gap", () => {
-    const r = parse("pay tax every 30 june");
-    expect(r.title).toBe("pay tax every");
-    expect(ymd(r.dueDate as Date)).toBe("2027-06-30");
-    expect(r.warnings).toEqual([]);
-  });
-});
 
 describe("F2 — 'every other <unit>' is dropped without a word", () => {
   /*

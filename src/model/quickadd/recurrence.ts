@@ -118,6 +118,26 @@ function matchRecurrenceIn(g: RecurrenceGrammar, text: string): RecurrenceMatch 
       run: (m) => byUnit(m, m[3] ?? "", g.countedUnits, Number(m[2])),
     },
     {
+      /*
+       * "ogni 30 giugno" - yearly on a fixed calendar date.
+       *
+       * Two things make this rule unlike every other one here. Its span covers
+       * the every-word ONLY, so "30 giugno" survives for the date layer and the
+       * repeat keeps the anchor the user typed; every other accepted rule
+       * swallows its whole phrase and leaves no due date at all. And it must run
+       * BEFORE BARE_WEEKDAY: no shipping pack has a token that is both a month
+       * abbreviation and a weekday one, but Italian "mar" is exactly that, and
+       * the day it is added to `recurrenceOnlyAbbreviations` "ogni mar 5" has to
+       * stay 5 March rather than becoming every Tuesday.
+       *
+       * 365 days is Vikunja's own year, the same approximation "every year"
+       * already makes, so it is silent for the same reason. It drifts a day
+       * earlier after each leap year - early, never late.
+       */
+      re: g.YEARLY_DATE,
+      run: (m) => hit(m, YEAR),
+    },
+    {
       re: g.BARE_WEEKDAY,
       run: (m) => hit(m, WEEK),
     },

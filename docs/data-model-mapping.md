@@ -116,7 +116,7 @@ text written for Vikunja's UI still parses.
 | Priority | `p1`–`p4`, `!1`–`!5` | `priority` per D-map-1 |
 | Date | See the enforced table below | `due_date` |
 | Time | `at 10`, `alle 10`, `ore 10`, `alle ore 10`, `10:30`, `3pm` — as a suffix on a Date row, never alone | time part of `due_date` |
-| Recurrence | `every day/week/month/year`, `daily…yearly`, `every N days/weeks/months`, `every monday` (single weekday), `every weekday` (approximated as weekly — **flag in UI**), `every! …` → `repeat_mode 2` | `repeat_after` + `repeat_mode` |
+| Recurrence | `every day/week/month/year`, `daily…yearly`, `every N days/weeks/months`, `every monday` (single weekday), `every weekday` (approximated as weekly — **flag in UI**), `every <day> <month>` / `ogni <giorno> <mese>` (yearly on a fixed date — see below), `every! …` → `repeat_mode 2` | `repeat_after` + `repeat_mode` |
 | Recurrence, **rejected** | `every mon, wed`, `every 2nd tuesday`, `every last day of month`, `every workday at 9 starting …` | Shown as "not supported by Vikunja"; text stays in the title. |
 | Literal | the **whole** line wrapped in matching `"` or `'` | nothing is parsed; the quoted text becomes the title verbatim |
 | Reminder | `!` alone (Todoist's reminder sigil) | not in v1; chip in the composer instead |
@@ -130,6 +130,31 @@ no library supplies the masking order that keeps `@monday` from becoming a date.
 Two grammar notes follow from that wrapper: a bare weekday always means the next
 occurrence, never today; and `tonight` / `stasera` set the day only, leaving the
 time to the all-day marker in D-map-2.
+
+**Amendment (2026-09-14): a yearly repeat on a fixed date.** `tasse ogni 30
+giugno` and `pay tax every 30 june` are now one yearly repeat rather than a
+one-off task named `tasse ogni`. Three things make this row unlike the others:
+
+- **It consumes the every-word only.** The date beside it goes on to the Date
+  row exactly as if the repeat were not there, so the task keeps the day of the
+  year the user typed. Every other accepted recurrence swallows its whole phrase
+  and leaves no due date at all; a yearly repeat with nothing to repeat from
+  would be no more useful than the one-off it replaces.
+- **It is silent about the approximation.** Vikunja's year is `repeat_after =
+  365 days`, which moves the task a day earlier after each leap year — early,
+  never late. `every year` already carries the identical approximation without a
+  warning, and warning on one form but not the other would be incoherent. This
+  is the one place §5's "nothing is approximated silently" rule is read as
+  "nothing is approximated *differently* from its own synonym".
+- **The date must be one the Date row accepts.** `every 30 june 2028` names a
+  single year, which contradicts a repeat, and keeps its one-off reading.
+  `every april 3rd` carries an ordinal suffix the Date row does not admit, and
+  is left to be refused there rather than becoming a repeat with no date.
+
+Todoist stores the same phrase as `FREQ=YEARLY;BYMONTH=4;BYMONTHDAY=2`. Vikunja
+has no field for the month and day, so the two agree on the kind, the interval
+and the first occurrence, and differ only in the calendar detail Vikunja cannot
+hold.
 
 ### 5.1 The date table is enforced, not merely documented (D-vocab, 2026-09-10)
 

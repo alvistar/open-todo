@@ -233,6 +233,12 @@ export interface RecurrenceGrammar {
   WEEKDAY_UNIT: RegExp;
   /** "every 3 days". Captures: 1 = "!", 2 = count, 3 = unit. */
   COUNTED: RegExp;
+  /**
+   * "every 30 june" - a yearly repeat on a fixed calendar date. Captures:
+   * 1 = "!". THE MATCH COVERS THE EVERY-WORD ONLY: the date beside it is left
+   * for the date layer to read, so the repeat keeps the anchor the user typed.
+   */
+  YEARLY_DATE: RegExp;
   /** "every monday". Captures: 1 = "!". */
   BARE_WEEKDAY: RegExp;
   /** "every day". Captures: 1 = "!", 2 = unit. */
@@ -327,6 +333,20 @@ export function compileRecurrenceGrammar(
     );
   }
 
+  /*
+   * A day number beside a month name, with no year (§5.1's "month + day" row,
+   * both orders). `every 30 june 2028` names one specific year, which
+   * contradicts a repeat, so the lookahead lets it fall through to the date
+   * layer untouched rather than becoming a yearly task starting in 2028.
+   */
+  // `(?!\p{L})` as well as `(?!\d)`: "april 3rd" is an ordinal, and §5.1's
+  // month + day row does not admit ordinal suffixes. Without the letter
+  // boundary "every april 3rd" set a yearly repeat while the date layer went on
+  // refusing "april 3rd" - a repeat with nothing to repeat from.
+  const DAY_NUMBER = "\\d{1,2}(?![\\d\\p{L}])";
+  const MONTH_NAME = wordBounded(monthAnyOf(packs));
+  const FIXED_DATE = `(?:${DAY_NUMBER}\\s+${MONTH_NAME}|${MONTH_NAME}\\s+${DAY_NUMBER})(?!\\s+\\d{4})`;
+
   const WEEKDAY_UNIT_WORDS = required(
     group(union(packs, (p) => p.weekdayUnit)),
     "weekdayUnit",
@@ -350,6 +370,7 @@ export function compileRecurrenceGrammar(
     REJECTED,
     WEEKDAY_UNIT: new RegExp(`\\b${EVERY}!?\\s+${WEEKDAY_UNIT_WORDS}\\b`, "iu"),
     COUNTED: new RegExp(`\\b${EVERY}(!?)\\s+(\\d{1,3})\\s+(${COUNTED_UNITS})\\b`, "iu"),
+    YEARLY_DATE: new RegExp(`\\b${EVERY}(!?)(?=\\s+${FIXED_DATE})`, "iu"),
     BARE_WEEKDAY: new RegExp(`\\b${EVERY}(!?)\\s+${WD}`, "iu"),
     SINGULAR: new RegExp(`\\b${EVERY}(!?)\\s+(${SINGULAR_UNITS})\\b`, "iu"),
     ADVERB: ADVERB_WORDS === null ? null : new RegExp(`\\b(${ADVERB_WORDS})\\b`, "i"),

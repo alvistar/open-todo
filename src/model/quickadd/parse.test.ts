@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseQuickAdd, type QuickAddContext } from "./parse";
-import { DAY } from "./recurrence";
+import { DAY, YEAR } from "./recurrence";
 
 const TZ = "Europe/Rome";
 const NOW = new Date("2026-09-09T08:00:00Z"); // Wed 9 Sep 2026, 10:00 Rome
@@ -195,6 +195,72 @@ describe("parseQuickAdd — recurrence", () => {
     expect(r.repeatAfter).toBeDefined();
     expect(r.dueDate).toBeNull();
     expect(r.title).toBe("Gym");
+  });
+});
+
+describe("parseQuickAdd — a yearly repeat on a fixed date keeps its anchor", () => {
+  /*
+   * Formerly known defect F1. "tasse ogni 30 giugno" used to produce a task
+   * called "tasse ogni", due once in 2027, with no repeat and no warning: the
+   * date layer took "30 giugno" and the every-word was stranded in the title.
+   *
+   * The rule deliberately consumes the every-word ONLY, unlike every other
+   * accepted repeat, so the date beside it still reaches the date layer. A
+   * yearly repeat with no date to repeat from would be no more useful than the
+   * one-off it replaced.
+   */
+  it("reads the repeat AND the date out of the Italian form", () => {
+    const r = parse("tasse ogni 30 giugno");
+    expect(r.title).toBe("tasse");
+    expect(r.repeatAfter).toBe(YEAR);
+    expect(r.repeatMode).toBe(0);
+    expect(ymd(due(r))).toBe("2027-06-30");
+    // Vikunja's year is 365 days, exactly as "every year" already stores it,
+    // so this is not an approximation worth a warning of its own.
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("does the same in English", () => {
+    const r = parse("pay tax every 30 june");
+    expect(r.title).toBe("pay tax");
+    expect(r.repeatAfter).toBe(YEAR);
+    expect(ymd(due(r))).toBe("2027-06-30");
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("carries a time clause through", () => {
+    const r = parse("standup ogni 30 giugno alle 9");
+    expect(r.title).toBe("standup");
+    expect(r.repeatAfter).toBe(YEAR);
+    expect(hhmm(due(r))).toBe("09:00");
+    expect(r.allDay).toBe(false);
+  });
+
+  it("honours every! as repeat-from-completion", () => {
+    expect(parse("pay tax every! 30 june").repeatMode).toBe(2);
+  });
+
+  it("leaves a date that names its own year alone", () => {
+    // "every 30 june 2028" names one specific year, which contradicts a repeat.
+    // It keeps the one-off reading rather than becoming a yearly task.
+    const r = parse("pay tax every 30 june 2028");
+    expect(r.repeatAfter).toBeUndefined();
+    expect(ymd(due(r))).toBe("2028-06-30");
+  });
+
+  it("does not turn a counted repeat into a date", () => {
+    // "mar", "set" and "mag" are month abbreviations; "months" must not be one.
+    expect(parse("ping every 2 months").repeatAfter).toBe(60 * DAY);
+    expect(parse("ping ogni 3 giorni").repeatAfter).toBe(3 * DAY);
+  });
+
+  it("highlights the every-word and the date as separate spans", () => {
+    const input = "tasse ogni 30 giugno";
+    const r = parse(input);
+    expect(r.spans.map((s) => [s.kind, s.text])).toEqual([
+      ["recurrence", "ogni"],
+      ["date", "30 giugno"],
+    ]);
   });
 });
 

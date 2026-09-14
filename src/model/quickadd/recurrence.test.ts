@@ -48,6 +48,44 @@ describe("matchRecurrence — accepted", () => {
     expect(match?.warning).toMatch(/weekly/i);
   });
 
+  it("understands a fixed calendar date as yearly, in both orders", () => {
+    expect(r("tasse ogni 30 giugno")).toMatchObject({ repeatAfter: YEAR });
+    expect(r("pay tax every 30 june")).toMatchObject({ repeatAfter: YEAR });
+    expect(r("ogni giugno 30")).toMatchObject({ repeatAfter: YEAR });
+    expect(r("ping every 1 jan")).toMatchObject({ repeatAfter: YEAR });
+    expect(r("ping ogni 5 mag")).toMatchObject({ repeatAfter: YEAR });
+  });
+
+  it("consumes the every-word only, leaving the date for the date layer", () => {
+    // The one accepted rule that does not swallow its whole phrase: a yearly
+    // repeat needs the day of the year the user actually typed.
+    const text = "tasse ogni 30 giugno";
+    const m = r(text);
+    if (!m) throw new Error("expected a recurrence match");
+    expect(text.slice(m.start, m.end)).toBe("ogni");
+  });
+
+  it("leaves a fixed date that names its own year alone", () => {
+    // A repeat starting in one named year is a contradiction, not a repeat.
+    expect(r("pay tax every 30 june 2028")).toBeNull();
+    expect(r("tasse ogni 30 giugno 2028")).toBeNull();
+  });
+
+  it("does not accept a date the date layer will refuse", () => {
+    // "april 3rd" is an ordinal; §5.1's month + day row admits a bare number
+    // only. Accepting the repeat here would leave a yearly task with no date to
+    // repeat from, and the warning about "april 3rd" still on the screen.
+    expect(r("every april 3rd")).toBeNull();
+    expect(r("every 3rd april")).toBeNull();
+  });
+
+  it("does not read a unit as a month", () => {
+    // "mar", "mag" and "set" are month abbreviations. "months" is not one, and
+    // `every 2 months` must stay a two-month repeat.
+    expect(r("ping every 2 months")).toMatchObject({ repeatAfter: 2 * MONTH });
+    expect(r("ping ogni 3 giorni")).toMatchObject({ repeatAfter: 3 * DAY });
+  });
+
   it("reports the span it consumed", () => {
     const m = r("water plants every day");
     if (!m) throw new Error("expected a recurrence match");
