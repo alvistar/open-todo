@@ -444,3 +444,72 @@ describe('parseQuickAdd — "ore" alongside the sigils', () => {
     }
   });
 });
+
+/*
+ * The recurrence span decides two things at once: what the composer highlights,
+ * and what `parse.ts` cuts out of the title. Until now only the title half was
+ * pinned, so a span that drifted at either end would have been caught only when
+ * it drifted far enough to take a neighbouring word with it.
+ */
+describe("parseQuickAdd — the recurrence span covers the phrase and nothing else", () => {
+  const spansOf = (text: string) =>
+    parse(text).spans.map((s) => [s.kind, s.text] as const);
+
+  it("stops at the phrase, leaving the rest of the title alone", () => {
+    expect(spansOf("Water the plants every day")).toEqual([["recurrence", "every day"]]);
+    expect(spansOf("ping ogni 3 giorni p1")).toEqual([
+      ["recurrence", "ogni 3 giorni"],
+      ["priority", "p1"],
+    ]);
+  });
+
+  it("takes the ! with it, since it is part of the token", () => {
+    expect(spansOf("clean every! 2 weeks")).toEqual([["recurrence", "every! 2 weeks"]]);
+  });
+
+  it("does not swallow a weekday that belongs to the recurrence", () => {
+    // "every monday" is one span. A span stopping at "every" would leave
+    // "monday" for the date matcher and schedule a one-off alongside the repeat.
+    expect(spansOf("Gym every monday #Work")).toEqual([
+      ["recurrence", "every monday"],
+      ["project", "#Work"],
+    ]);
+  });
+
+  it("highlights nothing at all for a rejected repeat", () => {
+    // The text stays whole and the warning explains it, so there is no
+    // "recognised" run to paint - marking part of it would say the opposite.
+    expect(spansOf("shift every workday at 9 starting monday")).toEqual([]);
+  });
+});
+
+/*
+ * QuickAdd.tsx runs parseQuickAdd inside a useMemo on EVERY keystroke, and the
+ * leap-day retry is already windows x 9 years x parsers. Nothing measured that
+ * until now.
+ *
+ * Typed prefix by prefix rather than by repeating one finished line: the cost
+ * scales with input length and with which matchers a partial line wakes up, and
+ * a half-typed "party 29 f" is a state a real user passes through. The median is
+ * the assertion rather than the total, so one slow scheduling slice on a busy CI
+ * box cannot fail the build while a genuine regression still will.
+ */
+describe("parseQuickAdd — stays inside a keystroke budget", () => {
+  it("parses each prefix of a worst-case line well inside a frame", () => {
+    const line = "party 29 feb please";
+    const prefixes = Array.from({ length: line.length }, (_, i) => line.slice(0, i + 1));
+    for (const prefix of prefixes) parse(prefix); // warm, so JIT is not the measurement
+
+    const timings = prefixes.map((prefix) => {
+      const started = performance.now();
+      parse(prefix);
+      return performance.now() - started;
+    });
+
+    const sorted = [...timings].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] as number;
+    // Measured on the development machine: 1.08 ms for the full leap-day line,
+    // 0.07 ms for a single character. 5 ms leaves room for a slower box.
+    expect(median).toBeLessThan(5);
+  });
+});

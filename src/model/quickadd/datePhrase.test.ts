@@ -486,6 +486,30 @@ describe('matchWhen — "ore" is a time preposition, like "alle"', () => {
  * working for some phrasings and not others, silently. The behaviour itself is
  * pinned by the nine tests above.
  */
+/*
+ * "end of month" resolves in CALENDAR terms, in the user's zone, before chrono
+ * runs at all. The reason is written at END_OF_MONTH but was never tested: every
+ * other clock in this file is 10:00 Rome, which is the same calendar day in UTC,
+ * so a version that resolved the month from the UTC instant would have passed
+ * the whole suite and been wrong for half an hour every night.
+ */
+describe("matchWhen — end of month across the UTC day boundary", () => {
+  // 00:30 on 1 October in Rome is still 30 September in UTC.
+  const JUST_AFTER_MIDNIGHT = new Date("2026-09-30T22:30:00Z");
+
+  it("uses the month the user is in, not the one UTC is in", () => {
+    for (const phrase of ["fattura fine mese", "invoice end of month"]) {
+      const m = matchWhen(phrase, JUST_AFTER_MIDNIGHT, TZ).when;
+      if (!m) throw new Error(`expected a date in ${JSON.stringify(phrase)}`);
+      expect(day(m.date)).toBe("2026-10-31");
+    }
+  });
+
+  it("says nothing was turned down, since the gate never ran", () => {
+    expect(matchWhen("fine mese", JUST_AFTER_MIDNIGHT, TZ).rejected).toEqual([]);
+  });
+});
+
 describe('matchWhen — the chrono patch behind "ore"', () => {
   it("replaces exactly the two merge refiners and the one time parser", () => {
     expect(ORE_PATCH_COUNTS).toEqual({ refiners: 2, parsers: 1 });
