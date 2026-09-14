@@ -11,7 +11,7 @@ import { parseQuickAdd, type QuickAddContext } from "./parse";
  * can quietly change shape mid-refactor and be re-discovered later as something
  * new.
  *
- * F1 and F5 are FIXED and no longer live here. Their cases moved to the
+ * F1, F5 and F6 are FIXED and no longer live here. Their cases moved to the
  * ordinary suite: `recurrence.test.ts` for the rule, `parse.test.ts` for the
  * whole line.
  *
@@ -45,13 +45,6 @@ const ctx = (): QuickAddContext => ({
 
 const parse = (text: string) => parseQuickAdd(text, ctx());
 
-const ymd = (d: Date) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
 
 /** Neither a date, nor a repeat, nor a word of explanation. */
 const droppedInSilence = (text: string) => {
@@ -98,30 +91,6 @@ describe("F4 — a comma list of DAY NUMBERS is silent, where weekdays warn", ()
     const r = parse("standup every mon, wed");
     expect(r.title).toBe("standup every mon, wed");
     expect(r.dueDate).toBeNull();
-    expect(r.warnings).toHaveLength(1);
-  });
-});
-
-describe("F6 — an Italian 'starting' phrase sets a repeat AND a date, silently", () => {
-  /*
-   * The worst of the six. `\bstarting\b` is English-only, so the reject pattern
-   * misses; "ogni giorno" then matches the accept rule, and the date layer picks
-   * "lunedì" out of the tail. The user gets a daily repeat they did ask for, a
-   * one-off due date they did not, and a task named "a partire da".
-   */
-  it("keeps the repeat, invents a due date, and mangles the title", () => {
-    const r = parse("ogni giorno a partire da lunedì");
-    expect(r.title).toBe("a partire da");
-    expect(r.repeatAfter).toBe(24 * 60 * 60);
-    expect(ymd(r.dueDate as Date)).toBe("2026-09-14");
-    expect(r.warnings).toEqual([]);
-  });
-
-  it("while the English equivalent is refused whole", () => {
-    const r = parse("standup every day starting monday");
-    expect(r.title).toBe("standup every day starting monday");
-    expect(r.dueDate).toBeNull();
-    expect(r.repeatAfter).toBeUndefined();
     expect(r.warnings).toHaveLength(1);
   });
 });

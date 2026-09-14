@@ -106,6 +106,10 @@ describe("matchRecurrence — rejected, never approximated", () => {
     "board ogni 2° martedì",
     "board ogni ultimo venerdì del mese",
     "board ogni altro lunedì",
+    // Formerly F6: the starting-word was English-only.
+    "ogni giorno a partire da lunedì",
+    "ogni giorno a partire dal 15",
+    "ogni settimana a cominciare da lunedì",
   ])("rejects %s", (text) => {
     const match = r(text);
     expect(match?.rejected).toBe(true);

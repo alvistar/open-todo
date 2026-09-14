@@ -182,8 +182,19 @@ export const it: LanguagePack = {
   firstLast: ["ultimo", "primo"],
   ofThe: ["del"],
   monthNoun: ["mese"],
-  // See pack.ts, TODO(F6). "a partire da" belongs here.
-  startingWords: [],
+  /*
+   * NOT the bare "da" or "dal", however natural "ogni giorno da lunedì" is.
+   * The reject rule is `every <word> … <starting> [weekday]`, so a bare "da"
+   * would reject "ogni giorno da fare" - an ordinary daily task whose text
+   * happens to contain the commonest preposition in the language. The explicit
+   * forms carry no such risk. A weekday-gated "da" is possible, but the pack
+   * would have to know the weekday list, which is the engine's job.
+   */
+  startingWords: [
+    // da / dal / dalla / dalle.
+    "a\\s+partire\\s+da(?:l|ll[ae])?",
+    "a\\s+cominciare\\s+da(?:l|ll[ae])?",
+  ],
   monthOnTheNth: [],
   weekdayUnit: ["giorno\\s+feriale"],
   countedUnits: {

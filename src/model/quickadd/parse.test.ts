@@ -198,6 +198,40 @@ describe("parseQuickAdd — recurrence", () => {
   });
 });
 
+describe("parseQuickAdd — a 'starting' clause is refused in both languages", () => {
+  /*
+   * Formerly known defect F6, and the worst of the six. `\bstarting\b` was
+   * English-only, so the reject rule missed; "ogni giorno" then matched the
+   * ACCEPT rule, and the date layer picked "lunedì" out of the tail. The user
+   * got a daily repeat they did ask for, a one-off due date they did not, and a
+   * task named "a partire da".
+   */
+  it("refuses the whole Italian phrase, repeat and date together", () => {
+    const r = parse("ogni giorno a partire da lunedì");
+    expect(r.title).toBe("ogni giorno a partire da lunedì");
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.dueDate).toBeNull();
+    expect(r.warnings).toHaveLength(1);
+  });
+
+  it("does the same for the English form, as it always did", () => {
+    const r = parse("standup every day starting monday");
+    expect(r.title).toBe("standup every day starting monday");
+    expect(r.repeatAfter).toBeUndefined();
+    expect(r.dueDate).toBeNull();
+    expect(r.warnings).toHaveLength(1);
+  });
+
+  it("does not refuse an ordinary daily task that contains 'da'", () => {
+    // The reason the bare "da" is NOT a starting-word: it is the commonest
+    // preposition in the language, and this is a plain daily repeat.
+    const r = parse("ogni giorno da fare");
+    expect(r.repeatAfter).toBe(DAY);
+    expect(r.title).toBe("da fare");
+    expect(r.warnings).toEqual([]);
+  });
+});
+
 describe("parseQuickAdd — an ordinal weekday is refused in both languages", () => {
   /*
    * Formerly known defect F5. "ogni secondo martedì" used to be scheduled for

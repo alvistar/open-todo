@@ -274,7 +274,11 @@ describe("the composed recurrence patterns are byte-identical", () => {
         `prim[oa]|second[oa]|terz[oa]|quart[oa]|quint[oa]|ultim[oa]|altr[oa]|prossim[oa])` +
         `\\s+${WD}(?:\\s+(?:of\\s+(?:the\\s+)?month|del\\s+mese))?`,
       `\\b${EVERY}\\s+(?:last|first|ultimo|primo)\\s+\\w+\\s+(?:of|del)\\s+(?:month|mese)`,
-      `\\b${EVERY}\\s+\\w+.*?\\bstarting\\b(?:\\s+${WD})?`,
+      // F6 widened this one: the starting-word was English-only, so "ogni
+      // giorno a partire da lunedì" kept its daily repeat AND gained a one-off
+      // due date, with "a partire da" left as the title.
+      `\\b${EVERY}\\s+\\w+.*?\\b(?:starting|a\\s+partire\\s+da(?:l|ll[ae])?` +
+        `|a\\s+cominciare\\s+da(?:l|ll[ae])?)\\b(?:\\s+${WD})?`,
       `\\b${EVERY}\\s+(?:month|mese)\\s+on\\s+the\\s+\\d+(?:st|nd|rd|th)?`,
     ]);
   });
