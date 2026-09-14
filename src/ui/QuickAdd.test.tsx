@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { QuickAddContext } from "../model/quickadd/parse";
 import { QuickAdd } from "./QuickAdd";
+import styles from "./QuickAdd.module.css";
 
 /*
  * The composer's half of D-vocab. The parser tests pin what parseQuickAdd
@@ -39,6 +40,14 @@ function compose(text: string) {
   return { input, container };
 }
 
+/**
+ * The recognised runs the overlay paints. They are `span.mark` from the CSS
+ * module, NOT `<mark>` elements: querying the tag name matches nothing here on
+ * any input, so a test written that way passes without asserting anything.
+ */
+const marks = (container: HTMLElement) =>
+  [...container.querySelectorAll(`.${styles.mark}`)].map((m) => m.textContent);
+
 const OUT_OF_GRAMMAR =
   '"sat" is not a date open-todo recognises and was kept in the task name.';
 
@@ -66,7 +75,17 @@ describe("QuickAdd — a phrase outside §5", () => {
 
   it("highlights nothing, so no word looks consumed", () => {
     const { container } = compose("I sat down with the team");
-    expect(container.querySelectorAll("mark")).toHaveLength(0);
+    expect(marks(container)).toEqual([]);
+  });
+
+  it("does highlight the words it did consume", () => {
+    // The negative case above passes just as well on a composer that never
+    // highlights anything, so the positive one is pinned beside it. "ore" is the
+    // phrasing to use: its offsets used to be translated back from a probe
+    // string and now come straight from chrono, so this is where a provenance
+    // slip would show up as a highlight sitting on the wrong words.
+    const { container } = compose("dentista domenica ore 15 #Work");
+    expect(marks(container)).toEqual(["domenica ore 15", "#Work"]);
   });
 
   it("still lets the task be created, since the title survived", () => {

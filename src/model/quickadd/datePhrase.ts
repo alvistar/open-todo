@@ -150,65 +150,10 @@ const END_OF_MONTH = /(?:\bend\s+of\s+(?:the\s+)?month\b|\bfine\s+mese\b)/i;
  * A clock time only counts when the text marks one, as it did before chrono.
  * "3pm" has no word boundary before "pm", so the meridiem is anchored to its
  * digits instead.
- */
-/*
- * chrono's Italian parser knows "alle" and does NOT know "ore", so "domenica
- * ore 15" came back as Sunday with no time and left "ore 15" sitting in the
- * task name. "ore 15" is ordinary Italian for an appointment - it is how the
- * owner writes them - and §5 lists it, so it is rewritten to the word chrono
- * does know before parsing.
  *
- * Two shapes, because Italian writes the time both ways - see each regex.
- *
- * "alle" is one character longer than "ore", so every offset after a rewrite
- * shifts. `ProbeText` carries the map back; nothing downstream may use
- * chrono's own indices.
+ * "ore" is here because §5 admits it as a time preposition alongside "at" and
+ * "alle"; chrono is taught the same word in `italianWithOre` below.
  */
-/*
- * "alle ore 15" is the most formal way to write an appointment in Italian, and
- * there the "ore" is redundant - chrono already has the "alle" it needs. Three
- * spaces rather than a deletion, because a same-length substitution shifts no
- * offset at all.
- */
-const REDUNDANT_ORE = /(?<=\balle\s{1,4})ore(?=\s+\d)/gi;
-
-/*
- * The preposition case. Not after a number: "tra 2 ore 15" is two hours from
- * now, and rewriting the unit would stop the phrase being recognised, which is
- * the silent drop the §5 warning exists to prevent.
- */
-const ORE_AS_PREPOSITION = /(?<!\d\s{1,4})\bore(?=\s+\d)/gi;
-
-interface ProbeText {
-  probe: string;
-  /** Maps an index in `probe` back to its index in the original text. */
-  toOriginal: (index: number) => number;
-}
-
-function rewriteOre(text: string): ProbeText {
-  // Same length in, same length out, so this step alone needs no offset map.
-  const levelled = text.replace(REDUNDANT_ORE, "   ");
-
-  const shifts: number[] = [];
-  let probe = "";
-  let last = 0;
-  ORE_AS_PREPOSITION.lastIndex = 0;
-  let m = ORE_AS_PREPOSITION.exec(levelled);
-  while (m) {
-    probe += levelled.slice(last, m.index) + "alle";
-    // Where the +1 lands in probe coordinates.
-    shifts.push(probe.length);
-    last = m.index + m[0].length;
-    m = ORE_AS_PREPOSITION.exec(levelled);
-  }
-  if (shifts.length === 0) return { probe: levelled, toOriginal: (i) => i };
-  probe += levelled.slice(last);
-  return {
-    probe,
-    toOriginal: (index) => index - shifts.filter((at) => at <= index).length,
-  };
-}
-
 const TIME_MARKER = /:|\d\s*(?:am|pm)\b|\b(?:at|alle|ore)\b/i;
 
 /*
@@ -360,17 +305,98 @@ function isAdmissible(
 }
 
 /*
- * Both locales run, because the owner types both languages in one line and
- * neither parser understands the other's words. Where they disagree the rule
- * is: earliest match wins, then the longest, then Italian.
+ * "ore" is how Italian writes an appointment - "domenica ore 15" - and §5 lists
+ * it. chrono's Italian locale does not know the word, so the phrase used to come
+ * back as Sunday with no time and "ore 15" left sitting in the task name.
  *
- * That last tie-break is not cosmetic. On "Apr 30" the en-GB parser returns
- * 1 April 2030 - a confident four-year error from reading "30" as a year -
- * while the Italian parser returns 30 April. Italian is also day-first, which
- * is what §5 specifies for "15/9".
+ * This is fixed inside chrono rather than by rewriting the text before it. The
+ * old fix built a probe string with "ore" replaced by "alle", parsed that, and
+ * mapped every offset back; chrono's indices were then in probe coordinates and
+ * nothing downstream was allowed to use them. Teaching chrono the word instead
+ * means the indices are already the user's own, which deletes the probe, the
+ * offset map, and the rule that guarded them.
+ *
+ * Two overrides, both on the pieces chrono exposes for exactly this:
+ *
+ *   - the date/time merge refiner decides what may sit BETWEEN a date and a
+ *     time. Its list is `T|alle?|dopo\s*le|prima\s*delle?|,|-|.|∙|:` and "ore"
+ *     was simply missing, which is why "domenica" and "15" never joined up.
+ *   - the time parser's prefix decides what may introduce a clock time. It had
+ *     "alle"/"dalle" and not "ore", so a bare "ore 9" produced no time at all.
+ *
+ * Neither class is exported and the package export map blocks a deep import, so
+ * each is reached through the instance chrono itself built. They are identified
+ * by the SOURCE of the regex they return, never by `constructor.name`: the
+ * production bundle is minified by rolldown, which emits anonymous class
+ * expressions, so every `constructor.name` there is the empty string and a
+ * name-based lookup would silently match nothing while the tests still passed.
+ * A regex source is a string literal and survives minification intact.
+ *
+ * `dopo\s*le` appears in exactly one of the four Italian refiners that expose
+ * `patternBetween`, which is what makes it a safe discriminator - matching on
+ * the method alone would also hit the relative-date and date-range mergers and
+ * turn them into date/time mergers.
+ */
+const ORE_MERGE_PATTERN =
+  /^\s*(T|alle?|(?:alle\s+)?ore|dopo\s*le|prima\s*delle?|,|-|\.|∙|:)?\s*$/;
+const ORE_TIME_PREFIX = "(?:(?:alle?|dalle?|(?:alle\\s+)?ore)\\s*)??";
+
+/** Shadows one method on a chrono part, leaving the original untouched. */
+function overriding<T extends object>(part: T, methods: Partial<T>): T {
+  return Object.assign(Object.create(part), methods) as T;
+}
+
+interface MergeRefiner {
+  patternBetween(): RegExp;
+}
+interface TimeParser {
+  primaryPrefix(): string;
+}
+
+const isDateTimeMerge = (part: unknown): part is MergeRefiner =>
+  typeof (part as MergeRefiner).patternBetween === "function" &&
+  /dopo\\s\*le/.test((part as MergeRefiner).patternBetween().source);
+
+const isTimeParser = (part: unknown): part is TimeParser =>
+  typeof (part as TimeParser).primaryPrefix === "function";
+
+/** How many parts the patch actually replaced. Pinned by the tests. */
+export const ORE_PATCH_COUNTS = { refiners: 0, parsers: 0 };
+
+function italianWithOre(): Chrono {
+  // Fresh instances, not the ones behind `chronoIt.casual`, so shadowing them
+  // cannot leak into any other consumer of the locale.
+  const config = chronoIt.configuration.createCasualConfiguration();
+
+  config.refiners = config.refiners.map((refiner) => {
+    if (!isDateTimeMerge(refiner)) return refiner;
+    ORE_PATCH_COUNTS.refiners += 1;
+    return overriding(refiner, { patternBetween: () => ORE_MERGE_PATTERN });
+  });
+
+  config.parsers = config.parsers.map((parser) => {
+    if (!isTimeParser(parser)) return parser;
+    ORE_PATCH_COUNTS.parsers += 1;
+    return overriding(parser, { primaryPrefix: () => ORE_TIME_PREFIX });
+  });
+
+  return new chronoIt.Chrono(config);
+}
+
+/*
+ * Both locales run, because the owner types both languages in one line and
+ * neither parser understands the other's words. "next venerdì" and "prossimo
+ * friday" both resolve today, because the §5 shapes are bilingual rather than
+ * per-language.
+ *
+ * Where two candidates collide the rule is: earliest match wins, then the
+ * longest, then registry order. That last tie-break only breaks exact ties -
+ * it is NOT what settles "Apr 30". The en-GB parser does return 1 April 2030
+ * there, but with `day` uncertain, so `isAdmissible` drops it before the sort
+ * runs. "15/9" is day-first in en-GB as well as in Italian.
  */
 const PARSERS: { name: "it" | "en"; chrono: Chrono }[] = [
-  { name: "it", chrono: chronoIt.casual },
+  { name: "it", chrono: italianWithOre() },
   { name: "en", chrono: chronoEn.GB },
 ];
 
@@ -382,10 +408,13 @@ interface Candidate {
   name: "it" | "en";
   result: ParsedResult;
   /**
-   * The span in the USER's text. chrono may have read a probe string instead -
-   * "ore" rewritten to "alle", or a year appended - so `result.index` and
-   * `result.text` are in probe coordinates and must never be used for the span,
-   * for the §5 shape check, or for the time-marker test.
+   * The span in the USER's text.
+   *
+   * `matchWhen` parses the user's text directly, so these are chrono's own
+   * indices. `retryWithExplicitYear` is the one path that parses something else:
+   * it appends a year AFTER the window, which keeps every offset aligned, and it
+   * returns spans in original coordinates itself. Nothing here may assume a
+   * probe exists, and nothing should reintroduce one without a map.
    */
   start: number;
   end: number;
@@ -415,13 +444,12 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
   }
 
   const reference = { instant: now, timezone: timeZone };
-  const { probe, toOriginal } = rewriteOre(text);
   const candidates: Candidate[] = PARSERS.flatMap(({ name, chrono: parser }) =>
-    parser.parse(probe, reference, { forwardDate: true }).map((result) => ({
+    parser.parse(text, reference, { forwardDate: true }).map((result) => ({
       name,
       result,
-      start: toOriginal(result.index),
-      end: toOriginal(result.index + result.text.length),
+      start: result.index,
+      end: result.index + result.text.length,
     })),
   ).filter(({ result }) =>
     // A time on its own is not a due date: "call at 10" leaves the text in the
@@ -434,7 +462,9 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
   const turnedDown: RejectedSpan[] = [];
   for (const candidate of candidates) {
     const { result, start, end } = candidate;
-    // Always the user's own words, never chrono's view of the probe.
+    // Always the user's own words. Sigil masking can leave a span whose text
+    // differs from what chrono matched, and `retryWithExplicitYear` parses a
+    // probe of its own, so the gate reads the source text every time.
     const spanText = text.slice(start, end);
     if (isAdmissible(result, spanText, today, timeZone)) {
       admissible.push(candidate);
@@ -495,8 +525,8 @@ export function matchWhen(text: string, now: Date, timeZone: string): WhenResult
    * 15 September at 13:00 - a time the user never typed. A clock time counts
    * only with a marker, which is the rule the hand-written matcher used.
    */
-  // Tested against the user's text: the probe may have rewritten "ore" away,
-  // and it is the word the user typed that decides whether they named a time.
+  // Tested against the user's text, not against what chrono matched: it is the
+  // word the user typed that decides whether they named a time.
   const hasTime =
     result.start.isCertain("hour") && TIME_MARKER.test(text.slice(best.start, best.end));
 

@@ -429,4 +429,18 @@ describe('parseQuickAdd — "ore" alongside the sigils', () => {
     expect(r.priority).toBe(4);
     expect(r.warnings).toEqual([]);
   });
+
+  it("reports the span on the user's words, so the composer highlights them", () => {
+    // The offsets come straight from chrono now. They used to come back through
+    // an offset map, because "ore" was rewritten to the longer "alle" in a probe
+    // string first - so this is the assertion that the provenance change kept
+    // the span on what the user actually typed.
+    const input = "dentista domenica ore 15 #Work p1";
+    const r = parse(input);
+    const sorted = [...r.spans].sort((a, b) => a.start - b.start);
+    expect(sorted.map((s) => s.text)).toEqual(["domenica ore 15", "#Work", "p1"]);
+    for (const span of sorted) {
+      expect(input.slice(span.start, span.end)).toBe(span.text);
+    }
+  });
 });

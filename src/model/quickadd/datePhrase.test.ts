@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchWhen } from "./datePhrase";
+import { matchWhen, ORE_PATCH_COUNTS } from "./datePhrase";
 
 const TZ = "Europe/Rome";
 // Wednesday 9 September 2026, 10:00 in Rome.
@@ -464,5 +464,30 @@ describe('matchWhen — "ore" is a time preposition, like "alle"', () => {
 
   it("still refuses an hour that does not exist", () => {
     expect(when("dentista domenica ore 25").hasTime).toBe(false);
+  });
+});
+
+/*
+ * "ore" is taught to chrono now, rather than rewritten out of the text before
+ * chrono sees it. Two parts of the Italian locale are shadowed at load: the
+ * date/time merge refiner, whose list of what may sit between a date and a time
+ * did not include the word, and the time parser's prefix.
+ *
+ * Neither class is exported, so each is found by the SOURCE of the regex it
+ * returns. `constructor.name` would be the empty string in the production
+ * bundle - rolldown emits anonymous class expressions - and a name-based lookup
+ * would therefore match nothing in the browser while this file, which is never
+ * minified, went on passing.
+ *
+ * The counts are the assertion that matters. FOUR Italian refiners expose
+ * `patternBetween`: a predicate matching the method alone would also replace
+ * the relative-date and date-range mergers with date/time mergers, and one
+ * matching too narrowly would patch one of the two merge slots and leave "ore"
+ * working for some phrasings and not others, silently. The behaviour itself is
+ * pinned by the nine tests above.
+ */
+describe('matchWhen — the chrono patch behind "ore"', () => {
+  it("replaces exactly the two merge refiners and the one time parser", () => {
+    expect(ORE_PATCH_COUNTS).toEqual({ refiners: 2, parsers: 1 });
   });
 });
