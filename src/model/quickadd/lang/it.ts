@@ -68,6 +68,35 @@ export const it: LanguagePack = {
 
   meridiem: [],
 
+  every: ["ogni"],
+  listAnd: ["e"],
+  // See pack.ts, TODO(F5). Empty is the defect, not the decision.
+  ordinalWords: [],
+  // The Romance degree sign: "2° martedì".
+  ordinalSuffixes: ["°"],
+  ordinalWeekdayTail: [],
+  firstLast: ["ultimo", "primo"],
+  ofThe: ["del"],
+  monthNoun: ["mese"],
+  // See pack.ts, TODO(F6). "a partire da" belongs here.
+  startingWords: [],
+  monthOnTheNth: [],
+  weekdayUnit: ["giorno\\s+feriale"],
+  countedUnits: {
+    day: ["giorni?"],
+    week: ["settimane?"],
+    month: ["mesi", "mese"],
+    year: ["anni?", "anno"],
+  },
+  singularUnits: {
+    day: ["giorno"],
+    week: ["settimana"],
+    month: ["mese"],
+    year: ["anno"],
+  },
+  // See pack.ts, TODO(F3).
+  adverbs: { day: [], week: [], month: [], year: [] },
+
   nativePhrases: [{ pattern: /\bfine\s+mese\b/i, resolve: lastDayOfMonth }],
 
   negativeCorpus: [

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { matchWhen } from "../datePhrase";
-import { compileDateGrammar, DATE_GRAMMAR } from "../grammar";
+import {
+  compileDateGrammar,
+  compileRecurrenceGrammar,
+  DATE_GRAMMAR,
+  RECURRENCE_GRAMMAR,
+} from "../grammar";
+import { matchRecurrence } from "../recurrence";
 import {
   MONTH_ANY,
   MONTH_FULL,
@@ -232,5 +238,71 @@ describe("native phrases resolve leftmost, not by registry order", () => {
     const a = matchWhen("end of month fine mese", NOW, TZ).when;
     const b = matchWhen("fine mese end of month", NOW, TZ).when;
     expect(a?.date.getTime()).toBe(b?.date.getTime());
+  });
+});
+
+/*
+ * The recurrence grammar, composed the same way and pinned the same way.
+ *
+ * The ordering assertion is the one that matters most. REJECTED-before-accepted
+ * is global, not per pack: "every last day of month" also contains the substring
+ * "month", so an accepted rule running first matches it and rounds a
+ * calendar-shaped repeat to monthly in silence. A composition that interleaved
+ * per pack -- for each pack, its rejects then its accepts -- would still compile,
+ * still match, and be wrong only for the phrases the rejects exist to catch.
+ */
+describe("the composed recurrence patterns are byte-identical", () => {
+  const EVERY = "(?:every|ogni)";
+  const WD =
+    "(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|" +
+    "luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica|" +
+    "mon|tue|wed|thu|fri|sat|sun)(?!\\p{L})";
+
+  it("REJECTED, in order and complete", () => {
+    expect(RECURRENCE_GRAMMAR.REJECTED.map((r: RegExp) => r.source)).toEqual([
+      `\\b${EVERY}\\s+${WD}\\s*(?:,|and|e)\\s*${WD}`,
+      `\\b${EVERY}\\s+(?:\\d+(?:st|nd|rd|th|°)?|second|third|fourth|fifth|last|first|other|next)\\s+${WD}(?:\\s+of\\s+(?:the\\s+)?month)?`,
+      `\\b${EVERY}\\s+(?:last|first|ultimo|primo)\\s+\\w+\\s+(?:of|del)\\s+(?:month|mese)`,
+      `\\b${EVERY}\\s+\\w+.*?\\bstarting\\b(?:\\s+${WD})?`,
+      `\\b${EVERY}\\s+(?:month|mese)\\s+on\\s+the\\s+\\d+(?:st|nd|rd|th)?`,
+    ]);
+  });
+
+  it("the accepted rules", () => {
+    const g = RECURRENCE_GRAMMAR;
+    expect(g.WEEKDAY_UNIT.source).toBe(
+      `\\b${EVERY}!?\\s+(?:weekday|giorno\\s+feriale)\\b`,
+    );
+    expect(g.COUNTED.source).toBe(
+      `\\b${EVERY}(!?)\\s+(\\d{1,3})\\s+(days?|giorni?|weeks?|settimane?|months?|mesi|mese|years?|anni?|anno)\\b`,
+    );
+    expect(g.BARE_WEEKDAY.source).toBe(`\\b${EVERY}(!?)\\s+${WD}`);
+    expect(g.SINGULAR.source).toBe(
+      `\\b${EVERY}(!?)\\s+(day|giorno|week|settimana|month|mese|year|anno)\\b`,
+    );
+    expect(g.ADVERB?.source).toBe("\\b(daily|weekly|monthly|yearly|annually)\\b");
+    // Plain `i`, like the literal it replaced. Nothing in it needs \p{L}.
+    expect(g.ADVERB?.flags).toBe("i");
+  });
+
+  it("rejects before it accepts, whatever the registry order", () => {
+    // The case the ordering exists for: this contains "month", which the
+    // singular-unit rule would otherwise match.
+    expect(matchRecurrence("ogni ultimo giorno del mese")).toMatchObject({
+      rejected: true,
+    });
+    expect(matchRecurrence("payroll every last day of month")).toMatchObject({
+      rejected: true,
+    });
+  });
+
+  it("drops a rule no pack feeds, rather than composing an empty one", () => {
+    // An Italian-only registry has no adverbs and no starting-word. Those rules
+    // must vanish, not become patterns that match nothing -- or everything.
+    const solo = ACTIVE_PACKS.filter((p) => p.code === "it");
+    const g = compileRecurrenceGrammar(solo);
+    expect(g.ADVERB).toBeNull();
+    expect(g.REJECTED.every((r: RegExp) => !r.source.includes("starting"))).toBe(true);
+    for (const pattern of g.REJECTED) expect(pattern.test("")).toBe(false);
   });
 });

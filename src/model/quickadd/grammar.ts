@@ -21,8 +21,8 @@
  */
 
 import { ACTIVE_PACKS } from "./lang";
-import type { LanguagePack, NativePhrase } from "./lang/pack";
-import { MONTH_ANY, WEEKDAY_FULL, wordBounded } from "./vocabulary";
+import type { LanguagePack, NativePhrase, Unit, UnitWords } from "./lang/pack";
+import { MONTH_ANY, WEEKDAY_FULL, WEEKDAY_RECURRENCE, wordBounded } from "./vocabulary";
 
 /*
  * Three ways to splice a word list into a pattern. WHICH ONE IS CORRECT DEPENDS
@@ -183,6 +183,155 @@ export function compileDateGrammar(packs: readonly LanguagePack[]): DateGrammar 
   };
 }
 
-/** The grammar the parser actually uses. Compiled once; the function stays pure
+/* ======================================================================== */
+
+export const UNITS: readonly Unit[] = ["day", "week", "month", "year"];
+
+export interface RecurrenceGrammar {
+  /** Shapes Vikunja cannot store. Checked BEFORE any accepted form. */
+  REJECTED: RegExp[];
+  /** "every weekday" - approximated to weekly, and said out loud. */
+  WEEKDAY_UNIT: RegExp;
+  /** "every 3 days". Captures: 1 = "!", 2 = count, 3 = unit. */
+  COUNTED: RegExp;
+  /** "every monday". Captures: 1 = "!". */
+  BARE_WEEKDAY: RegExp;
+  /** "every day". Captures: 1 = "!", 2 = unit. */
+  SINGULAR: RegExp;
+  /** "daily". Captures: 1 = the adverb. Null when no pack has any. */
+  ADVERB: RegExp | null;
+  /** Which unit a captured word names, for each of the three word rules. */
+  unitOf: (words: (p: LanguagePack) => UnitWords, word: string) => Unit | null;
+  countedUnits: (p: LanguagePack) => UnitWords;
+  singularUnits: (p: LanguagePack) => UnitWords;
+  adverbs: (p: LanguagePack) => UnitWords;
+}
+
+export function compileRecurrenceGrammar(
+  packs: readonly LanguagePack[],
+): RecurrenceGrammar {
+  const EVERY = required(group(union(packs, (p) => p.every)), "every");
+
+  /*
+   * Every weekday alternation carries `(?!\p{L})`. Without it the bare
+   * alternative "mon" matched the start of "month", so `every 2 months` - an
+   * accepted form - was rejected outright, and the user was told Vikunja could
+   * not do something it does. The boundary belongs around the ALTERNATION, not
+   * around the phrase: moving it outward is commit 6637ddd all over again.
+   */
+  const WD = wordBounded(WEEKDAY_RECURRENCE);
+
+  /** Unit-major, not pack-major: "days?|giorni?|weeks?|settimane?|…". */
+  const byUnit = (pick: (p: LanguagePack) => UnitWords) =>
+    UNITS.flatMap((unit) => union(packs, (p) => pick(p)[unit]));
+
+  const ORDINAL_WORDS = alternatives(union(packs, (p) => p.ordinalWords));
+  const ORDINAL_SUFFIX = group(union(packs, (p) => p.ordinalSuffixes));
+  const ORDINAL_TAIL = oneOf(union(packs, (p) => p.ordinalWeekdayTail));
+  const LIST_SEPARATOR = required(
+    // The comma is the engine's; the packs supply the word.
+    group([",", ...union(packs, (p) => p.listAnd)]),
+    "listAnd",
+  );
+  const FIRST_LAST = required(group(union(packs, (p) => p.firstLast)), "firstLast");
+  const OF_THE = required(group(union(packs, (p) => p.ofThe)), "ofThe");
+  const MONTH_NOUN = required(group(union(packs, (p) => p.monthNoun)), "monthNoun");
+  const STARTING = oneOf(union(packs, (p) => p.startingWords));
+  const MONTH_ON_THE_NTH = alternatives(union(packs, (p) => p.monthOnTheNth));
+
+  /*
+   * ORDER IS THE GRAMMAR. Every rejected shape is checked before ANY accepted
+   * one, globally - never pack by pack. "every last day of month" also contains
+   * the substring "month", so an accepted rule running first would match it and
+   * round a calendar-shaped repeat to monthly in silence.
+   */
+  const REJECTED: RegExp[] = [
+    // A list of weekdays: "every mon, wed"
+    new RegExp(`\\b${EVERY}\\s+${WD}\\s*${LIST_SEPARATOR}\\s*${WD}`, "iu"),
+  ];
+
+  // An ordinal weekday, in digits or words: "every 2nd tuesday", "every second
+  // tuesday", "every other monday". The trailing "of the month" is kept inside
+  // the span so none of it survives to be re-read as a one-off date.
+  if (ORDINAL_WORDS !== null) {
+    REJECTED.push(
+      new RegExp(
+        `\\b${EVERY}\\s+(?:\\d+${ORDINAL_SUFFIX === null ? "" : `${ORDINAL_SUFFIX}?`}|${ORDINAL_WORDS})` +
+          `\\s+${WD}${ORDINAL_TAIL === null ? "" : `(?:\\s+${ORDINAL_TAIL})?`}`,
+        "iu",
+      ),
+    );
+  }
+
+  // "every last/first day of month"
+  REJECTED.push(
+    new RegExp(
+      `\\b${EVERY}\\s+${FIRST_LAST}\\s+\\w+\\s+${OF_THE}\\s+${MONTH_NOUN}`,
+      "iu",
+    ),
+  );
+
+  // "every workday at 9 starting monday" - the span must reach past the
+  // starting-word to the weekday, or the date matcher picks the weekday up and
+  // schedules a one-off, which is what rejecting is meant to prevent.
+  if (STARTING !== null) {
+    REJECTED.push(
+      new RegExp(`\\b${EVERY}\\s+\\w+.*?\\b${STARTING}\\b(?:\\s+${WD})?`, "iu"),
+    );
+  }
+
+  // "every month on the 3rd" - calendar-shaped, and silently rounded to monthly
+  // before this rule existed.
+  if (MONTH_ON_THE_NTH !== null) {
+    REJECTED.push(
+      new RegExp(`\\b${EVERY}\\s+${MONTH_NOUN}\\s+${MONTH_ON_THE_NTH}`, "iu"),
+    );
+  }
+
+  const WEEKDAY_UNIT_WORDS = required(
+    group(union(packs, (p) => p.weekdayUnit)),
+    "weekdayUnit",
+  );
+  /*
+   * Bare, because these three sit inside a CAPTURING group: the rule reads the
+   * matched unit back out to decide which interval it means. `alternatives`
+   * rather than `group` keeps the capture at the index the rule expects.
+   */
+  const COUNTED_UNITS = required(
+    alternatives(byUnit((p) => p.countedUnits)),
+    "countedUnits",
+  );
+  const SINGULAR_UNITS = required(
+    alternatives(byUnit((p) => p.singularUnits)),
+    "singularUnits",
+  );
+  const ADVERB_WORDS = alternatives(byUnit((p) => p.adverbs));
+
+  return {
+    REJECTED,
+    WEEKDAY_UNIT: new RegExp(`\\b${EVERY}!?\\s+${WEEKDAY_UNIT_WORDS}\\b`, "iu"),
+    COUNTED: new RegExp(`\\b${EVERY}(!?)\\s+(\\d{1,3})\\s+(${COUNTED_UNITS})\\b`, "iu"),
+    BARE_WEEKDAY: new RegExp(`\\b${EVERY}(!?)\\s+${WD}`, "iu"),
+    SINGULAR: new RegExp(`\\b${EVERY}(!?)\\s+(${SINGULAR_UNITS})\\b`, "iu"),
+    ADVERB: ADVERB_WORDS === null ? null : new RegExp(`\\b(${ADVERB_WORDS})\\b`, "i"),
+    unitOf: (pick, word) => {
+      const needle = word.toLowerCase();
+      for (const unit of UNITS) {
+        for (const pack of packs) {
+          if (pick(pack)[unit].some((w) => new RegExp(`^(?:${w})$`, "iu").test(needle))) {
+            return unit;
+          }
+        }
+      }
+      return null;
+    },
+    countedUnits: (p) => p.countedUnits,
+    singularUnits: (p) => p.singularUnits,
+    adverbs: (p) => p.adverbs,
+  };
+}
+
+/** The grammar the parser actually uses. Compiled once; the functions stay pure
  *  so a test can compile a registry of its own. */
 export const DATE_GRAMMAR = compileDateGrammar(ACTIVE_PACKS);
+export const RECURRENCE_GRAMMAR = compileRecurrenceGrammar(ACTIVE_PACKS);

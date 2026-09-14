@@ -69,6 +69,31 @@ export const en: LanguagePack = {
 
   meridiem: ["am", "pm"],
 
+  every: ["every"],
+  listAnd: ["and"],
+  ordinalWords: ["second", "third", "fourth", "fifth", "last", "first", "other", "next"],
+  ordinalSuffixes: ["st", "nd", "rd", "th"],
+  ordinalWeekdayTail: ["of\\s+(?:the\\s+)?month"],
+  firstLast: ["last", "first"],
+  ofThe: ["of"],
+  monthNoun: ["month"],
+  startingWords: ["starting"],
+  monthOnTheNth: ["on\\s+the\\s+\\d+(?:st|nd|rd|th)?"],
+  weekdayUnit: ["weekday"],
+  countedUnits: {
+    day: ["days?"],
+    week: ["weeks?"],
+    month: ["months?"],
+    year: ["years?"],
+  },
+  singularUnits: { day: ["day"], week: ["week"], month: ["month"], year: ["year"] },
+  adverbs: {
+    day: ["daily"],
+    week: ["weekly"],
+    month: ["monthly"],
+    year: ["yearly", "annually"],
+  },
+
   nativePhrases: [
     { pattern: /\bend\s+of\s+(?:the\s+)?month\b/i, resolve: lastDayOfMonth },
   ],

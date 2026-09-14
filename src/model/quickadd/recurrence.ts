@@ -8,7 +8,8 @@
  * would put the task on the wrong day for most of the year.
  */
 
-import { WEEKDAY_RECURRENCE, wordBounded } from "./vocabulary";
+import { RECURRENCE_GRAMMAR } from "./grammar";
+import type { Unit } from "./lang/pack";
 
 export const DAY = 24 * 60 * 60;
 export const WEEK = 7 * DAY;
@@ -29,52 +30,19 @@ export interface RecurrenceMatch {
   text: string;
 }
 
-/*
- * "every sat" can only mean Saturday, because "every" has already established
- * that a weekday follows. The date layer admits only the full names, and
- * neither layer takes the Italian abbreviations - see vocabulary.ts.
- */
-const WEEKDAY = WEEKDAY_RECURRENCE;
-
-/** Word-form ordinals, which are as calendar-shaped as the digit ones. */
-const ORDINAL_WORD = "second|third|fourth|fifth|last|first|other|next";
-
-/**
- * Shapes that are clearly recurrence but that Vikunja cannot store. Checked
- * BEFORE the accepted forms, because "every last day of month" also contains
- * the substring "month".
- *
- * Every weekday alternation here carries `(?!\p{L})`. Without it the bare
- * alternative "mon" matched the start of "month", so `every 2 months` — an
- * accepted form — was rejected outright, and the user was told Vikunja could
- * not do something it does.
- */
-const WD = wordBounded(WEEKDAY);
-
-const REJECTED: RegExp[] = [
-  // A list of weekdays: "every mon, wed"
-  new RegExp(`\\b(?:every|ogni)\\s+${WD}\\s*(?:,|and|e)\\s*${WD}`, "iu"),
-  // An ordinal weekday, in digits or words: "every 2nd tuesday",
-  // "every second tuesday", "every other monday". The trailing
-  // `(?:\s+of\s+(?:the\s+)?month)?` keeps the whole phrase in one span so
-  // none of it survives to be re-read as a one-off date.
-  new RegExp(
-    `\\b(?:every|ogni)\\s+(?:\\d+(?:st|nd|rd|th|°)?|${ORDINAL_WORD})\\s+${WD}(?:\\s+of\\s+(?:the\\s+)?month)?`,
-    "iu",
-  ),
-  // "every last/first day of month"
-  /\b(?:every|ogni)\s+(?:last|first|ultimo|primo)\s+\w+\s+(?:of|del)\s+(?:month|mese)/iu,
-  // "every workday at 9 starting monday" — the span must reach past
-  // "starting" to the weekday, or the date matcher picks the weekday up and
-  // schedules a one-off, which is exactly what rejecting is meant to prevent.
-  new RegExp(`\\b(?:every|ogni)\\s+\\w+.*?\\bstarting\\b(?:\\s+${WD})?`, "iu"),
-  // "every month on the 3rd" — calendar-shaped, and silently rounded to
-  // monthly before this rule existed.
-  /\b(?:every|ogni)\s+(?:month|mese)\s+on\s+the\s+\d+(?:st|nd|rd|th)?/iu,
-];
+/** Seconds per repeat unit, as Vikunja's UI counts them. */
+const SECONDS: Record<Unit, number> = { day: DAY, week: WEEK, month: MONTH, year: YEAR };
 
 export function matchRecurrence(text: string): RecurrenceMatch | null {
-  for (const pattern of REJECTED) {
+  const g = RECURRENCE_GRAMMAR;
+
+  /*
+   * Rejected shapes first, ALL of them, before any accepted one. The ordering is
+   * global rather than per language: "every last day of month" also contains the
+   * substring "month", so an accepted rule running first would match it and
+   * round a calendar-shaped repeat to monthly in silence.
+   */
+  for (const pattern of g.REJECTED) {
     const m = text.match(pattern);
     if (m) {
       return {
@@ -100,53 +68,58 @@ export function matchRecurrence(text: string): RecurrenceMatch | null {
     ...extra,
   });
 
-  const rules: { re: RegExp; run: (m: RegExpMatchArray) => RecurrenceMatch | null }[] = [
+  /*
+   * Each unit rule reads its captured word back through `unitOf` rather than
+   * re-testing it against a hand-written alternation. The old form had the unit
+   * list written twice - once in the pattern, once in the dispatch - kept in
+   * step by hand, with an unconditional final `return hit(m, n * YEAR)` standing
+   * in for "must be years". Returning null instead means a unit the pattern
+   * admits but the dispatch does not recognise fails loudly rather than becoming
+   * an annual repeat.
+   */
+  const byUnit = (
+    m: RegExpMatchArray,
+    word: string,
+    words: Parameters<typeof g.unitOf>[0],
+    multiplier: number,
+  ): RecurrenceMatch | null => {
+    const unit = g.unitOf(words, word);
+    return unit === null ? null : hit(m, multiplier * SECONDS[unit]);
+  };
+
+  const rules: {
+    re: RegExp | null;
+    run: (m: RegExpMatchArray) => RecurrenceMatch | null;
+  }[] = [
     {
       // Approximated, and it says so out loud rather than pretending.
-      re: /\b(?:every|ogni)!?\s+(?:weekday|giorno\s+feriale)\b/iu,
+      re: g.WEEKDAY_UNIT,
       run: (m) =>
         hit(m, WEEK, {
           warning: "Vikunja cannot repeat on weekdays only; saved as weekly.",
         }),
     },
     {
-      re: /\b(?:every|ogni)(!?)\s+(\d{1,3})\s+(days?|giorni?|weeks?|settimane?|months?|mesi|mese|years?|anni?|anno)\b/iu,
-      run: (m) => {
-        const n = Number(m[2]);
-        const unit = (m[3] ?? "").toLowerCase();
-        if (/^(days?|giorni?)$/.test(unit)) return hit(m, n * DAY);
-        if (/^(weeks?|settimane?)$/.test(unit)) return hit(m, n * WEEK);
-        if (/^(months?|mesi|mese)$/.test(unit)) return hit(m, n * MONTH);
-        return hit(m, n * YEAR);
-      },
+      re: g.COUNTED,
+      run: (m) => byUnit(m, m[3] ?? "", g.countedUnits, Number(m[2])),
     },
     {
-      re: new RegExp(`\\b(?:every|ogni)(!?)\\s+(?:${WEEKDAY})(?!\\p{L})`, "iu"),
+      re: g.BARE_WEEKDAY,
       run: (m) => hit(m, WEEK),
     },
     {
-      re: /\b(?:every|ogni)(!?)\s+(day|giorno|week|settimana|month|mese|year|anno)\b/iu,
-      run: (m) => {
-        const unit = (m[2] ?? "").toLowerCase();
-        if (/^(day|giorno)$/.test(unit)) return hit(m, DAY);
-        if (/^(week|settimana)$/.test(unit)) return hit(m, WEEK);
-        if (/^(month|mese)$/.test(unit)) return hit(m, MONTH);
-        return hit(m, YEAR);
-      },
+      re: g.SINGULAR,
+      run: (m) => byUnit(m, m[2] ?? "", g.singularUnits, 1),
     },
     {
-      re: /\b(daily|weekly|monthly|yearly|annually)\b/i,
-      run: (m) => {
-        const word = (m[1] ?? "").toLowerCase();
-        if (word === "daily") return hit(m, DAY);
-        if (word === "weekly") return hit(m, WEEK);
-        if (word === "monthly") return hit(m, MONTH);
-        return hit(m, YEAR);
-      },
+      re: g.ADVERB,
+      run: (m) => byUnit(m, m[1] ?? "", g.adverbs, 1),
     },
   ];
 
   for (const rule of rules) {
+    // A rule whose pattern no active pack feeds is absent, not empty.
+    if (rule.re === null) continue;
     const m = text.match(rule.re);
     if (!m) continue;
     const result = rule.run(m);

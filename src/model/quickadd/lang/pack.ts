@@ -40,6 +40,12 @@
  *     (`datePhrase.ts`, `normalise`), so an entry that is case-sensitive or
  *     carries a double space can never match anything.
  */
+/** The four repeat units Vikunja's `repeat_after` can express. */
+export type Unit = "day" | "week" | "month" | "year";
+
+/** One word list per unit. An empty list is a language that lacks the form. */
+export type UnitWords = Record<Unit, string[]>;
+
 /** Calendar parts of a day, in the user's zone. */
 export interface DateParts {
   year: number;
@@ -138,6 +144,70 @@ export interface LanguagePack {
 
   /** "am", "pm". Empty for a language that writes no meridiem. */
   meridiem: string[];
+
+  /* ------------------------------------------------- §5 recurrence ------- */
+
+  /** The trigger. Everything below only applies after it. */
+  every: string[];
+
+  /** The word half of a list separator; the comma itself is the engine's. */
+  listAnd: string[];
+
+  /**
+   * Word-form ordinals, which are as calendar-shaped as the digit ones and are
+   * therefore REJECTED.
+   *
+   * TODO(F5): Italian ships none, so "ogni secondo martedì" matches neither the
+   * reject list nor the accept list, falls through to the date layer, and is
+   * silently scheduled as a one-off next Tuesday. Fixing it is a §5.1 amendment;
+   * see known-defects.test.ts. Do not "complete" this list as a tidy-up.
+   */
+  ordinalWords: string[];
+
+  /** Digit ordinal markers: "2nd", "2°". */
+  ordinalSuffixes: string[];
+
+  /** The tail of "every 2nd tuesday OF THE MONTH", kept in one span. */
+  ordinalWeekdayTail: string[];
+
+  /** "every LAST day of month". */
+  firstLast: string[];
+
+  /** The possessive in "last day OF month". */
+  ofThe: string[];
+
+  /** The noun in "last day of MONTH". */
+  monthNoun: string[];
+
+  /**
+   * "every workday at 9 STARTING monday".
+   *
+   * TODO(F6): Italian ships none, so "ogni giorno a partire da lunedì" escapes
+   * the reject list, matches the accept rule, AND lets the date layer take
+   * "lunedì" - a repeat, a due date nobody asked for, and a task named after the
+   * preposition. See known-defects.test.ts.
+   */
+  startingWords: string[];
+
+  /** The whole tail of "every month ON THE 3rd". No word-for-word Italian. */
+  monthOnTheNth: string[];
+
+  /** "every WEEKDAY" - approximated to weekly, and warned about. */
+  weekdayUnit: string[];
+
+  /** Units after a count: "every 3 DAYS". */
+  countedUnits: UnitWords;
+
+  /** Units on their own: "every DAY". */
+  singularUnits: UnitWords;
+
+  /**
+   * "daily", "weekly"…
+   *
+   * TODO(F3): Italian ships none, so "quotidiano" and friends do nothing. Unlike
+   * F5 and F6 this one fails safe - the phrase is simply not recognised.
+   */
+  adverbs: UnitWords;
 
   /* ------------------------------------------------- outside chrono ------ */
 
