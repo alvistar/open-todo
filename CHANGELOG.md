@@ -8,9 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **The task list has a keyboard.** Up and Down move between tasks, Enter
-  completes the focused one (or reopens it), and `u` takes back a completion
-  while the row is still on screen. The list is now a single Tab stop instead
+- **You can open a task.** Enter on a focused row, or a click, opens the detail
+  at the geometry measured in `docs/layout-specs.md` §4: the project it belongs
+  to, its description, its sub-tasks, and its date, priority, labels and
+  reminders down the side. It reads, for now; editing arrives field by field
+  with the write each one needs.
+- **The task list has a keyboard**, with Todoist's own map: Up/Down or `J`/`K`
+  move between tasks, **Enter opens** the focused one, `E` completes or reopens
+  it, and `Z` takes back a completion while the row is still on screen. The list is now a single Tab stop instead
   of one per row plus one per checkbox — stepping past a fifty-task view used
   to take over a hundred Tab presses, which is keyboard support nobody could
   use. (D4 step 2.)

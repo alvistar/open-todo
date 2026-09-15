@@ -1,0 +1,202 @@
+/* layout-specs §4: 864x750, r10, top at y=64 over a 40% overlay; the body
+   splits main 604 / sidebar 260. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  z-index: 10;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  cursor: default;
+}
+
+.dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 864px;
+  max-width: calc(100vw - 32px);
+  height: 750px;
+  max-height: calc(100vh - 128px);
+  margin-top: 64px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+/* §4: header 48, padding 0 8 0 12, actions right with gap 8. */
+.header {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  flex: 0 0 auto;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-chip);
+  font: 600 13px / 20px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pair {
+  display: flex;
+  align-items: center;
+}
+
+.iconButton {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-chip);
+  color: var(--text-secondary);
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--hover-fill);
+}
+
+.iconButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+/* §4: main 604, padding 16 16 0. */
+.main {
+  flex: 0 0 604px;
+  max-width: 604px;
+  padding: 16px 16px 0;
+  overflow-y: auto;
+}
+
+.overview {
+  display: flex;
+  align-items: flex-start;
+}
+
+.check {
+  flex: 0 0 auto;
+  margin: -1px 8px 0 0;
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font: 600 20px / 22px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.done .title {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+
+.description {
+  margin-top: 8px;
+  font: 400 14px / 23.1px var(--font-sans);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.placeholder {
+  color: var(--text-tertiary);
+}
+
+/* §4: the sub-task divider is the faint one, inset past the checkbox. */
+.subtasks {
+  margin: 12px 0 0 32px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--divider-faint);
+}
+
+.subtaskList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subtask {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  font: 400 14px / 28px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.subtaskDone {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+
+/* §4: sidebar 260, bg secondary, padding 16, inner padding 0 8, gap 8. */
+.sidebar {
+  flex: 0 0 260px;
+  padding: 16px;
+  background: var(--bg-secondary);
+  overflow-y: auto;
+}
+
+.fields {
+  padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fieldLabel {
+  font: 600 12px / 28px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.fieldValue {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  font: 400 12px / 28px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.fieldEmpty {
+  color: var(--text-secondary);
+}
+
+.rule {
+  height: 1px;
+  margin: 0;
+  border: 0;
+  background: var(--divider);
+}

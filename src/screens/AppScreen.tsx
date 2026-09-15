@@ -14,6 +14,7 @@ import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
 import { useLabels, useProjects, useUser, useViewTasks } from "../queries/useVikunja";
 import { readThemePreference, resolveTheme, setTheme } from "../theme/theme";
+import { TaskDetail } from "../ui/detail/TaskDetail";
 import { ListView } from "../ui/ListView";
 import { AddTaskAffordance, QuickAdd } from "../ui/QuickAdd";
 import { Shell } from "../ui/Shell";
@@ -141,6 +142,8 @@ export function AppScreen() {
   const labelsQuery = useLabels();
   const createTask = useCreateTask();
   const [composerOpen, setComposerOpen] = useState(false);
+  /** The task whose detail is open, by id; it is read back out of `tasks`. */
+  const [openTaskId, setOpenTaskId] = useState<number | null>(null);
 
   /*
    * `now` here is only for the composer's live preview. The value written to
@@ -215,6 +218,20 @@ export function AppScreen() {
 
   const error = tasksQuery.error ?? projectsQuery.error;
 
+  /*
+   * The open task is READ BACK from the view's list rather than held as its
+   * own copy, so the poll keeps an open dialog current and nothing has to
+   * reconcile two versions of the same task. A task that leaves the view -
+   * completed elsewhere, rescheduled out of Today - takes its dialog with it.
+   */
+  const openIndex =
+    openTaskId === null ? -1 : tasks.findIndex((t) => t.id === openTaskId);
+  const openTask = openIndex === -1 ? null : tasks[openIndex];
+  const step = (delta: number) => {
+    const next = tasks[openIndex + delta];
+    if (next) setOpenTaskId(next.id);
+  };
+
   return (
     <Shell
       sidebar={
@@ -258,6 +275,7 @@ export function AppScreen() {
           if (task) completing.toggle(task, index);
         }}
         onUndo={(row) => completing.undo(row.id)}
+        onOpenTask={(row) => setOpenTaskId(row.id)}
         footer={
           composerOpen ? (
             <QuickAdd
@@ -279,6 +297,23 @@ export function AppScreen() {
         }
       />
       {error ? <p className={styles.error}>{error.message}</p> : null}
+      {openTask ? (
+        <TaskDetail
+          task={openTask}
+          projectName={
+            projectsQuery.data?.find((p) => p.id === openTask.project_id)?.title ??
+            "Inbox"
+          }
+          now={rowContext.now}
+          timeZone={timeZone}
+          defaultDueTime={defaultDueTime}
+          onClose={() => setOpenTaskId(null)}
+          {...(openIndex > 0 ? { onPrev: () => step(-1) } : {})}
+          {...(openIndex >= 0 && openIndex < tasks.length - 1
+            ? { onNext: () => step(1) }
+            : {})}
+        />
+      ) : null}
     </Shell>
   );
 }

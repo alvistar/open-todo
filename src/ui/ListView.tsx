@@ -72,21 +72,34 @@ export function ListView({
   const rowKeyDown = (task: TaskRowModel) => (event: React.KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
 
+    /*
+     * The map is Todoist's, measured from its own shortcut panel on
+     * 2026-09-15 rather than invented: Enter opens the task, E completes the
+     * selected ones, Z undoes, and J/K alias the arrows. The first cut of this
+     * shipped Enter=complete only because there was nothing to open.
+     */
     switch (event.key) {
       case "ArrowDown":
+      case "j":
         event.preventDefault();
         move(1);
         break;
       case "ArrowUp":
+      case "k":
         event.preventDefault();
         move(-1);
         break;
       case "Enter":
+        if (!onOpenTask) return;
+        event.preventDefault();
+        onOpenTask(task);
+        break;
+      case "e":
         if (!onToggleDone) return;
         event.preventDefault();
         onToggleDone(task);
         break;
-      case "u":
+      case "z":
         if (!task.undoable || !onUndo) return;
         event.preventDefault();
         onUndo(task);

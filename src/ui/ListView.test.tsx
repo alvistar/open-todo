@@ -71,17 +71,58 @@ describe("one tab stop, arrows inside", () => {
   });
 });
 
+describe("j and k alias the arrows", () => {
+  // Measured from Todoist's own shortcut panel, which lists "↑ oppure K".
+  it("moves the focus the same way", () => {
+    render(<ListView sections={sections(row(1), row(2), row(3))} />);
+    const start = rowsOf()[0] as HTMLElement;
+
+    fireEvent.keyDown(start, { key: "j" });
+    expect(rowsOf()[1]).toHaveFocus();
+
+    fireEvent.keyDown(start, { key: "k" });
+    expect(rowsOf()[0]).toHaveFocus();
+  });
+});
+
 describe("acting on the focused row", () => {
-  it("completes it with Enter", () => {
+  it("OPENS it with Enter, which is what Enter means in the oracle", () => {
+    const onOpenTask = vi.fn();
+    const onToggleDone = vi.fn();
+    render(
+      <ListView
+        sections={sections(row(1), row(2))}
+        onOpenTask={onOpenTask}
+        onToggleDone={onToggleDone}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowDown" });
+    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "Enter" });
+
+    expect(onOpenTask).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }));
+    expect(onToggleDone).not.toHaveBeenCalled();
+  });
+
+  it("does nothing on Enter when there is nowhere to open", () => {
+    // The rule this app keeps relearning: a key that announces an action and
+    // performs none is worse than no key at all.
+    const onToggleDone = vi.fn();
+    render(<ListView sections={sections(row(1), row(2))} onToggleDone={onToggleDone} />);
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "Enter" });
+
+    expect(onToggleDone).not.toHaveBeenCalled();
+  });
+
+  it("completes it with e", () => {
     const onToggleDone = vi.fn();
     render(<ListView sections={sections(row(1), row(2))} onToggleDone={onToggleDone} />);
     fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowDown" });
-    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "Enter" });
+    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "e" });
 
     expect(onToggleDone).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }));
   });
 
-  it("undoes with u, but only while the row can be undone", () => {
+  it("undoes with z, but only while the row can be undone", () => {
     const onUndo = vi.fn();
     render(
       <ListView
@@ -91,13 +132,13 @@ describe("acting on the focused row", () => {
     );
     const first = rowsOf()[0] as HTMLElement;
 
-    fireEvent.keyDown(first, { key: "u" });
+    fireEvent.keyDown(first, { key: "z" });
     expect(onUndo).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
 
-    // The handler lives on each row, so pressing u on a row with nothing to
+    // The handler lives on each row, so pressing z on a row with nothing to
     // undo is the second half of the rule.
     onUndo.mockClear();
-    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "u" });
+    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "z" });
     expect(onUndo).not.toHaveBeenCalled();
   });
 });
@@ -108,7 +149,7 @@ describe("the composer shares this container", () => {
      * The quick-add composer renders in the footer, INSIDE the scroll
      * container. This is why the key handler is attached to each ROW rather
      * than to the container: up there it would also see every keystroke typed
-     * into a task name, and "u" would undo while you were spelling "usare".
+     * into a task name, and "z" would undo while you were spelling "zuppa".
      * The test guards the placement, not the guard clause it replaced.
      */
     const onToggleDone = vi.fn();
@@ -123,9 +164,9 @@ describe("the composer shares this container", () => {
     );
     const input = screen.getByLabelText("Task name");
 
-    fireEvent.keyDown(input, { key: "u" });
-    fireEvent.keyDown(input, { key: "Enter" });
-    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "z" });
+    fireEvent.keyDown(input, { key: "e" });
+    fireEvent.keyDown(input, { key: "j" });
 
     expect(onUndo).not.toHaveBeenCalled();
     expect(onToggleDone).not.toHaveBeenCalled();
