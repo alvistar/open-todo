@@ -121,6 +121,42 @@ export function addLabel(http: Http, taskId: number, labelId: number): Promise<u
 }
 
 /**
+ * Creates a label (`PUT /labels`), which the whole instance then has.
+ *
+ * Never a side effect of typing: the label namespace is shared by every task
+ * and every project, so a typo made here is not undoable by the person who
+ * made it. It is reached by pressing a button that names what will be created.
+ */
+export function createLabel(http: Http, title: string): Promise<Label> {
+  return http.request<Label>("/labels", { method: "PUT", body: { title } });
+}
+
+/** Removes a label from the instance entirely (`DELETE /labels/{id}`). */
+export function deleteLabel(http: Http, labelId: number): Promise<void> {
+  return http.request<void>(`/labels/${labelId}`, { method: "DELETE" });
+}
+
+/** Detaches one (`DELETE /tasks/{id}/labels/{labelId}`). */
+export function removeLabel(http: Http, taskId: number, labelId: number): Promise<void> {
+  return http.request<void>(`/tasks/${taskId}/labels/${labelId}`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * One task, fresh from the server.
+ *
+ * Needed because the label calls answer with the RELATION, not the task, so
+ * after attaching or detaching there is no updated copy to put in the cache -
+ * and the dialog reads its task out of that cache. Re-reading is also what
+ * keeps `updateTask`'s "must be a server copy" contract true for whatever
+ * write comes next.
+ */
+export function getTask(http: Http, taskId: number): Promise<Task> {
+  return http.request<Task>(`/tasks/${taskId}`);
+}
+
+/**
  * The task fields open-todo writes. Each key present becomes one entry in the
  * bulk call's `fields` list, so writing a field and naming it cannot drift
  * apart.

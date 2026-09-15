@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TaskPatch } from "../../api/endpoints";
-import type { Task, TaskReminder } from "../../api/types";
+import type { Label, Task, TaskReminder } from "../../api/types";
 import { formatDueLabel, parseVikunjaDate } from "../../model/dates";
 import type { DuePhrase } from "../../model/duePhrase";
 import { priorityFromVikunja, priorityLabel } from "../../model/priority";
@@ -12,6 +12,8 @@ import { EditableField } from "./EditableField";
 import { PickerField } from "./PickerField";
 import {
   DuePicker,
+  type LabelChange,
+  LabelPicker,
   PriorityPicker,
   type ProjectOption,
   ProjectPicker,
@@ -48,6 +50,10 @@ export interface TaskDetailProps {
    * are not a column: they travel outside the bulk `fields` guard entirely.
    */
   onSaveReminders: (reminders: TaskReminder[]) => Promise<void>;
+  /** Every label the instance has, for the picker to choose among. */
+  allLabels: readonly Label[];
+  /** One label on or off. A sub-resource call, so one pick is one write. */
+  onChangeLabel: (change: LabelChange) => Promise<void>;
   now: Date;
   timeZone: string;
   defaultDueTime: string | null;
@@ -65,6 +71,8 @@ export function TaskDetail({
   projects,
   readDuePhrase,
   onSaveReminders,
+  allLabels,
+  onChangeLabel,
   now,
   timeZone,
   defaultDueTime,
@@ -318,17 +326,21 @@ export function TaskDetail({
                 )}
               </PickerField>
               <hr className={styles.rule} />
-              <div>
-                <div className={styles.fieldLabel}>Labels</div>
-                <div
-                  className={`${styles.fieldValue} ${labels.length > 0 ? "" : styles.fieldEmpty}`}
-                >
-                  <Icon name="labels" size={16} />
-                  {labels.length > 0
+              <PickerField
+                label="Labels"
+                icon="labels"
+                value={
+                  labels.length > 0
                     ? labels.map((label) => label.title).join(", ")
-                    : "None"}
-                </div>
-              </div>
+                    : "None"
+                }
+                empty={labels.length === 0}
+                onCommit={onChangeLabel}
+              >
+                {(control) => (
+                  <LabelPicker attached={labels} all={allLabels} {...control} />
+                )}
+              </PickerField>
               <hr className={styles.rule} />
               <PickerField
                 label="Reminders"

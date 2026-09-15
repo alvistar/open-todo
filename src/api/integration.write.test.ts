@@ -22,9 +22,14 @@
  */
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  addLabel,
+  createLabel,
+  deleteLabel,
   deleteTask,
+  getTask,
   getUser,
   listProjects,
+  removeLabel,
   updateReminders,
   updateTask,
 } from "./endpoints";
@@ -44,6 +49,8 @@ const http = createHttp({
 
 /** Every task this file creates, so none of it is left behind. */
 const created: number[] = [];
+/** And every label, which lives on the INSTANCE rather than on a task. */
+const createdLabels: number[] = [];
 
 async function scratchProjectId(): Promise<number> {
   const user = await getUser(http);
@@ -110,6 +117,13 @@ afterAll(async () => {
       // Reported rather than thrown: a failed cleanup must not turn a passing
       // run red, but it does leave something behind, so say so.
       console.warn(`  could not delete scratch task ${id}`);
+    }
+  }
+  for (const id of createdLabels) {
+    try {
+      await deleteLabel(http, id);
+    } catch {
+      console.warn(`  could not delete scratch label ${id}`);
     }
   }
 });
@@ -260,5 +274,42 @@ describe.skipIf(!enabled)("live Vikunja instance (writes)", () => {
     expect(seconds(wrecked.due_date)).toBeLessThan(seconds("1970-01-01T00:00:00Z") + 1);
     // The reminder DID land, which is what makes the trap convincing.
     expect(wrecked.reminders?.length).toBe(1);
+  });
+
+  it("attaching and detaching a label leaves the task alone", {
+    timeout: 30_000,
+  }, async () => {
+    /*
+     * Labels are a sub-resource, so they do not go through the `fields` guard
+     * at all - which is exactly why this is worth measuring rather than
+     * assuming. It also pins the read-back the UI depends on: the label calls
+     * answer with the relation, so the task has to be fetched again.
+     */
+    const { task, due } = await scratchTask("labels", {});
+    /*
+     * Its own label, not one the instance happened to have. `pinguino` has
+     * none at all, which is how the first cut of this test failed - and a test
+     * that depends on someone else's data is a test that fails for a reason
+     * that is not the code.
+     */
+    const label = await createLabel(http, `open-todo write test ${Date.now()}`);
+    createdLabels.push(label.id);
+
+    await addLabel(http, task.id, label.id);
+    const withLabel = await getTask(http, task.id);
+
+    expect(withLabel.labels?.map((l) => l.id)).toContain(label.id);
+    expect(withLabel.description).toContain("Kept, not wiped.");
+    expect(seconds(withLabel.due_date)).toBe(seconds(due));
+    expect(withLabel.priority).toBe(3);
+    expect(withLabel.reminders?.length).toBe(1);
+    expect(withLabel.assignees?.length).toBe(1);
+
+    await removeLabel(http, task.id, label.id);
+    const without = await getTask(http, task.id);
+
+    expect(without.labels ?? []).toHaveLength(0);
+    expect(without.priority).toBe(3);
+    expect(without.reminders?.length).toBe(1);
   });
 });

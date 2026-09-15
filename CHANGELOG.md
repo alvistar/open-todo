@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     which is how the reference product behaves and was checked by experiment.
     A pick made while the name editor is open does not disturb it, and the
     editor's Cancel does not take the pick back.
+  - **Labels can be attached, detached, and made.** The picker filters what the
+    instance already has; a name it does not have gets a **Create “…”** button.
+    Creating is always a button press, never a side effect of typing, because
+    the label namespace is shared by every task and a typo is not undoable by
+    the person who made it — and a name that already exists is not offered
+    twice, since Vikunja does not enforce unique titles.
   - **Reminders can be added and removed.** Offsets from the due date (when it
     is due, 10 minutes, 1 hour or 1 day before) and absolute ones you type in
     words — "tomorrow at 9" — read by the same grammar as everything else.

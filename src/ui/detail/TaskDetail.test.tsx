@@ -3,7 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { TaskPatch } from "../../api/endpoints";
 import type { Task, TaskReminder } from "../../api/types";
 import { dueDateFromPhrase } from "../../model/duePhrase";
+import type { LabelChange } from "./pickers";
 import { TaskDetail } from "./TaskDetail";
+
+const ALL_LABELS = [
+  { id: 1, title: "errand" },
+  { id: 2, title: "reading" },
+  { id: 3, title: "urgent" },
+];
 
 const PROJECTS = [
   { id: 1, title: "Inbox" },
@@ -46,12 +53,14 @@ interface Extras {
   onNext?: () => void;
   onSave?: (values: TaskPatch) => Promise<void>;
   onSaveReminders?: (reminders: TaskReminder[]) => Promise<void>;
+  onChangeLabel?: (change: LabelChange) => Promise<void>;
 }
 
 function open(over: Partial<Task> = {}, extra: Extras = {}) {
   const onClose = vi.fn();
   const onSave = extra.onSave ?? vi.fn(async () => {});
   const onSaveReminders = extra.onSaveReminders ?? vi.fn(async () => {});
+  const onChangeLabel = extra.onChangeLabel ?? vi.fn(async () => {});
   render(
     <TaskDetail
       task={task(over)}
@@ -64,11 +73,13 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
       onClose={onClose}
       onSave={onSave}
       onSaveReminders={onSaveReminders}
+      allLabels={ALL_LABELS}
+      onChangeLabel={onChangeLabel}
       {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
       {...(extra.onNext ? { onNext: extra.onNext } : {})}
     />,
   );
-  return { onClose, onSave, onSaveReminders };
+  return { onClose, onSave, onSaveReminders, onChangeLabel };
 }
 
 describe("the dialog frame", () => {
@@ -97,6 +108,8 @@ describe("the dialog frame", () => {
         onClose={vi.fn()}
         onSave={vi.fn(async () => {})}
         onSaveReminders={vi.fn(async () => {})}
+        allLabels={ALL_LABELS}
+        onChangeLabel={vi.fn(async () => {})}
       />,
     );
     expect(screen.getByLabelText("Close")).toHaveFocus();
@@ -490,5 +503,123 @@ describe("the reminder picker", () => {
 
     expect(await screen.findByText(/sometime soonish/)).toBeInTheDocument();
     expect(onSaveReminders).not.toHaveBeenCalled();
+  });
+});
+
+describe("the label picker", () => {
+  const openLabels = () => fireEvent.click(screen.getByLabelText("Labels: change"));
+
+  it("attaches one label per pick, because that is one call", async () => {
+    const { onChangeLabel } = open();
+    openLabels();
+
+    fireEvent.click(screen.getByLabelText("Add the label urgent"));
+
+    await waitFor(() =>
+      expect(onChangeLabel).toHaveBeenCalledWith({ labelId: 3, attached: true }),
+    );
+  });
+
+  it("detaches one that is already on the task", async () => {
+    const { onChangeLabel } = open({ labels: [{ id: 2, title: "reading" }] });
+    openLabels();
+
+    fireEvent.click(screen.getByLabelText("Remove the label reading"));
+
+    await waitFor(() =>
+      expect(onChangeLabel).toHaveBeenCalledWith({ labelId: 2, attached: false }),
+    );
+  });
+
+  it("does not offer a label the task already carries", () => {
+    open({ labels: [{ id: 2, title: "reading" }] });
+    openLabels();
+
+    expect(screen.queryByLabelText("Add the label reading")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Add the label urgent")).toBeInTheDocument();
+  });
+
+  it("filters by what is typed, and says so when nothing matches", () => {
+    open();
+    openLabels();
+
+    fireEvent.change(screen.getByLabelText("Find a label"), {
+      target: { value: "urg" },
+    });
+    expect(screen.getByLabelText("Add the label urgent")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Add the label errand")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Find a label"), {
+      target: { value: "nothing like this" },
+    });
+    expect(screen.queryByLabelText("Add the label urgent")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Create .*nothing like this/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("says a name is already on the task rather than calling it no match", () => {
+    open({ labels: [{ id: 2, title: "reading" }] });
+    openLabels();
+
+    fireEvent.change(screen.getByLabelText("Find a label"), {
+      target: { value: "reading" },
+    });
+
+    // It matches perfectly; it is just not offerable. "No match" would send
+    // the reader looking for a label that is in front of them.
+    expect(screen.getByText(/already on this task/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
+  });
+
+  it("tells an instance with no labels how to get one", () => {
+    render(
+      <TaskDetail
+        task={task()}
+        projectName="Work"
+        projects={PROJECTS}
+        readDuePhrase={readDuePhrase}
+        now={NOW}
+        timeZone="Europe/Rome"
+        defaultDueTime={null}
+        onClose={vi.fn()}
+        onSave={vi.fn(async () => {})}
+        onSaveReminders={vi.fn(async () => {})}
+        allLabels={[]}
+        onChangeLabel={vi.fn(async () => {})}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Labels: change"));
+
+    expect(screen.getByText(/No labels yet/)).toBeInTheDocument();
+  });
+
+  it("creates a label by name, on a button press and never on a keystroke", async () => {
+    const { onChangeLabel } = open();
+    openLabels();
+
+    const field = screen.getByLabelText("Find a label");
+    fireEvent.change(field, { target: { value: "  gardening  " } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onChangeLabel).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Create .*gardening/ }));
+    await waitFor(() =>
+      expect(onChangeLabel).toHaveBeenCalledWith({ create: "gardening" }),
+    );
+  });
+
+  it("will not offer to create a name that already exists", () => {
+    open();
+    openLabels();
+
+    fireEvent.change(screen.getByLabelText("Find a label"), {
+      target: { value: "URGENT" },
+    });
+
+    // Vikunja does not enforce unique titles, so this is the only thing
+    // stopping an instance growing two labels called "urgent".
+    expect(screen.queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Add the label urgent")).toBeInTheDocument();
   });
 });

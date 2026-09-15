@@ -13,7 +13,11 @@ import { type RowContext, toTaskRow } from "../model/taskRow";
 import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
-import { useUpdateReminders, useUpdateTask } from "../queries/useUpdateTask";
+import {
+  useTaskLabel,
+  useUpdateReminders,
+  useUpdateTask,
+} from "../queries/useUpdateTask";
 import { useLabels, useProjects, useUser, useViewTasks } from "../queries/useVikunja";
 import { readThemePreference, resolveTheme, setTheme } from "../theme/theme";
 import { TaskDetail } from "../ui/detail/TaskDetail";
@@ -86,6 +90,7 @@ export function AppScreen() {
   const completing = useCompleteTask({ timeZone, defaultDueTime });
   const editing = useUpdateTask();
   const reminding = useUpdateReminders();
+  const labelling = useTaskLabel();
 
   // Navigating away drops the pending rows: they are a few seconds of "you
   // just did this", not a place tasks are kept (D-write).
@@ -359,6 +364,10 @@ export function AppScreen() {
           }}
           onSaveReminders={async (reminders) => {
             await reminding.mutateAsync({ task: openTask, reminders });
+          }}
+          allLabels={labelsQuery.data ?? []}
+          onChangeLabel={async (change) => {
+            await labelling.mutateAsync({ task: openTask, change });
           }}
           {...(openIndex > 0 ? { onPrev: () => step(-1) } : {})}
           {...(openIndex >= 0 && openIndex < tasks.length - 1

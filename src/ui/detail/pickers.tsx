@@ -1,7 +1,13 @@
 import { useState } from "react";
 import type { TaskPatch } from "../../api/endpoints";
-import { type Task, type TaskReminder, VIKUNJA_NULL_DATE } from "../../api/types";
+import {
+  type Label,
+  type Task,
+  type TaskReminder,
+  VIKUNJA_NULL_DATE,
+} from "../../api/types";
 import { DUE_SHORTCUTS, type DuePhrase } from "../../model/duePhrase";
+import { attachableLabels, canCreateLabel } from "../../model/labels";
 import {
   PRIORITIES,
   type Priority,
@@ -286,6 +292,112 @@ export function ReminderPicker({
       {reason ? (
         <p className={styles.reason} role="status">
           {reason}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * What a label pick means. Either an existing label goes on or comes off, or a
+ * NEW one is created by name and then attached - `create` carries the name
+ * because the label does not have an id yet.
+ */
+export type LabelChange = { labelId: number; attached: boolean } | { create: string };
+
+/**
+ * The label picker.
+ *
+ * Attaching and detaching are one call each, so each pick is its own write -
+ * there is no "set of labels" to send. The field filters the list rather than
+ * creating anything: a label the instance does not have yet is step 6, and
+ * creating one as a side effect of typing would be irreversible by the person
+ * who made the typo, because the label namespace is shared by every task.
+ */
+export function LabelPicker({
+  attached,
+  all,
+  commit,
+  busy,
+}: Control<LabelChange> & {
+  attached: readonly Label[];
+  all: readonly Label[];
+}) {
+  const [query, setQuery] = useState("");
+  const choices = attachableLabels(all, attached, query);
+
+  return (
+    <div>
+      {attached.length > 0 ? (
+        <ul className={styles.options}>
+          {attached.map((label) => (
+            <li key={label.id}>
+              <button
+                type="button"
+                className={styles.option}
+                disabled={busy}
+                aria-label={`Remove the label ${label.title}`}
+                onClick={() => commit({ labelId: label.id, attached: false })}
+              >
+                {label.title}
+                <span className={styles.remove} aria-hidden="true">
+                  ×
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <input
+        className={styles.phrase}
+        aria-label="Find a label"
+        placeholder="Find a label"
+        value={query}
+        disabled={busy}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      {choices.length > 0 ? (
+        <ul className={styles.options}>
+          {choices.map((label) => (
+            <li key={label.id}>
+              <button
+                type="button"
+                className={styles.option}
+                disabled={busy}
+                aria-label={`Add the label ${label.title}`}
+                onClick={() => commit({ labelId: label.id, attached: true })}
+              >
+                {label.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {canCreateLabel(all, query) ? (
+        /*
+         * A button, never an effect of typing. It names what it will create so
+         * a typo is visible before it becomes a label every task can see.
+         */
+        <button
+          type="button"
+          className={styles.create}
+          disabled={busy}
+          onClick={() => commit({ create: query.trim() })}
+        >
+          Create “{query.trim()}”
+        </button>
+      ) : choices.length === 0 ? (
+        /*
+         * Four different situations reach an empty list, and "no match" is a
+         * lie in three of them. A name that is taken by a label ALREADY on the
+         * task matches perfectly well - it is just not offerable.
+         */
+        <p className={styles.note}>
+          {query.trim()
+            ? `“${query.trim()}” is already on this task.`
+            : all.length === 0
+              ? "No labels yet. Type a name to make one."
+              : "Every label is already on this task."}
         </p>
       ) : null}
     </div>
