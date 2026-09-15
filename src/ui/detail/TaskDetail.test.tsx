@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { TaskPatch } from "../../api/endpoints";
 import type { Task, TaskReminder } from "../../api/types";
 import { dueDateFromPhrase } from "../../model/duePhrase";
+import { titleEdit } from "../../model/titleEdit";
 import type { LabelChange } from "./pickers";
 import { TaskDetail } from "./TaskDetail";
 
@@ -17,6 +18,8 @@ const PROJECTS = [
   { id: 3, title: "Work" },
   { id: 7, title: "Home" },
 ];
+
+const readTitleEdit = (raw: string) => titleEdit(raw, task(), CONTEXT);
 
 /** The real acceptor, with the test's clock: the picker's phrases are not mocked. */
 const readDuePhrase = (phrase: string) =>
@@ -48,12 +51,24 @@ const task = (over: Partial<Task> = {}): Task => ({
   ...over,
 });
 
+const CONTEXT = {
+  now: NOW,
+  timeZone: "Europe/Rome",
+  defaultDueTime: null,
+  defaultProjectId: 1,
+  projects: [{ id: 7, title: "Home" }],
+  labels: [{ id: 3, title: "urgent" }],
+};
+
+/** The real reader, so the preview is the one the app actually computes. */
+
 interface Extras {
   onPrev?: () => void;
   onNext?: () => void;
   onSave?: (values: TaskPatch) => Promise<void>;
   onSaveReminders?: (reminders: TaskReminder[]) => Promise<void>;
   onChangeLabel?: (change: LabelChange) => Promise<void>;
+  onSaveTitle?: (raw: string) => Promise<void>;
 }
 
 function open(over: Partial<Task> = {}, extra: Extras = {}) {
@@ -61,6 +76,7 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
   const onSave = extra.onSave ?? vi.fn(async () => {});
   const onSaveReminders = extra.onSaveReminders ?? vi.fn(async () => {});
   const onChangeLabel = extra.onChangeLabel ?? vi.fn(async () => {});
+  const onSaveTitle = extra.onSaveTitle ?? vi.fn(async () => {});
   render(
     <TaskDetail
       task={task(over)}
@@ -75,11 +91,13 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
       onSaveReminders={onSaveReminders}
       allLabels={ALL_LABELS}
       onChangeLabel={onChangeLabel}
+      readTitleEdit={readTitleEdit}
+      onSaveTitle={onSaveTitle}
       {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
       {...(extra.onNext ? { onNext: extra.onNext } : {})}
     />,
   );
-  return { onClose, onSave, onSaveReminders, onChangeLabel };
+  return { onClose, onSave, onSaveReminders, onChangeLabel, onSaveTitle };
 }
 
 describe("the dialog frame", () => {
@@ -110,6 +128,8 @@ describe("the dialog frame", () => {
         onSaveReminders={vi.fn(async () => {})}
         allLabels={ALL_LABELS}
         onChangeLabel={vi.fn(async () => {})}
+        readTitleEdit={readTitleEdit}
+        onSaveTitle={vi.fn(async () => {})}
       />,
     );
     expect(screen.getByLabelText("Close")).toHaveFocus();
@@ -217,19 +237,24 @@ describe("editing the name and the description", () => {
     expect(screen.getByLabelText("Edit the task name")).toHaveValue("Water the plants");
   });
 
-  it("writes only the field it edits", async () => {
-    const onSave = vi.fn(async () => {});
-    open({}, { onSave });
+  it("hands the raw name to its own save, phrase and all", async () => {
+    const { onSaveTitle, onSave } = open();
 
     fireEvent.click(screen.getByLabelText("Edit the task name"));
     fireEvent.change(screen.getByLabelText("Edit the task name"), {
-      target: { value: "Water the ferns" },
+      target: { value: "Water the ferns tomorrow" },
     });
     fireEvent.click(screen.getByText("Save"));
 
+    /*
+     * RAW, not the parsed columns. The screen re-reads the phrase with a fresh
+     * clock before writing, because a preview computed at the last keystroke
+     * could be a day stale in a tab left open overnight.
+     */
     await waitFor(() =>
-      expect(onSave).toHaveBeenCalledWith({ title: "Water the ferns" }),
+      expect(onSaveTitle).toHaveBeenCalledWith("Water the ferns tomorrow"),
     );
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("throws the draft away on Cancel and writes nothing", () => {
@@ -266,10 +291,10 @@ describe("editing the name and the description", () => {
 
   it("keeps the editor and the text when the save fails", async () => {
     // The draft is the only copy there is.
-    const onSave = vi.fn(async () => {
+    const onSaveTitle = vi.fn(async () => {
       throw new Error("403 Forbidden");
     });
-    open({}, { onSave });
+    open({}, { onSaveTitle });
 
     fireEvent.click(screen.getByLabelText("Edit the task name"));
     fireEvent.change(screen.getByLabelText("Edit the task name"), {
@@ -587,6 +612,8 @@ describe("the label picker", () => {
         onSaveReminders={vi.fn(async () => {})}
         allLabels={[]}
         onChangeLabel={vi.fn(async () => {})}
+        readTitleEdit={readTitleEdit}
+        onSaveTitle={vi.fn(async () => {})}
       />,
     );
     fireEvent.click(screen.getByLabelText("Labels: change"));
@@ -621,5 +648,73 @@ describe("the label picker", () => {
     // stopping an instance growing two labels called "urgent".
     expect(screen.queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Add the label urgent")).toBeInTheDocument();
+  });
+});
+
+/*
+ * The sidebar as the feedback channel. The owner chose it over chips beside
+ * the field, so what it says while a name is being typed IS the whole preview,
+ * and these tests are what stop it going quiet.
+ */
+describe("the name being typed, previewed in the sidebar", () => {
+  const typeName = (text: string) => {
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: text },
+    });
+  };
+
+  it("shows the date the phrase would set, before Save is pressed", () => {
+    open();
+    expect(screen.getByLabelText("Date: change")).toHaveTextContent("No date");
+
+    typeName("Call mum tomorrow");
+
+    const date = screen.getByLabelText("Date: change");
+    expect(date).toHaveTextContent("Tomorrow");
+    // And says so to a reader who cannot see the colour.
+    expect(date).toHaveTextContent("when you save");
+  });
+
+  it("shows the project the phrase would move it to", () => {
+    open({ project_id: 3 });
+    typeName("Call mum #Home");
+
+    expect(screen.getByLabelText("Project: change")).toHaveTextContent("Home");
+  });
+
+  it("shows a label the phrase would add, alongside the ones already there", () => {
+    open({ labels: [{ id: 2, title: "reading" }] });
+    typeName("Fix it @urgent");
+
+    const row = screen.getByLabelText("Labels: change");
+    expect(row).toHaveTextContent("reading");
+    expect(row).toHaveTextContent("urgent");
+  });
+
+  it("goes back to the stored values when the edit is cancelled", () => {
+    open();
+    typeName("Call mum tomorrow");
+    expect(screen.getByLabelText("Date: change")).toHaveTextContent("Tomorrow");
+
+    fireEvent.click(screen.getByText("Cancel"));
+
+    expect(screen.getByLabelText("Date: change")).toHaveTextContent("No date");
+  });
+
+  it("marks nothing when the phrase names nothing", () => {
+    open();
+    typeName("Just a plain name");
+
+    expect(screen.getByLabelText("Date: change")).not.toHaveTextContent("when you save");
+  });
+
+  it("paints the acceptor's warning while the phrase is out of grammar", () => {
+    open();
+    typeName("Pay rent this weekend");
+
+    expect(screen.getByText(/this weekend/)).toBeInTheDocument();
+    // D-vocab: the words stay in the name and no date is invented.
+    expect(screen.getByLabelText("Date: change")).toHaveTextContent("No date");
   });
 });

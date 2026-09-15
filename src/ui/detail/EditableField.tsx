@@ -26,6 +26,12 @@ export interface EditableFieldProps {
   multiline?: boolean;
   /** Said before the user types, not after they lose something. */
   notice?: string;
+  /**
+   * Every keystroke, while the editor is open. The title uses it so the
+   * sidebar can show what the phrase would set BEFORE Save is pressed; the
+   * draft itself still lives in the editor, so nothing re-seeds it.
+   */
+  onDraft?: (draft: string) => void;
 }
 
 export function EditableField({
@@ -38,6 +44,7 @@ export function EditableField({
   onSave,
   multiline = false,
   notice,
+  onDraft,
 }: EditableFieldProps) {
   if (!editing) {
     return (
@@ -67,6 +74,7 @@ export function EditableField({
       onClose={onClose}
       onSave={onSave}
       {...(notice === undefined ? {} : { notice })}
+      {...(onDraft === undefined ? {} : { onDraft })}
     />
   );
 }
@@ -78,9 +86,18 @@ interface EditorProps {
   onClose: () => void;
   onSave: (next: string) => Promise<void>;
   notice?: string;
+  onDraft?: (draft: string) => void;
 }
 
-function Editor({ initial, label, multiline, onClose, onSave, notice }: EditorProps) {
+function Editor({
+  initial,
+  label,
+  multiline,
+  onClose,
+  onSave,
+  notice,
+  onDraft,
+}: EditorProps) {
   const [draft, setDraft] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -136,7 +153,10 @@ function Editor({ initial, label, multiline, onClose, onSave, notice }: EditorPr
           aria-label={label}
           rows={4}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            onDraft?.(event.target.value);
+          }}
           onKeyDown={onKeyDown}
         />
       ) : (
@@ -145,7 +165,10 @@ function Editor({ initial, label, multiline, onClose, onSave, notice }: EditorPr
           className={styles.editor}
           aria-label={label}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            onDraft?.(event.target.value);
+          }}
           onKeyDown={onKeyDown}
         />
       )}

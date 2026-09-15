@@ -10,6 +10,7 @@ import { applyPending } from "../model/pending";
 import { type Decision, withDecisions } from "../model/quickadd/decisions";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
 import { type RowContext, toTaskRow } from "../model/taskRow";
+import { titleEdit } from "../model/titleEdit";
 import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
@@ -368,6 +369,39 @@ export function AppScreen() {
           allLabels={labelsQuery.data ?? []}
           onChangeLabel={async (change) => {
             await labelling.mutateAsync({ task: openTask, change });
+          }}
+          readTitleEdit={(raw) =>
+            titleEdit(raw, openTask, { ...quickAddContext, now: new Date() })
+          }
+          onSaveTitle={async (raw) => {
+            /*
+             * Re-read, with a fresh clock, rather than trusting the preview:
+             * the memo's `now` is pinned, and "tomorrow" typed into a tab left
+             * open overnight would otherwise save yesterday-plus-one. Same
+             * discipline as `submitQuickAdd`.
+             */
+            const edit = titleEdit(raw, openTask, {
+              ...quickAddContext,
+              now: new Date(),
+            });
+            if (!edit.values) throw new Error(edit.problem ?? "Could not save.");
+
+            /*
+             * Columns first, in ONE write, then the labels. A label that fails
+             * to attach therefore leaves a task whose name and date are
+             * already right, rather than a half-written row.
+             */
+            const saved = await editing.mutateAsync({
+              task: openTask,
+              values: edit.values,
+            });
+            let current = saved;
+            for (const labelId of edit.addLabelIds) {
+              current = await labelling.mutateAsync({
+                task: current,
+                change: { labelId, attached: true },
+              });
+            }
           }}
           {...(openIndex > 0 ? { onPrev: () => step(-1) } : {})}
           {...(openIndex >= 0 && openIndex < tasks.length - 1

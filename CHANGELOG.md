@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     which is how the reference product behaves and was checked by experiment.
     A pick made while the name editor is open does not disturb it, and the
     editor's Cancel does not take the pick back.
+  - **The name is read the way the composer reads one.** Type "call mum
+    tomorrow #Work p1" into a task's name and the sidebar shows the date, the
+    project and the priority it would set, before you press Save — that
+    preview is the feedback, and Save then writes the name and every column it
+    named in a single request. A phrase that leaves no name behind is refused
+    rather than blanking the task, and a phrase the grammar does not recognise
+    keeps its words in the name and invents nothing.
   - **Labels can be attached, detached, and made.** The picker filters what the
     instance already has; a name it does not have gets a **Create “…”** button.
     Creating is always a button press, never a side effect of typing, because

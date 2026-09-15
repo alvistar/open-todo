@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { TaskPatch } from "../../api/endpoints";
 import type { Label, Task, TaskReminder } from "../../api/types";
 import { formatDueLabel, parseVikunjaDate } from "../../model/dates";
@@ -6,6 +6,7 @@ import type { DuePhrase } from "../../model/duePhrase";
 import { priorityFromVikunja, priorityLabel } from "../../model/priority";
 import { describeReminder } from "../../model/reminders";
 import { isRichHtml, stripHtml, toDescriptionHtml } from "../../model/taskRow";
+import type { TitleEdit } from "../../model/titleEdit";
 import { Icon } from "../icons/Icon";
 import { PriorityCheckbox } from "../PriorityCheckbox";
 import { EditableField } from "./EditableField";
@@ -54,6 +55,14 @@ export interface TaskDetailProps {
   allLabels: readonly Label[];
   /** One label on or off. A sub-resource call, so one pick is one write. */
   onChangeLabel: (change: LabelChange) => Promise<void>;
+  /**
+   * Reads an edited NAME the way the composer reads a new one. A callback, for
+   * the same reason `readDuePhrase` is one: the clock must be read now, not
+   * when the dialog opened.
+   */
+  readTitleEdit: (raw: string) => TitleEdit;
+  /** Saves an edited name and everything its phrase named, in one go. */
+  onSaveTitle: (raw: string) => Promise<void>;
   now: Date;
   timeZone: string;
   defaultDueTime: string | null;
@@ -73,6 +82,8 @@ export function TaskDetail({
   onSaveReminders,
   allLabels,
   onChangeLabel,
+  readTitleEdit,
+  onSaveTitle,
   now,
   timeZone,
   defaultDueTime,
@@ -83,6 +94,12 @@ export function TaskDetail({
 }: TaskDetailProps) {
   /** At most one editor is open, so the dialog holds which. */
   const [editing, setEditing] = useState<"title" | "description" | null>(null);
+  /*
+   * The name being typed, mirrored here ONLY so the sidebar can show what the
+   * phrase would set. The editor still owns the draft - this is a copy that
+   * nothing writes back, so the 20s poll cannot re-seed what is being typed.
+   */
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   // Read through a ref so the effects do not depend on a callback the parent
@@ -153,6 +170,15 @@ export function TaskDetail({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  /* What the name being typed would set. Null whenever the name is at rest. */
+  const pending =
+    editing === "title" && titleDraft !== null ? readTitleEdit(titleDraft) : null;
+
+  const closeEditor = () => {
+    setEditing(null);
+    setTitleDraft(null);
+  };
 
   const due = parseVikunjaDate(task.due_date);
   const description = task.description ? stripHtml(task.description) : "";
@@ -230,9 +256,16 @@ export function TaskDetail({
                     value={task.title}
                     label="Edit the task name"
                     editing={editing === "title"}
-                    onEdit={() => setEditing("title")}
-                    onClose={() => setEditing(null)}
-                    onSave={(next) => onSave({ title: next.trim() })}
+                    onEdit={() => {
+                      setEditing("title");
+                      setTitleDraft(task.title);
+                    }}
+                    onClose={closeEditor}
+                    onDraft={setTitleDraft}
+                    onSave={onSaveTitle}
+                    {...(pending && pending.warnings.length > 0
+                      ? { notice: pending.warnings.join(" ") }
+                      : {})}
                   >
                     {task.title}
                   </EditableField>
@@ -244,7 +277,7 @@ export function TaskDetail({
                     multiline
                     editing={editing === "description"}
                     onEdit={() => setEditing("description")}
-                    onClose={() => setEditing(null)}
+                    onClose={closeEditor}
                     onSave={(next) => onSave({ description: toDescriptionHtml(next) })}
                     {...(isRichHtml(task.description)
                       ? {
@@ -282,7 +315,14 @@ export function TaskDetail({
               <PickerField
                 label="Project"
                 icon="project"
-                value={projectName}
+                value={
+                  <Pending on={pending?.preview.projectId != null}>
+                    {pending?.preview.projectId == null
+                      ? projectName
+                      : (projects.find((p) => p.id === pending.preview.projectId)
+                          ?.title ?? projectName)}
+                  </Pending>
+                }
                 onCommit={onSave}
               >
                 {(control) => (
@@ -298,9 +338,16 @@ export function TaskDetail({
                 label="Date"
                 icon="today"
                 value={
-                  due ? formatDueLabel(due, now, timeZone, defaultDueTime) : "No date"
+                  <Pending on={pending?.preview.dueDate != null}>
+                    {(() => {
+                      const shown = pending?.preview.dueDate ?? due;
+                      return shown
+                        ? formatDueLabel(shown, now, timeZone, defaultDueTime)
+                        : "No date";
+                    })()}
+                  </Pending>
                 }
-                empty={!due}
+                empty={!due && !pending?.preview.dueDate}
                 onCommit={onSave}
               >
                 {(control) => (
@@ -315,7 +362,13 @@ export function TaskDetail({
               <PickerField
                 label="Priority"
                 icon="flag"
-                value={priorityLabel(priorityFromVikunja(task.priority))}
+                value={
+                  <Pending on={pending?.preview.priority != null}>
+                    {priorityLabel(
+                      priorityFromVikunja(pending?.preview.priority ?? task.priority),
+                    )}
+                  </Pending>
+                }
                 onCommit={onSave}
               >
                 {(control) => (
@@ -330,11 +383,21 @@ export function TaskDetail({
                 label="Labels"
                 icon="labels"
                 value={
-                  labels.length > 0
-                    ? labels.map((label) => label.title).join(", ")
-                    : "None"
+                  <Pending on={(pending?.addLabelIds.length ?? 0) > 0}>
+                    {(() => {
+                      const names = [
+                        ...labels.map((label) => label.title),
+                        ...(pending?.addLabelIds ?? []).map(
+                          (id) =>
+                            allLabels.find((label) => label.id === id)?.title ??
+                            "a label",
+                        ),
+                      ];
+                      return names.length > 0 ? names.join(", ") : "None";
+                    })()}
+                  </Pending>
                 }
-                empty={labels.length === 0}
+                empty={labels.length === 0 && (pending?.addLabelIds.length ?? 0) === 0}
                 onCommit={onChangeLabel}
               >
                 {(control) => (
@@ -373,5 +436,22 @@ export function TaskDetail({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A sidebar value that is not saved yet.
+ *
+ * The owner chose the sidebar as the ONE place that says what an edited name
+ * would do - no chips beside the field - so this marking is the whole feedback
+ * channel, and it has to reach a screen reader too, not just the eye.
+ */
+function Pending({ on, children }: { on: boolean; children: ReactNode }) {
+  if (!on) return <>{children}</>;
+  return (
+    <span className={styles.pending}>
+      {children}
+      <span className={styles.offscreen}> (when you save)</span>
+    </span>
   );
 }
