@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Decision, off, withDecisions } from "./decisions";
+import { type Decision, off, on, withDecisions } from "./decisions";
 import { parseQuickAdd, type QuickAddContext } from "./parse";
 
 /*
@@ -107,6 +107,36 @@ describe("the decision key", () => {
     // moment the words change, which is the failure the switch exists to stop.
     const r = decide("call the accountant on friday", [off("date", "tomorrow at 10")]);
     expect(r.dueDate).toBeNull();
+  });
+});
+
+describe("a suggestion", () => {
+  const CANCEL = "disdire il servizio pagato mensilmente";
+
+  it("is not applied on its own", () => {
+    const r = parse(CANCEL);
+    expect("repeatAfter" in r).toBe(false);
+    expect(r.title).toBe(CANCEL);
+  });
+
+  it("carries what accepting it would write", () => {
+    const span = parse(CANCEL).spans.find((x) => x.kind === "recurrence");
+    expect(span?.suggested).toBe(true);
+    expect(span?.suggestedRepeat?.repeatAfter).toBe(30 * 24 * 60 * 60);
+  });
+
+  it("applies when the user says so, and takes the word out of the title", () => {
+    const r = decide("report mensilmente", [on("recurrence", "mensilmente")]);
+
+    expect(r.repeatAfter).toBe(30 * 24 * 60 * 60);
+    expect(r.title).toBe("report");
+  });
+
+  it("does NOT get the sticky fallback: a different adverb asks again", () => {
+    // The asymmetry with a removal. An inert removal would silently restore a
+    // value; an inert suggestion just stays off, which is the safe direction.
+    const r = decide("report settimanalmente", [on("recurrence", "mensilmente")]);
+    expect("repeatAfter" in r).toBe(false);
   });
 });
 

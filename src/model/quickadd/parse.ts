@@ -254,6 +254,26 @@ function parseQuickAddIn(
       warnings.push(
         `"${recurrence.text.trim()}" is not supported by Vikunja and was kept in the task name.`,
       );
+    } else if (recurrence.suggested && recurrence.repeatAfter !== undefined) {
+      /*
+       * A bare adverb. §5 accepts it, and nothing in the line separates
+       * "report mensilmente" from "disdire il servizio pagato mensilmente",
+       * where the adverb belongs to the service. So it is REPORTED and not
+       * applied: no repeat, the word stays in the title (`off`), and the span
+       * carries what accepting it would write. The composer offers it.
+       *
+       * It is still blanked, so the later matchers cannot reinterpret the word.
+       */
+      consume(recurrence.start, recurrence.end, "recurrence", {
+        off: true,
+        suggested: true,
+        suggestedRepeat: {
+          repeatAfter: recurrence.repeatAfter,
+          ...(recurrence.repeatMode === undefined
+            ? {}
+            : { repeatMode: recurrence.repeatMode }),
+        },
+      });
     } else {
       repeatAfter = recurrence.repeatAfter;
       repeatMode = recurrence.repeatMode;

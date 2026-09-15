@@ -116,7 +116,7 @@ text written for Vikunja's UI still parses.
 | Priority | `p1`–`p4`, `!1`–`!5` | `priority` per D-map-1 |
 | Date | See the enforced table below | `due_date` |
 | Time | `at 10`, `alle 10`, `ore 10`, `alle ore 10`, `10:30`, `3pm` — as a suffix on a Date row, never alone | time part of `due_date` |
-| Recurrence | `every day/week/month/year`, `daily…yearly`, `quotidianamente` / `giornalmente` / `settimanalmente` / `mensilmente` / `annualmente`, `every N days/weeks/months`, `every other <unit>` / `ogni altro <unit>` (= every 2), `every monday` (single weekday), `every weekday` / `workday` / `working day` / `ogni giorno feriale` / `giorni lavorativi` (approximated as weekly — **flag in UI**), `every <day> <month>` / `ogni <giorno> <mese>` (yearly on a fixed date — see below), `every! …` → `repeat_mode 2` | `repeat_after` + `repeat_mode` |
+| Recurrence | `every day/week/month/year`, `every N days/weeks/months`, `every other <unit>` / `ogni altro <unit>` (= every 2), `every monday` (single weekday), `every weekday` / `workday` / `working day` / `ogni giorno feriale` / `giorni lavorativi` (approximated as weekly — **flag in UI**), `every <day> <month>` / `ogni <giorno> <mese>` (yearly on a fixed date — see below), `every! …` → `repeat_mode 2`. **A bare adverb — `daily`…`yearly`, `quotidianamente` / `giornalmente` / `settimanalmente` / `mensilmente` / `annualmente` — is OFFERED, not applied (D-adverb).** | `repeat_after` + `repeat_mode` |
 | Recurrence, **rejected** | `every mon, wed` / `ogni 5,6` (a list of weekdays **or** day numbers), `every 2nd tuesday` / `ogni secondo martedì` / `ogni 2° martedì` (+ optional `of the month` / `del mese`), `every last day of month`, `every workday at 9 starting …` / `ogni giorno a partire da …` (also `a cominciare da`; NOT a bare `da`, which is ordinary Italian) | Shown as "not supported by Vikunja"; text stays in the title. |
 | Literal | the **whole** line wrapped in matching `"` or `'` | nothing is parsed; the quoted text becomes the title verbatim |
 | Reminder | `!` alone (Todoist's reminder sigil) | not in v1; chip in the composer instead |
@@ -213,12 +213,10 @@ corpus is a *date* corpus: it holds almost no prose carrying a recurrence word,
 so the gate was blind to exactly what the fixes could break. A gate proves what
 did not change; only counter-examples prove what a new rule does not eat.
 
-**Three limitations left open, pinned as F8, F10 and F11 (2026-09-14).** Each is
-a pattern matching ordinary prose, and each is a §5 decision rather than a
-repair. A repeat adverb is read anywhere in the line, so
-`disdire il servizio pagato mensilmente` becomes a monthly task — English has
-behaved this way since before the language packs, and narrowing it would break
-the bare `daily` / `weekly` forms §5 lists. A month abbreviation is also an
+**Two limitations left open, pinned as F10 and F11 (2026-09-14).** Each is a
+pattern matching ordinary prose, and each is a §5 decision rather than a repair.
+(F8, the bare repeat adverb, was closed on 2026-09-15 by D-adverb: it is offered
+rather than applied.) A month abbreviation is also an
 ordinary word: `preparare 3 set di documenti` schedules 3 September and deletes
 two words from the title, the same tension as `mar` that §5 already settled by
 excluding 3-letter weekdays while keeping 3-letter months. And chrono offers

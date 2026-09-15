@@ -37,6 +37,14 @@ export interface RecurrenceMatch {
    * repeat has nothing to repeat from and must go with it.
    */
   needsDate?: boolean;
+  /**
+   * Set when the phrase is a BARE ADVERB - "mensilmente", "daily" - which §5
+   * accepts but which no syntax separates from an adverb describing the task's
+   * object. "report mensilmente" repeats; "disdire il servizio pagato
+   * mensilmente" is a one-off errand whose service is paid monthly. The parser
+   * therefore reports it without applying it, and the composer offers it.
+   */
+  suggested?: boolean;
   start: number;
   end: number;
   text: string;
@@ -195,7 +203,10 @@ function matchRecurrenceIn(g: RecurrenceGrammar, text: string): RecurrenceMatch 
     },
     {
       re: g.ADVERB,
-      run: (m) => byUnit(m, m[1] ?? "", g.adverbs, 1),
+      run: (m) => {
+        const match = byUnit(m, m[1] ?? "", g.adverbs, 1);
+        return match === null ? null : { ...match, suggested: true };
+      },
     },
   ];
 

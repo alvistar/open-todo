@@ -402,6 +402,11 @@ describe("the composed recurrence patterns are byte-identical", () => {
     );
     // Plain `i`, like the literal it replaced. Nothing in it needs \p{L}.
     expect(g.ADVERB?.flags).toBe("i");
+    // The source above is pinned byte-for-byte; this pins what a hit MEANS, so
+    // the two move together. A bare adverb is offered, never applied (D-adverb).
+    const hit = matchRecurrence("report mensilmente");
+    expect(hit?.suggested).toBe(true);
+    expect(hit?.repeatAfter).toBe(30 * 24 * 60 * 60);
   });
 
   it("rejects before it accepts, whatever the registry order", () => {

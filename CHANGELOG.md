@@ -32,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/api/integration.write.test.ts` (new, behind `VIKUNJA_TEST_WRITE=1`)
     checks all of that against a real instance and cleans up after itself.
 
+### Changed
+- **A bare repeat adverb is now offered rather than applied.** `report
+  mensilmente` and `standup daily` used to become repeating tasks on sight. So
+  did `disdire il servizio pagato mensilmente` — a one-off errand whose service
+  is paid monthly — which became a monthly task with the words cut out of its
+  name and no warning. The two lines are the same shape and nothing in them
+  separates the readings, so the parser now reports the adverb without acting on
+  it: no repeat is written, the word stays in the task name, and the composer
+  offers it. `every month`, `ogni mese` and `every 2 days` are unaffected —
+  they say what they are. Rationale and the rules that were tried and rejected:
+  `D-adverb` in `docs/HANDOVER.md`.
+
 ### Fixed
 - **Six quick-add defects found by a 4325-phrase corpus**, each one silent.
   Every fix is a §5 grammar amendment recorded in `docs/data-model-mapping.md`.

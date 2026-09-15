@@ -355,12 +355,48 @@ describe("parseQuickAdd — workday and weekday are the same idea", () => {
     expect(r.warnings.join(" ")).toMatch(/weekly/i);
   });
 
-  it("gives Italian the adverbs English always had", () => {
-    // "report mensilmente" set nothing where "report monthly" set a repeat.
-    expect(parse("report mensilmente").repeatAfter).toBe(30 * DAY);
-    expect(parse("piante quotidianamente").repeatAfter).toBe(DAY);
-    expect(parse("report settimanalmente").repeatAfter).toBe(7 * DAY);
-    expect(parse("revisione annualmente").repeatAfter).toBe(365 * DAY);
+  it("offers Italian the adverbs English always had, without applying them", () => {
+    // "report mensilmente" recognised nothing at all where "report monthly"
+    // set a repeat. Both are now OFFERED: §5's bare adverb is reported and the
+    // composer applies it, because nothing in the line separates it from
+    // "disdire il servizio pagato mensilmente". See D-adverb.
+    const suggested = (text: string) =>
+      parse(text).spans.find((s) => s.kind === "recurrence")?.suggestedRepeat
+        ?.repeatAfter;
+
+    expect(suggested("report mensilmente")).toBe(30 * DAY);
+    expect(suggested("piante quotidianamente")).toBe(DAY);
+    expect(suggested("report settimanalmente")).toBe(7 * DAY);
+    expect(suggested("revisione annualmente")).toBe(365 * DAY);
+    expect(suggested("report monthly")).toBe(30 * DAY);
+
+    // Offered, so nothing is written and the word stays in the name.
+    const r = parse("report mensilmente");
+    expect("repeatAfter" in r).toBe(false);
+    expect(r.title).toBe("report mensilmente");
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("no longer turns a cancellation into a monthly task", () => {
+    /*
+     * Formerly known defect F8, and the reason the bare adverb became an offer.
+     * "disdire il servizio pagato mensilmente" is a one-off errand whose
+     * service is paid monthly; "report mensilmente" is a monthly task. Same
+     * shape - words, adverb, end of line - so no rule can separate them, and
+     * the one that guessed guessed silently.
+     */
+    const r = parse("disdire il servizio pagato mensilmente");
+
+    expect("repeatAfter" in r).toBe(false);
+    expect(r.title).toBe("disdire il servizio pagato mensilmente");
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("still applies an every-phrase without asking", () => {
+    // Only the BARE adverb is ambiguous. "every month" says what it is.
+    expect(parse("report every month").repeatAfter).toBe(30 * DAY);
+    expect(parse("report ogni mese").repeatAfter).toBe(30 * DAY);
+    expect(parse("water the plants every 2 days").repeatAfter).toBe(2 * DAY);
   });
 });
 

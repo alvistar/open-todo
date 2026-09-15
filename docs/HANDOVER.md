@@ -2,7 +2,7 @@
 
 **Created:** 2026-09-09
 **Status:** foundation slice built (read-only app). All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-15. The app can complete a task (D-write). Until then it could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. Next: keyboard navigation (D4 step 2).
+**Last session:** 2026-09-15. The app can complete a task (D-write), and a bare repeat adverb is offered rather than applied (D-adverb). Until then it could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. Next: keyboard navigation (D4 step 2).
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -507,6 +507,67 @@ parser exists to write.
    erased** and that the due date advanced, reopens it, and deletes it.
    `src/api/integration.test.ts` keeps its read-only promise unchanged: that
    promise is what makes it safe to run without thinking.
+
+---
+
+### D-adverb — A bare repeat adverb is offered, not applied — **DECIDED 2026-09-15**
+
+§5's Recurrence row accepted a bare trailing adverb, so `report mensilmente` and
+`standup daily` became repeating tasks. So did this, silently:
+
+```
+disdire il servizio pagato mensilmente  ->  title "disdire il servizio pagato"
+                                            repeat_after 2592000, no warning
+```
+
+It is a one-off errand whose service is paid monthly: the adverb describes the
+service, not the task. Both lines are the same shape — words, then an adverb,
+then the end of the line — and the fix that closed the rest of F8 (requiring the
+adverb to END the schedule, which removed `a weekly report from the vendor`)
+cannot separate them. It was pinned as F8, and the framing then was that it was
+irreducible.
+
+**A second opinion (Codex, 2026-09-15) showed that framing was too strong**, and
+its counter-examples are worth keeping because each one kills an obvious fix:
+
+| proposed rule | killed by |
+|---|---|
+| a closed list of punctual verbs | `cancel expired subscriptions monthly` genuinely repeats |
+| a determiner+noun object before the adverb | `controllare il saldo mensilmente` has exactly that shape |
+| requiring a leading task verb | both lines have one, and `standup daily` has none |
+| a billing-participle veto (`pagato`, `billed`) | the strongest candidate, but it loses `get paid monthly` and misses `cancel membership renewed monthly` |
+
+The honest claim is narrower than "irreducible": **intent is not uniquely
+recoverable from the line.** So no rule decides it. The user does.
+
+**Decision: the parser REPORTS a bare adverb and does not apply it.** No repeat
+is written, the word stays in the title, and the span carries what accepting it
+would write (`suggestedRepeat`). The composer offers it as a chip. There is no
+warning, because the chip IS the message — a warning would be the parser
+apologising for a choice it deliberately did not make.
+
+This is D-vocab's principle one level up. D-vocab says an out-of-grammar phrase
+must not silently become a date; D-adverb says an in-grammar phrase whose
+MEANING is ambiguous must not silently become a schedule.
+
+An `every`-phrase is unaffected: `every month`, `ogni mese` and `every 2 days`
+say what they are and are applied without asking. Only the bare adverb is
+offered.
+
+Cost, measured: **4 of the 738 golden records changed**, every one a bare-adverb
+line (`I'll leave weekly`, `I'll take a run weekly`, `Andrò via settimanalmente`
+twice). Three of the four look like genuine repeats and now take one click. That
+is the trade — a click on the common case buys the removal of a silent wrong
+answer on the uncommon one.
+
+Not taken, and worth revisiting because it is cheap to measure against the
+4325-phrase corpus: the **billing-participle veto**. If it holds up it reduces
+how often the offer fires; it does not replace it.
+
+One convention outlived its file. `known-defects.test.ts` pinned a defect as a
+test that PASSES while asserting the wrong behaviour, so that a refactor could
+not quietly change its shape. Nothing is left to pin, so the file is deleted —
+recreate it when the next defect needs it.
 
 ---
 
