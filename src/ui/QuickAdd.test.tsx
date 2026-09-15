@@ -138,3 +138,104 @@ describe("QuickAdd — a quoted line", () => {
     expect(screen.getByLabelText("Add task")).toBeDisabled();
   });
 });
+
+/*
+ * The composer's half of D-adverb and of the switch-it-off affordance. The
+ * model tests pin what `withDecisions` computes; these pin that the affordance
+ * exists, that it says what it does, and - the one that matters most - that the
+ * decision reaches onSubmit. A decision the save path never sees is worse than
+ * no affordance at all: the preview would show one task and the server store
+ * another.
+ */
+describe("switching a recognised value off", () => {
+  it("offers a × on the date chip and clears the date", () => {
+    const { container } = compose("chiamare il commercialista domani alle 10");
+    expect(marks(container)).toEqual(["domani alle 10"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove the due date" }));
+
+    expect(
+      screen.queryByRole("button", { name: "Remove the due date" }),
+    ).not.toBeInTheDocument();
+    // Still marked - the parser did recognise it - but no longer taken out of
+    // the task name, which is what the words going back means.
+    expect(marks(container)).toEqual(["domani alle 10"]);
+  });
+
+  it("offers one on a typed project and not on the Inbox default", () => {
+    compose("ship it #Work");
+    expect(
+      screen.getByRole("button", { name: "Remove the project" }),
+    ).toBeInTheDocument();
+
+    cleanup();
+    compose("ship it");
+    expect(
+      screen.queryByRole("button", { name: "Remove the project" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers one on a priority", () => {
+    compose("pay the invoice p1");
+    expect(
+      screen.getByRole("button", { name: "Remove the priority" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("a repeat the parser will not decide", () => {
+  it("is a question, not a value", () => {
+    compose("disdire il servizio pagato mensilmente");
+
+    expect(screen.getByRole("button", { name: /Repeat monthly\?/ })).toBeInTheDocument();
+    expect(screen.queryByText("Repeats")).not.toBeInTheDocument();
+  });
+
+  it("becomes an ordinary chip once the user means it", () => {
+    compose("report mensilmente");
+    fireEvent.click(screen.getByRole("button", { name: /Repeat monthly\?/ }));
+
+    expect(screen.getByText("Repeats")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove the repeat" })).toBeInTheDocument();
+  });
+
+  it("does not ask about an every-phrase, which says what it is", () => {
+    compose("report ogni mese");
+
+    expect(screen.queryByRole("button", { name: /Repeat/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Repeats")).toBeInTheDocument();
+  });
+});
+
+describe("the decision reaches the save", () => {
+  it("passes what the user switched off to onSubmit", async () => {
+    const onSubmit = vi.fn(async () => []);
+    render(<QuickAdd context={ctx()} onSubmit={onSubmit} onCancel={vi.fn()} />);
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, {
+      target: { value: "chiamare il commercialista domani alle 10" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove the due date" }));
+    fireEvent.click(screen.getByLabelText("Add task"));
+
+    expect(onSubmit).toHaveBeenCalledWith("chiamare il commercialista domani alle 10", [
+      { kind: "date", text: "domani alle 10", on: false },
+    ]);
+  });
+
+  it("passes an accepted repeat", async () => {
+    const onSubmit = vi.fn(async () => []);
+    render(<QuickAdd context={ctx()} onSubmit={onSubmit} onCancel={vi.fn()} />);
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "report mensilmente" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Repeat monthly\?/ }));
+    fireEvent.click(screen.getByLabelText("Add task"));
+
+    expect(onSubmit).toHaveBeenCalledWith("report mensilmente", [
+      { kind: "recurrence", text: "mensilmente", on: true },
+    ]);
+  });
+});

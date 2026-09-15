@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/api/integration.write.test.ts` (new, behind `VIKUNJA_TEST_WRITE=1`)
     checks all of that against a real instance and cleans up after itself.
 
+### Added
+- **You can drop anything the quick-add parser recognised.** Every chip whose
+  value came from your text — the date, the priority, the project, a repeat —
+  now carries a ×. Pressing it clears that value and puts the words back into
+  the task name, because you are rejecting the reading, not the words. The
+  decision follows the line to the save, so what the composer shows is what
+  gets created.
+
 ### Changed
 - **A bare repeat adverb is now offered rather than applied.** `report
   mensilmente` and `standup daily` used to become repeating tasks on sight. So

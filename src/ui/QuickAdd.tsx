@@ -3,11 +3,14 @@ import { type FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "
 import { classifySchedule, formatDueLabel } from "../model/dates";
 import { scheduleColorVar } from "../model/display";
 import { priorityFromVikunja, priorityLabel } from "../model/priority";
+import { type Decision, off, on, withDecisions } from "../model/quickadd/decisions";
 import {
   parseQuickAdd,
   type QuickAddContext,
   type QuickAddSpan,
+  type SpanKind,
 } from "../model/quickadd/parse";
+import { DAY, MONTH, WEEK, YEAR } from "../model/quickadd/recurrence";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Icon } from "./icons/Icon";
 import styles from "./QuickAdd.module.css";
@@ -18,7 +21,7 @@ export interface QuickAddProps {
    * Rejects to show the message inline; resolves with any non-fatal warnings
    * (a label that could not be attached, say) once the task is created.
    */
-  onSubmit: (text: string) => Promise<string[]>;
+  onSubmit: (text: string, decisions: Decision[]) => Promise<string[]>;
   onCancel: () => void;
   busy?: boolean;
 }
@@ -59,18 +62,78 @@ function markClass(span: QuickAddSpan): string {
   return styles.mark ?? "";
 }
 
+/** How an unaccepted repeat offer reads. English only; see DESIGN.md UI_LOCALE. */
+function repeatOffer(span: QuickAddSpan): string {
+  const seconds = span.suggestedRepeat?.repeatAfter;
+  const word = (
+    [
+      [DAY, "daily"],
+      [WEEK, "weekly"],
+      [MONTH, "monthly"],
+      [YEAR, "yearly"],
+    ] as const
+  ).find(([value]) => value === seconds)?.[1];
+  return word ? `Repeat ${word}?` : "Repeat?";
+}
+
 export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [postWarnings, setPostWarnings] = useState<string[]>([]);
+  /*
+   * What the user said about the things the parser recognised. Keyed by kind
+   * and text, never offsets, so it survives the re-parse that runs on every
+   * keystroke. Cleared with the text, never mid-typing.
+   */
+  const [decisions, setDecisions] = useState<Decision[]>([]);
   /* Set synchronously, unlike `busy`, which arrives a render later: two Enters
      in the same turn would otherwise both read canSubmit === true and create
      the task twice. */
   const submittingRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const parsed = useMemo(() => parseQuickAdd(text, context), [text, context]);
+  const parsed = useMemo(
+    () =>
+      withDecisions(
+        parseQuickAdd(text, context),
+        text,
+        decisions,
+        context.defaultProjectId,
+      ),
+    [text, context, decisions],
+  );
+
+  const decide = (decision: Decision) =>
+    setDecisions((current) => [
+      ...current.filter((d) => !(d.kind === decision.kind && d.text === decision.text)),
+      decision,
+    ]);
+
+  /** The span a chip speaks for, if the line produced one. */
+  const spanOf = (kind: SpanKind) => parsed.spans.find((span) => span.kind === kind);
+
+  /*
+   * The × on a chip whose value came from the text (layout-specs §3). It
+   * switches the value off; the words go back into the task name rather than
+   * being deleted, because the user is rejecting the READING, not the words.
+   */
+  const removeButton = (kind: SpanKind, label: string) => {
+    const span = spanOf(kind);
+    if (!span || span.off) return null;
+    return (
+      <button
+        type="button"
+        className={styles.chipRemove}
+        aria-label={label}
+        onClick={() => decide(off(kind, span.text))}
+      >
+        <Icon name="close" size={12} />
+      </button>
+    );
+  };
+
+  const repeatSpan = spanOf("recurrence");
 
   // Focused on mount through the ref rather than the autofocus attribute: the
   // composer only exists once the user asked for it, so the caret belongs here.
@@ -115,10 +178,11 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
     setError(null);
     setPostWarnings([]);
     try {
-      const warnings = await onSubmit(submitted);
+      const warnings = await onSubmit(submitted, decisions);
       // Clear only what was actually sent. Anything typed while the request
       // was in flight is the user's next task, not ours to throw away.
       setText((current) => (current === submitted ? "" : current));
+      setDecisions([]);
       setPostWarnings(warnings);
       inputRef.current?.focus();
     } catch (e) {
@@ -175,6 +239,7 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
         <span className={styles.chip}>
           <Icon name="project" size={16} />
           {project?.title ?? "Inbox"}
+          {removeButton("project", "Remove the project")}
         </span>
         <span
           className={`${styles.chip} ${parsed.dueDate ? styles.chipSet : ""}`}
@@ -193,17 +258,35 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
                 context.defaultDueTime,
               )
             : "Date"}
+          {parsed.dueDate ? removeButton("date", "Remove the due date") : null}
         </span>
         {parsed.priority === null ? null : (
           <span className={`${styles.chip} ${styles.chipSet}`}>
             <Icon name="flag" size={16} />
             {priorityLabel(priorityFromVikunja(parsed.priority))}
+            {removeButton("priority", "Remove the priority")}
           </span>
         )}
-        {parsed.repeatAfter === undefined ? null : (
+        {/*
+         * Three states, not two. A bare adverb is REPORTED and not applied
+         * (D-adverb), so the chip is the offer - a button you press to mean
+         * it - and only then does it become an ordinary set chip with a ×.
+         */}
+        {repeatSpan?.suggested && repeatSpan.off ? (
+          <button
+            type="button"
+            className={`${styles.chip} ${styles.chipSuggested}`}
+            aria-pressed={false}
+            onClick={() => decide(on("recurrence", repeatSpan.text))}
+          >
+            <Icon name="upcoming" size={16} />
+            {repeatOffer(repeatSpan)}
+          </button>
+        ) : parsed.repeatAfter === undefined ? null : (
           <span className={`${styles.chip} ${styles.chipSet}`}>
             <Icon name="upcoming" size={16} />
             Repeats
+            {removeButton("recurrence", "Remove the repeat")}
           </span>
         )}
 
@@ -227,11 +310,14 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
         </div>
       </div>
 
-      {[...parsed.warnings, ...postWarnings].map((warning) => (
-        <p key={warning} className={styles.warning}>
-          {warning}
-        </p>
-      ))}
+      {/* Announced: the composer changes these without the focus moving. */}
+      <div role="status">
+        {[...parsed.warnings, ...postWarnings].map((warning) => (
+          <p key={warning} className={styles.warning}>
+            {warning}
+          </p>
+        ))}
+      </div>
       {error ? <p className={styles.error}>{error}</p> : null}
 
       {confirmingDiscard ? (

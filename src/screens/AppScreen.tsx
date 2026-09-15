@@ -6,6 +6,7 @@ import { useLiveSource } from "../live/useLiveSource";
 import { groupTasksForView } from "../model/grouping";
 import { resolveInboxProjectId, sidebarProjects } from "../model/inbox";
 import { applyPending } from "../model/pending";
+import { type Decision, withDecisions } from "../model/quickadd/decisions";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
 import { type RowContext, toTaskRow } from "../model/taskRow";
 import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
@@ -170,9 +171,21 @@ export function AppScreen() {
   );
 
   const submitQuickAdd = useCallback(
-    async (text: string): Promise<string[]> => {
-      // Re-read the clock here, not from the memo above.
-      const parsed = parseQuickAdd(text, { ...quickAddContext, now: new Date() });
+    async (text: string, decisions: Decision[]): Promise<string[]> => {
+      /*
+       * Re-read the clock here, not from the memo above - and re-apply the
+       * user's decisions to THIS parse. The re-parse starts from the raw text,
+       * so a decision left in composer state would be dropped at exactly the
+       * moment it was meant to take effect: the date you switched off would be
+       * back on the saved task. The keys are text-based, so they survive a
+       * parse whose resolved dates differ.
+       */
+      const parsed = withDecisions(
+        parseQuickAdd(text, { ...quickAddContext, now: new Date() }),
+        text,
+        decisions,
+        quickAddContext.defaultProjectId,
+      );
       const labelNames = Object.fromEntries(
         quickAddContext.labels.map((l) => [l.id, l.title]),
       );
