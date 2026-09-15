@@ -14,9 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and never completed. `updateTask` and `deleteTask` are the writes D4 assumed
   already existed. Decision and rationale: `D-write` in `docs/HANDOVER.md`.
   - A completed row stays on screen for about six seconds, struck through,
-    with an **Undo**. Every view in this app filters `done = false` and there
-    is no Completed view, so without that window a misclick would put a task
-    out of reach until you opened Vikunja's own web UI.
+    with an **Undo** — and the checkbox itself takes it back, since it is
+    labelled "Reopen" by then. Every view in this app filters `done = false`
+    and there is no Completed view, so without that window a misclick would
+    put a task out of reach until you opened Vikunja's own web UI.
   - A **repeating** task is not completed by Vikunja, it is advanced: the
     server sets `done` back to false and moves the dates forward. The row
     therefore stays and reports its next date. It gets no Undo — the previous
