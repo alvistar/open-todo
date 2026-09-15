@@ -58,7 +58,11 @@ async function scratchTask(
   extra: Record<string, unknown>,
 ): Promise<{ task: Task; due: string }> {
   const projectId = await scratchProjectId();
-  const due = new Date(Date.now() + 86_400_000).toISOString();
+  // Zeroed milliseconds: Vikunja stores the second, so a due date carrying
+  // .649 comes back as .000 and an exact comparison fails on noise.
+  const dueAt = new Date(Date.now() + 86_400_000);
+  dueAt.setMilliseconds(0);
+  const due = dueAt.toISOString();
 
   const fresh = await http.request<Task>(`/projects/${projectId}/tasks`, {
     method: "PUT",
@@ -89,7 +93,7 @@ async function scratchTask(
 }
 
 const seconds = (iso: string | null | undefined) =>
-  iso ? Math.round(Date.parse(iso) / 1000) : 0;
+  iso ? Math.floor(Date.parse(iso) / 1000) : 0;
 
 afterAll(async () => {
   if (!enabled) return;

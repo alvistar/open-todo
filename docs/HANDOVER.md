@@ -613,11 +613,12 @@ public HTTP API only, which carries no such obligation.
      A delete affordance is its own slice: confirmation, entry point,
      reversibility.
    - `src/api/integration.write.test.ts` is the probe for all of it, behind
-     `VIKUNJA_TEST_WRITE=1`. Re-run it after a server upgrade, the way §6 item
-     7-12 were re-run.
-   - Still open from this pass: **it has not yet been run against `pinguino`**
-     at the time of writing, so items 13 and 14 are read-from-source, not
-     measured.
+     `VIKUNJA_TEST_WRITE=1`. **Run green against `pinguino` (2.5.0) on
+     2026-09-15**, so §6 items 13 and 14 are measured and not merely read.
+     Re-run it after a server upgrade, the way items 7-12 were re-run.
+   - One thing that run corrected, worth not rediscovering: Vikunja stores
+     `due_date` to the SECOND, so a date carrying milliseconds comes back
+     rounded and an exact comparison fails on noise.
 9. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
    WebSocket events (D6). Start from `pkg/websocket/listener.go` and
    `validEvents` in `connection.go`; the open question is how to resolve the
