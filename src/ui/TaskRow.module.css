@@ -102,3 +102,27 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A transient note: what just happened to this row. It may be an error
+   message, so it is the one meta item allowed to shrink and ellipsise. */
+.note {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.undo {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: 500 12px / 16px var(--font-sans);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.undo:hover {
+  text-decoration: underline;
+}

@@ -22,6 +22,13 @@ export interface TaskRowModel {
   hasReminder?: boolean;
   /** Shown right-aligned when the view spans more than one project. */
   projectName?: string;
+  /**
+   * Transient, from the pending map rather than from the task: what just
+   * happened to this row ("Done. Next: 17 Sep", or why a write failed).
+   */
+  note?: string;
+  /** The row is completed and still undoable (D-write). */
+  undoable?: boolean;
 }
 
 export function scheduleColorVar(kind: ScheduleKind): string {

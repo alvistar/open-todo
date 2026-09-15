@@ -149,7 +149,7 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
   const undo = useCallback(
     (taskId: number) => {
       const row = pending.get(taskId);
-      if (!row || row.kind !== "completed") return;
+      if (row?.kind !== "completed") return;
       forget(taskId);
       void write(row.task, row.index, false);
     },

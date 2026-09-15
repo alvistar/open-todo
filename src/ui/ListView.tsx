@@ -16,6 +16,7 @@ export interface ListViewProps {
   footer?: React.ReactNode;
   emptyMessage?: string;
   onToggleDone?: (task: TaskRowModel) => void;
+  onUndo?: (task: TaskRowModel) => void;
   onOpenTask?: (task: TaskRowModel) => void;
   /** Rendered above the sections (view header lives outside the scroll area). */
   header?: React.ReactNode;
@@ -25,6 +26,7 @@ export function ListView({
   sections,
   emptyMessage = "Nothing here.",
   onToggleDone,
+  onUndo,
   onOpenTask,
   header,
   footer,
@@ -53,6 +55,7 @@ export function ListView({
                     key={task.id}
                     task={task}
                     {...(onToggleDone ? { onToggleDone } : {})}
+                    {...(onUndo ? { onUndo } : {})}
                     {...(onOpenTask ? { onOpen: onOpenTask } : {})}
                   />
                 ))}

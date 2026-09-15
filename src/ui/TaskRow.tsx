@@ -6,12 +6,13 @@ import styles from "./TaskRow.module.css";
 
 export interface TaskRowProps {
   task: TaskRowModel;
-  /** Read-only in the foundation slice; the toggle arrives with the mutation slice. */
   onToggleDone?: (task: TaskRowModel) => void;
+  /** Only ever offered while `task.undoable`; see D-write. */
+  onUndo?: (task: TaskRowModel) => void;
   onOpen?: (task: TaskRowModel) => void;
 }
 
-export function TaskRow({ task, onToggleDone, onOpen }: TaskRowProps) {
+export function TaskRow({ task, onToggleDone, onUndo, onOpen }: TaskRowProps) {
   const dueStyle = task.due
     ? ({ "--schedule-color": scheduleColorVar(task.due.kind) } as CSSProperties)
     : undefined;
@@ -79,6 +80,30 @@ export function TaskRow({ task, onToggleDone, onOpen }: TaskRowProps) {
                 <Icon name="comment" size={12} />
                 {task.commentCount}
               </span>
+            ) : null}
+            {/* The note and its Undo live in the meta row on purpose: it is
+                already 16px tall, so a completed row keeps the measured 59/79px
+                height of layout-specs §2.3 instead of growing a fourth line. */}
+            {task.note ? (
+              <span
+                className={`${styles.metaItem} ${styles.note}`}
+                role="status"
+                title={task.note}
+              >
+                {task.note}
+              </span>
+            ) : null}
+            {task.undoable && onUndo ? (
+              <button
+                type="button"
+                className={styles.undo}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onUndo(task);
+                }}
+              >
+                Undo
+              </button>
             ) : null}
             {task.projectName ? (
               <span className={styles.project}>

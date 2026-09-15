@@ -5,9 +5,11 @@ import { logOut } from "../auth/authStore";
 import { useLiveSource } from "../live/useLiveSource";
 import { groupTasksForView } from "../model/grouping";
 import { resolveInboxProjectId, sidebarProjects } from "../model/inbox";
+import { applyPending } from "../model/pending";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
 import { type RowContext, toTaskRow } from "../model/taskRow";
 import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
+import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
 import { useLabels, useProjects, useUser, useViewTasks } from "../queries/useVikunja";
 import { readThemePreference, resolveTheme, setTheme } from "../theme/theme";
@@ -76,7 +78,29 @@ export function AppScreen() {
 
   // Live refresh for the open view (D6): polls while visible, wakes on focus.
   useLiveSource({ view, timeZone, enabled: !tasksQuery.isPending });
-  const tasks: Task[] = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
+
+  const completing = useCompleteTask({ timeZone, defaultDueTime });
+
+  // Navigating away drops the pending rows: they are a few seconds of "you
+  // just did this", not a place tasks are kept (D-write).
+  const viewKey = view?.key;
+  const resetPending = completing.reset;
+  useEffect(() => {
+    // The guard is also what makes viewKey a read rather than a bare trigger:
+    // nothing is pending before a view exists, so there is nothing to drop.
+    if (viewKey === undefined) return;
+    resetPending();
+  }, [viewKey, resetPending]);
+
+  /*
+   * The pending overlay goes on BEFORE grouping, so a completed row keeps its
+   * place in its section instead of jumping to the end, and so a row the poll
+   * has already dropped is put back for the rest of its linger.
+   */
+  const tasks: Task[] = useMemo(
+    () => applyPending(tasksQuery.data ?? [], completing.pending),
+    [tasksQuery.data, completing.pending],
+  );
 
   const rowContext: RowContext = useMemo(() => {
     const projectsById = new Map<number, Project>(
@@ -98,10 +122,19 @@ export function AppScreen() {
         ? groupTasksForView(view, tasks, rowContext).map((group) => ({
             key: group.key,
             ...(group.title ? { title: group.title } : {}),
-            tasks: group.tasks.map((task) => toTaskRow(task, rowContext)),
+            tasks: group.tasks.map((task) => {
+              const row = toTaskRow(task, rowContext);
+              const pending = completing.pending.get(task.id);
+              if (!pending) return row;
+              return {
+                ...row,
+                ...(pending.message ? { note: pending.message } : {}),
+                ...(pending.kind === "completed" ? { undoable: true } : {}),
+              };
+            }),
           }))
         : [],
-    [view, tasks, rowContext],
+    [view, tasks, rowContext, completing.pending],
   );
 
   const labelsQuery = useLabels();
@@ -206,6 +239,12 @@ export function AppScreen() {
           />
         }
         sections={sections}
+        onToggleDone={(row) => {
+          const index = tasks.findIndex((task) => task.id === row.id);
+          const task = tasks[index];
+          if (task) completing.complete(task, index);
+        }}
+        onUndo={(row) => completing.undo(row.id)}
         footer={
           composerOpen ? (
             <QuickAdd
