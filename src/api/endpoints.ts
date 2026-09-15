@@ -299,6 +299,24 @@ export function updateReminders(
 }
 
 /**
+ * Makes one task the sub-task of another (`PUT /tasks/{id}/relations`).
+ *
+ * Measured on `pinguino` 2026-09-15: writing `subtask` on the parent sets BOTH
+ * sides - the parent gains a `subtask` relation and the child a `parenttask`
+ * one - so the inverse must not be written as well.
+ */
+export function addSubtask(
+  http: Http,
+  parentId: number,
+  childId: number,
+): Promise<unknown> {
+  return http.request(`/tasks/${parentId}/relations`, {
+    method: "PUT",
+    body: { other_task_id: childId, relation_kind: "subtask" },
+  });
+}
+
+/**
  * A task's comments, oldest first, as `GET /tasks/{id}/comments` returns them.
  *
  * Measured on `pinguino` 2026-09-15: the body field is `comment` and carries

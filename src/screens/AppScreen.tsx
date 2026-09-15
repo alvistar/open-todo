@@ -15,6 +15,7 @@ import { inboxView, projectView, todayView, type ViewDef } from "../model/views"
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
 import {
+  useAddSubtask,
   useCreateComment,
   useTaskLabel,
   useUpdateReminders,
@@ -100,6 +101,7 @@ export function AppScreen() {
   const reminding = useUpdateReminders();
   const labelling = useTaskLabel();
   const commenting = useCreateComment();
+  const subtasking = useAddSubtask();
 
   // Navigating away drops the pending rows: they are a few seconds of "you
   // just did this", not a place tasks are kept (D-write).
@@ -122,6 +124,20 @@ export function AppScreen() {
     [tasksQuery.data, completing.pending],
   );
 
+  /*
+   * What the list actually shows. A sub-task is shown under its parent and
+   * nowhere else, so it is filtered out here - with the SAME predicate the
+   * poll uses in `belongs`, which is why `includes` exists on ViewDef.
+   *
+   * `tasks` stays unfiltered below on purpose: `rowContext.tasksById` resolves
+   * the "1 / 3" badge through it, and filtering before building that map would
+   * make every badge under-report its own children.
+   */
+  const visible: Task[] = useMemo(
+    () => (view ? tasks.filter((task) => view.includes(task)) : tasks),
+    [tasks, view],
+  );
+
   const rowContext: RowContext = useMemo(() => {
     const projectsById = new Map<number, Project>(
       (projectsQuery.data ?? []).map((p) => [p.id, p]),
@@ -139,7 +155,7 @@ export function AppScreen() {
   const sections = useMemo(
     () =>
       view
-        ? groupTasksForView(view, tasks, rowContext).map((group) => ({
+        ? groupTasksForView(view, visible, rowContext).map((group) => ({
             key: group.key,
             ...(group.title ? { title: group.title } : {}),
             tasks: group.tasks.map((task) => {
@@ -154,7 +170,7 @@ export function AppScreen() {
             }),
           }))
         : [],
-    [view, tasks, rowContext, completing.pending],
+    [view, visible, rowContext, completing.pending],
   );
 
   const labelsQuery = useLabels();
@@ -284,10 +300,10 @@ export function AppScreen() {
    * completed elsewhere, rescheduled out of Today - takes its dialog with it.
    */
   const openIndex =
-    openTaskId === null ? -1 : tasks.findIndex((t) => t.id === openTaskId);
-  const openTask = openIndex === -1 ? null : tasks[openIndex];
+    openTaskId === null ? -1 : visible.findIndex((t) => t.id === openTaskId);
+  const openTask = openIndex === -1 ? null : visible[openIndex];
   const step = (delta: number) => {
-    const next = tasks[openIndex + delta];
+    const next = visible[openIndex + delta];
     if (next) setOpenTaskId(next.id);
   };
 
@@ -323,14 +339,14 @@ export function AppScreen() {
           <ViewTitle
             title={view?.title ?? "open-todo"}
             {...(view?.subtitleFor && !tasksQuery.isPending
-              ? { subtitle: view.subtitleFor(tasks.length) }
+              ? { subtitle: view.subtitleFor(visible.length) }
               : {})}
           />
         }
         sections={sections}
         onToggleDone={(row) => {
-          const index = tasks.findIndex((task) => task.id === row.id);
-          const task = tasks[index];
+          const index = visible.findIndex((task) => task.id === row.id);
+          const task = visible[index];
           if (task) completing.toggle(task, index);
         }}
         onUndo={(row) => completing.undo(row.id)}
@@ -378,6 +394,9 @@ export function AppScreen() {
           allLabels={labelsQuery.data ?? []}
           onChangeLabel={async (change) => {
             await labelling.mutateAsync({ task: openTask, change });
+          }}
+          onAddSubtask={async (title) => {
+            await subtasking.mutateAsync({ parent: openTask, title });
           }}
           comments={commentsQuery.data ?? []}
           commentsLoading={commentsQuery.isPending && openTaskId !== null}

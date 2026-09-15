@@ -3,8 +3,10 @@ import { http } from "../api/client";
 import type { TaskOverrides, TaskPatch } from "../api/endpoints";
 import {
   addLabel,
+  addSubtask,
   createComment,
   createLabel,
+  createTask,
   getTask,
   removeLabel,
   updateReminders,
@@ -134,5 +136,28 @@ export function useCreateComment() {
         predicate: (query) => query.queryKey[0] === "tasks",
       });
     },
+  });
+}
+
+/**
+ * Creates a task and files it under another one.
+ *
+ * Two calls, and the order matters: the child has to exist before it can be
+ * related. It is created in the PARENT's project, because a sub-task shown
+ * under its parent but living somewhere else is a task nobody can find - the
+ * list views hide it, by design.
+ */
+export function useAddSubtask() {
+  const queryClient = useQueryClient();
+
+  return useMutation<Task, Error, { parent: Task; title: string }>({
+    mutationFn: async ({ parent, title }) => {
+      const child = await createTask(http, parent.project_id, { title });
+      await addSubtask(http, parent.id, child.id);
+      // Re-read the PARENT: the relation call answers with the relation, and
+      // the dialog renders its sub-task list off the parent's own copy.
+      return getTask(http, parent.id);
+    },
+    onSuccess: (updated) => writeBack(queryClient, updated),
   });
 }

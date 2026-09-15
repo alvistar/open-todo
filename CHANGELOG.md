@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     which is how the reference product behaves and was checked by experiment.
     A pick made while the name editor is open does not disturb it, and the
     editor's Cancel does not take the pick back.
+  - **Sub-tasks.** Add one by name from inside a task, and it is created in
+    that task's project. A task with a parent is now shown **under its
+    parent and nowhere else** — it no longer appears as its own row in Inbox,
+    Today or a project, which matches the reference product. The parent's
+    "1 / 3" count still includes children that are already done, even though
+    no view fetches them.
   - **Comments.** A task's thread is shown under its description, with who
     wrote each one and when, and there is a box to add another. Like
     descriptions they are HTML, so one written with formatting elsewhere says
@@ -101,6 +107,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `D-adverb` in `docs/HANDOVER.md`.
 
 ### Fixed
+- **Sub-tasks no longer appear twice.** A task with a parent was listed both
+  under its parent and as an ordinary row of its own.
 - **Saved filters are no longer offered as projects.** Vikunja returns `Today`
   and `Upcoming` from its project list, with negative ids and nothing else to
   tell them apart. They were listed in the sidebar as if they were projects,

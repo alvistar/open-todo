@@ -78,3 +78,55 @@ describe("compareByDueDateThenId", () => {
     expect(sorted.map((t) => t.id)).toEqual([2, 1]);
   });
 });
+
+/*
+ * Sub-tasks are shown under their parent and nowhere else. Two places have to
+ * agree about that - the client-side filter on the fetched list and the
+ * `belongs` predicate the poll uses to decide whether a changed task is still
+ * in view - so `belongs` is DEFINED in terms of `includes`, and this is what
+ * holds them together.
+ */
+describe("sub-tasks are not listed on their own", () => {
+  const child = (over: Partial<Task> = {}) =>
+    task({
+      related_tasks: { parenttask: [{ id: 99, title: "parent", done: false }] },
+      ...over,
+    });
+
+  const views = [
+    ["inbox", inboxView(1)],
+    ["today", todayView()],
+  ] as const;
+
+  for (const [name, view] of views) {
+    it(`${name} excludes a task that has a parent`, () => {
+      expect(view.includes(child())).toBe(false);
+      expect(view.includes(task({}))).toBe(true);
+    });
+
+    it(`${name}: anything that belongs is also included`, () => {
+      const candidates = [
+        task({}),
+        task({ due_date: "2026-09-09T10:00:00Z" }),
+        child(),
+        child({ due_date: "2026-09-09T10:00:00Z" }),
+        child({ project_id: 1 }),
+      ];
+
+      for (const candidate of candidates) {
+        if (view.belongs(candidate, NOW, TZ)) {
+          expect(view.includes(candidate)).toBe(true);
+        }
+      }
+    });
+
+    it(`${name} keeps a task whose only relation is a CHILD`, () => {
+      // A parent is an ordinary row; it is the child that disappears.
+      const parent = task({
+        related_tasks: { subtask: [{ id: 5, title: "child", done: false }] },
+        due_date: "2026-09-09T10:00:00Z",
+      });
+      expect(view.includes(parent)).toBe(true);
+    });
+  }
+});

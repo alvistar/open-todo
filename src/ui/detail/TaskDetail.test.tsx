@@ -80,6 +80,7 @@ interface Extras {
   onChangeLabel?: (change: LabelChange) => Promise<void>;
   onSaveTitle?: (raw: string) => Promise<void>;
   onAddComment?: (html: string) => Promise<void>;
+  onAddSubtask?: (title: string) => Promise<void>;
 }
 
 function open(over: Partial<Task> = {}, extra: Extras = {}) {
@@ -89,6 +90,7 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
   const onChangeLabel = extra.onChangeLabel ?? vi.fn(async () => {});
   const onSaveTitle = extra.onSaveTitle ?? vi.fn(async () => {});
   const onAddComment = extra.onAddComment ?? vi.fn(async () => {});
+  const onAddSubtask = extra.onAddSubtask ?? vi.fn(async () => {});
   render(
     <TaskDetail
       task={task(over)}
@@ -108,6 +110,7 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
       comments={COMMENTS}
       commentsLoading={false}
       onAddComment={onAddComment}
+      onAddSubtask={onAddSubtask}
       {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
       {...(extra.onNext ? { onNext: extra.onNext } : {})}
     />,
@@ -119,6 +122,7 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
     onChangeLabel,
     onSaveTitle,
     onAddComment,
+    onAddSubtask,
   };
 }
 
@@ -155,6 +159,7 @@ describe("the dialog frame", () => {
         comments={[]}
         commentsLoading={false}
         onAddComment={vi.fn(async () => {})}
+        onAddSubtask={vi.fn(async () => {})}
       />,
     );
     expect(screen.getByLabelText("Close")).toHaveFocus();
@@ -642,6 +647,7 @@ describe("the label picker", () => {
         comments={[]}
         commentsLoading={false}
         onAddComment={vi.fn(async () => {})}
+        onAddSubtask={vi.fn(async () => {})}
       />,
     );
     fireEvent.click(screen.getByLabelText("Labels: change"));
@@ -822,9 +828,52 @@ describe("comments", () => {
         ]}
         commentsLoading={false}
         onAddComment={vi.fn(async () => {})}
+        onAddSubtask={vi.fn(async () => {})}
       />,
     );
 
     expect(screen.getByText(/formatting open-todo cannot show/)).toBeInTheDocument();
+  });
+});
+
+describe("sub-tasks", () => {
+  it("adds one by name on Enter", async () => {
+    const { onAddSubtask } = open();
+
+    const field = screen.getByLabelText("Add a sub-task");
+    fireEvent.change(field, { target: { value: "  Buy the paint  " } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith("Buy the paint"));
+    await waitFor(() => expect(field).toHaveValue(""));
+  });
+
+  it("will not add an empty one", () => {
+    const { onAddSubtask } = open();
+
+    const field = screen.getByLabelText("Add a sub-task");
+    fireEvent.change(field, { target: { value: "   " } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(onAddSubtask).not.toHaveBeenCalled();
+  });
+
+  it("keeps the name when the add fails", async () => {
+    const onAddSubtask = vi.fn(async () => {
+      throw new Error("409 Conflict");
+    });
+    open({}, { onAddSubtask });
+
+    const field = screen.getByLabelText("Add a sub-task");
+    fireEvent.change(field, { target: { value: "worth keeping" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(await screen.findByText("409 Conflict")).toBeInTheDocument();
+    expect(field).toHaveValue("worth keeping");
+  });
+
+  it("offers the box even on a task that has none yet", () => {
+    open();
+    expect(screen.getByLabelText("Add a sub-task")).toBeInTheDocument();
   });
 });

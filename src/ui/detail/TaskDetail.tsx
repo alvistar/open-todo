@@ -67,6 +67,8 @@ export interface TaskDetailProps {
   comments: readonly TaskComment[];
   commentsLoading: boolean;
   onAddComment: (html: string) => Promise<void>;
+  /** Creates a task under this one, in this one's project. */
+  onAddSubtask: (title: string) => Promise<void>;
   now: Date;
   timeZone: string;
   defaultDueTime: string | null;
@@ -91,6 +93,7 @@ export function TaskDetail({
   comments,
   commentsLoading,
   onAddComment,
+  onAddSubtask,
   now,
   timeZone,
   defaultDueTime,
@@ -298,8 +301,8 @@ export function TaskDetail({
                     </span>
                   </EditableField>
                 </div>
-                {subtasks.length > 0 ? (
-                  <div className={styles.subtasks}>
+                <div className={styles.subtasks}>
+                  {subtasks.length > 0 ? (
                     <ul className={styles.subtaskList}>
                       {subtasks.map((subtask) => (
                         <li
@@ -311,8 +314,9 @@ export function TaskDetail({
                         </li>
                       ))}
                     </ul>
-                  </div>
-                ) : null}
+                  ) : null}
+                  <SubtaskComposer onAdd={onAddSubtask} />
+                </div>
                 <Comments
                   comments={comments}
                   loading={commentsLoading}
@@ -465,5 +469,56 @@ function Pending({ on, children }: { on: boolean; children: ReactNode }) {
       {children}
       <span className={styles.offscreen}> (when you save)</span>
     </span>
+  );
+}
+
+/**
+ * Adds a sub-task by name.
+ *
+ * Its own component so the draft is its own state, which is what keeps the 20s
+ * poll from clearing a half-typed name out from under the user.
+ */
+function SubtaskComposer({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const add = async () => {
+    const title = draft.trim();
+    if (!title) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onAdd(title);
+      // Cleared on success only: a failed add must not eat the name.
+      setDraft("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add the sub-task.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <input
+        className={styles.subtaskInput}
+        aria-label="Add a sub-task"
+        placeholder="Add a sub-task"
+        value={draft}
+        disabled={busy}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          void add();
+        }}
+      />
+      {error ? (
+        <p className={styles.subtaskError} role="status">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }

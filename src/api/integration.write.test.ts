@@ -23,8 +23,10 @@
 import { afterAll, describe, expect, it } from "vitest";
 import {
   addLabel,
+  addSubtask,
   createComment,
   createLabel,
+  createTask,
   deleteLabel,
   deleteTask,
   getTask,
@@ -341,5 +343,34 @@ describe.skipIf(!enabled)("live Vikunja instance (writes)", () => {
     expect(after.description).toContain("Kept, not wiped.");
     expect(after.priority).toBe(3);
     expect(after.reminders?.length).toBe(1);
+  });
+
+  it("a sub-task relation is written on both sides at once", {
+    timeout: 30_000,
+  }, async () => {
+    /*
+     * The claim the list views now depend on: a child is recognised by its
+     * `parenttask` relation, and nothing writes that directly - it appears
+     * because the PARENT was given a `subtask`. If a future Vikunja stopped
+     * mirroring it, every sub-task would reappear as a top-level row and this
+     * is what would say so.
+     */
+    const { task: parent } = await scratchTask("parent", {});
+    const child = await createTask(http, parent.project_id, {
+      title: "open-todo write test: child",
+    });
+    created.push(child.id);
+
+    await addSubtask(http, parent.id, child.id);
+
+    const storedParent = await getTask(http, parent.id);
+    const storedChild = await getTask(http, child.id);
+
+    expect(storedParent.related_tasks?.subtask?.map((t) => t.id)).toEqual([child.id]);
+    expect(storedChild.related_tasks?.parenttask?.map((t) => t.id)).toEqual([parent.id]);
+    // Writing a relation is not a task write: the parent is otherwise untouched.
+    expect(storedParent.description).toContain("Kept, not wiped.");
+    expect(storedParent.priority).toBe(3);
+    expect(storedParent.reminders?.length).toBe(1);
   });
 });
