@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The task list has a keyboard.** Up and Down move between tasks, Enter
+  completes the focused one (or reopens it), and `u` takes back a completion
+  while the row is still on screen. The list is now a single Tab stop instead
+  of one per row plus one per checkbox — stepping past a fifty-task view used
+  to take over a hundred Tab presses, which is keyboard support nobody could
+  use. (D4 step 2.)
 - **You can now tick a task off.** Until this release the app could log in,
   list and create, and nothing else: `TaskRow` had carried an unwired
   `onToggleDone` prop since the foundation slice, so a task could be written
@@ -32,13 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/api/integration.write.test.ts` (new, behind `VIKUNJA_TEST_WRITE=1`)
     checks all of that against a real instance and cleans up after itself.
 
-### Added
-- **The task list has a keyboard.** Up and Down move between tasks, Enter
-  completes the focused one (or reopens it), and `u` takes back a completion
-  while the row is still on screen. The list is now a single Tab stop instead
-  of one per row plus one per checkbox — stepping past a fifty-task view used
-  to take over a hundred Tab presses, which is keyboard support nobody could
-  use. (D4 step 2.)
 - **You can drop anything the quick-add parser recognised.** Every chip whose
   value came from your text — the date, the priority, the project, a repeat —
   now carries a ×. Pressing it clears that value and puts the words back into
@@ -59,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `D-adverb` in `docs/HANDOVER.md`.
 
 ### Fixed
+- **The six-second window to undo a completion now actually appears.** It never
+  did in `pnpm dev`: an unmount guard added during review stayed latched after
+  React StrictMode's remount, so completed rows vanished instantly and the Undo
+  was unreachable. Nothing in the test suite could see it — it was found by
+  driving the running app.
+
 - **Six quick-add defects found by a 4325-phrase corpus**, each one silent.
   Every fix is a §5 grammar amendment recorded in `docs/data-model-mapping.md`.
   - `tasse ogni 30 giugno` / `pay tax every 30 june` was ONE task called "tasse

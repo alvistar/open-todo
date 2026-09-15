@@ -196,6 +196,15 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
   }, []);
 
   useEffect(() => {
+    /*
+     * Set on the way IN as well as cleared on the way out. StrictMode mounts,
+     * unmounts and mounts again in development, so a flag that is only ever
+     * cleared stays cleared for the life of the page - every pending row would
+     * be dropped before it reached React state, and the linger with its Undo
+     * would silently never appear. It worked in a production build and not in
+     * `pnpm dev`, which is the only way this app is run today.
+     */
+    live.current = true;
     const running = timers.current;
     return () => {
       // A write can still be in flight when this unmounts; `live` is what stops

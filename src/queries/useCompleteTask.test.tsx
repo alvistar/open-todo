@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { type ReactNode, StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Task } from "../api/types";
 import { LINGER_MS, useCompleteTask } from "./useCompleteTask";
@@ -24,8 +24,19 @@ function setup() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  /*
+   * StrictMode on purpose, matching main.tsx - but be warned: it does NOT
+   * reproduce the bug it was added for. The `live` flag stayed latched after
+   * StrictMode's remount and the linger never appeared in `pnpm dev`; this
+   * wrapper still passes with the fix reverted, measured 2026-09-15. The
+   * mount/cleanup/mount sequence under renderHook does not leave the ref in
+   * the state the real root does. Only driving the app caught it, and only
+   * driving the app will catch the next one of its kind.
+   */
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <StrictMode>
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    </StrictMode>
   );
   return renderHook(
     () => useCompleteTask({ timeZone: "Europe/Rome", defaultDueTime: null }),
