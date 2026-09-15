@@ -47,6 +47,15 @@ export interface QuickAddSpan {
   end: number;
   kind: SpanKind;
   text: string;
+  /**
+   * The span was recognised but is NOT applied, so its words stay in the title.
+   * Either the user switched it off, or it is a suggestion nobody accepted.
+   */
+  off?: true;
+  /** Recognised, deliberately not applied until the user says so. */
+  suggested?: true;
+  /** What accepting this suggestion writes. `withDecisions` cannot re-derive it. */
+  suggestedRepeat?: { repeatAfter: number; repeatMode?: number };
 }
 
 export interface QuickAddResult {
@@ -67,6 +76,24 @@ export interface QuickAddResult {
   spans: QuickAddSpan[];
   /** Things the user should see before saving. */
   warnings: string[];
+}
+
+/**
+ * The title is what is left once every APPLIED span is removed.
+ *
+ * Exported because `decisions.ts` has to compose it the same way after the user
+ * switches something off. Two implementations would show one title in the
+ * composer and save another, which is the whole failure mode that feature
+ * exists to avoid. A span marked `off` keeps its words: it was recognised and
+ * not applied.
+ */
+export function composeTitle(input: string, spans: QuickAddSpan[]): string {
+  let title = input;
+  for (const span of [...spans].sort((a, b) => b.start - a.start)) {
+    if (span.off) continue;
+    title = title.slice(0, span.start) + title.slice(span.end);
+  }
+  return title.replace(/\s+/g, " ").trim();
 }
 
 /** Replaces a range with spaces so later matchers skip it, keeping offsets. */
@@ -156,8 +183,13 @@ function parseQuickAddIn(
   const warnings: string[] = [];
   let rest = input;
 
-  const consume = (start: number, end: number, kind: SpanKind) => {
-    spans.push({ start, end, kind, text: input.slice(start, end) });
+  const consume = (
+    start: number,
+    end: number,
+    kind: SpanKind,
+    extra: Partial<QuickAddSpan> = {},
+  ) => {
+    spans.push({ start, end, kind, text: input.slice(start, end), ...extra });
     rest = blank(rest, start, end);
   };
 
@@ -367,12 +399,7 @@ function parseQuickAddIn(
 
   spans.sort((a, b) => a.start - b.start);
 
-  // The title is what is left once every recognised span is removed.
-  let title = input;
-  for (const span of [...spans].sort((a, b) => b.start - a.start)) {
-    title = title.slice(0, span.start) + title.slice(span.end);
-  }
-  title = title.replace(/\s+/g, " ").trim();
+  const title = composeTitle(input, spans);
 
   return {
     title,
