@@ -54,3 +54,14 @@
   font: 400 12px / 18px var(--font-sans);
   color: var(--schedule-overdue);
 }
+
+.remove {
+  float: right;
+  color: var(--text-secondary);
+}
+
+.note {
+  margin: 0 0 8px;
+  font: 400 12px / 18px var(--font-sans);
+  color: var(--text-secondary);
+}

@@ -1,15 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import type { TaskPatch } from "../../api/endpoints";
-import type { Task } from "../../api/types";
+import type { Task, TaskReminder } from "../../api/types";
 import { formatDueLabel, parseVikunjaDate } from "../../model/dates";
 import type { DuePhrase } from "../../model/duePhrase";
 import { priorityFromVikunja, priorityLabel } from "../../model/priority";
+import { describeReminder } from "../../model/reminders";
 import { isRichHtml, stripHtml, toDescriptionHtml } from "../../model/taskRow";
 import { Icon } from "../icons/Icon";
 import { PriorityCheckbox } from "../PriorityCheckbox";
 import { EditableField } from "./EditableField";
 import { PickerField } from "./PickerField";
-import { DuePicker, PriorityPicker, type ProjectOption, ProjectPicker } from "./pickers";
+import {
+  DuePicker,
+  PriorityPicker,
+  type ProjectOption,
+  ProjectPicker,
+  ReminderPicker,
+} from "./pickers";
 import styles from "./TaskDetail.module.css";
 
 /**
@@ -36,6 +43,11 @@ export interface TaskDetailProps {
    * so the clock is read at the moment of the pick, not when the dialog opened.
    */
   readDuePhrase: (phrase: string) => DuePhrase;
+  /**
+   * Replaces the whole reminder set. Separate from `onSave` because reminders
+   * are not a column: they travel outside the bulk `fields` guard entirely.
+   */
+  onSaveReminders: (reminders: TaskReminder[]) => Promise<void>;
   now: Date;
   timeZone: string;
   defaultDueTime: string | null;
@@ -52,6 +64,7 @@ export function TaskDetail({
   projectName,
   projects,
   readDuePhrase,
+  onSaveReminders,
   now,
   timeZone,
   defaultDueTime,
@@ -317,24 +330,36 @@ export function TaskDetail({
                 </div>
               </div>
               <hr className={styles.rule} />
-              <div>
-                <div className={styles.fieldLabel}>Reminders</div>
-                <div
-                  className={`${styles.fieldValue} ${reminders.length > 0 ? "" : styles.fieldEmpty}`}
-                >
-                  <Icon name="bell" size={16} />
-                  {reminders.length > 0 ? reminderLabel(reminders.length) : "None"}
-                </div>
-              </div>
+              <PickerField
+                label="Reminders"
+                icon="bell"
+                value={
+                  reminders.length > 0
+                    ? reminders
+                        .map((reminder) =>
+                          describeReminder(reminder, now, timeZone, defaultDueTime),
+                        )
+                        .join(", ")
+                    : "None"
+                }
+                empty={reminders.length === 0}
+                onCommit={onSaveReminders}
+              >
+                {(control) => (
+                  <ReminderPicker
+                    task={task}
+                    now={now}
+                    timeZone={timeZone}
+                    defaultDueTime={defaultDueTime}
+                    readPhrase={readDuePhrase}
+                    {...control}
+                  />
+                )}
+              </PickerField>
             </div>
           </div>
         </div>
       </div>
     </div>
   );
-}
-
-/** Counted rather than described: the relative forms need their own editor. */
-function reminderLabel(count: number): string {
-  return `${count} ${count === 1 ? "reminder" : "reminders"}`;
 }

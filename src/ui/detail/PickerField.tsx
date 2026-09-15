@@ -1,5 +1,4 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { TaskPatch } from "../../api/endpoints";
 import { Icon } from "../icons/Icon";
 import type { IconName } from "../icons/paths";
 import styles from "./PickerField.module.css";
@@ -18,29 +17,30 @@ import styles from "./PickerField.module.css";
  * screen with nothing to explain it.
  */
 
-export interface PickerFieldProps {
+export interface PickerFieldProps<TChange> {
   label: string;
   icon: IconName;
   /** How the current value reads on the closed row. */
   value: ReactNode;
   /** Greys the row, for "No date" and friends. */
   empty?: boolean;
-  onCommit: (values: TaskPatch) => Promise<void>;
+  /**
+   * Writes the change. Generic because not every sidebar row writes a COLUMN:
+   * reminders are a sub-resource and travel a different route entirely.
+   */
+  onCommit: (change: TChange) => Promise<void>;
   /** The picker body. `commit` writes and closes; `busy` disables its controls. */
-  children: (control: {
-    commit: (values: TaskPatch) => void;
-    busy: boolean;
-  }) => ReactNode;
+  children: (control: { commit: (change: TChange) => void; busy: boolean }) => ReactNode;
 }
 
-export function PickerField({
+export function PickerField<TChange>({
   label,
   icon,
   value,
   empty = false,
   onCommit,
   children,
-}: PickerFieldProps) {
+}: PickerFieldProps<TChange>) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,10 +76,10 @@ export function PickerField({
     };
   }, [open]);
 
-  const commit = (values: TaskPatch) => {
+  const commit = (change: TChange) => {
     setBusy(true);
     setError(null);
-    void onCommit(values)
+    void onCommit(change)
       .then(() => {
         setOpen(false);
       })

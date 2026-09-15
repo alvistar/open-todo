@@ -21,7 +21,13 @@
  * It cleans up after itself: every task it creates is deleted at the end.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { deleteTask, getUser, listProjects, updateTask } from "./endpoints";
+import {
+  deleteTask,
+  getUser,
+  listProjects,
+  updateReminders,
+  updateTask,
+} from "./endpoints";
 import { createHttp } from "./http";
 import { type Task, VIKUNJA_NULL_DATE } from "./types";
 
@@ -191,5 +197,68 @@ describe.skipIf(!enabled)("live Vikunja instance (writes)", () => {
     expect(cleared.description).toContain("Kept, not wiped.");
     expect(cleared.reminders?.length).toBe(1);
     expect(cleared.assignees?.length).toBe(1);
+  });
+
+  it("replacing the reminders changes nothing else", { timeout: 30_000 }, async () => {
+    /*
+     * The write that has no column of its own. It names `title` and writes it
+     * back unchanged, and the next test is why: the obvious alternative wipes
+     * the task.
+     */
+    const { task, due } = await scratchTask("reminders", {});
+
+    const changed = await updateReminders(http, task, [
+      { relative_period: -86_400, relative_to: "due_date" },
+      { relative_period: 0, relative_to: "due_date" },
+    ]);
+
+    expect(changed.reminders?.length).toBe(2);
+    expect(changed.reminders?.map((r) => r.relative_period).sort()).toEqual([-86_400, 0]);
+    expect(changed.title).toBe(task.title);
+    expect(changed.description).toContain("Kept, not wiped.");
+    expect(seconds(changed.due_date)).toBe(seconds(due));
+    expect(changed.priority).toBe(3);
+    expect(changed.assignees?.length).toBe(1);
+
+    const none = await updateReminders(http, changed, []);
+    expect(none.reminders ?? []).toHaveLength(0);
+    expect(none.priority).toBe(3);
+    expect(none.description).toContain("Kept, not wiped.");
+  });
+
+  it("an empty fields list WIPES the task, which is why one is always named", {
+    timeout: 30_000,
+  }, async () => {
+    /*
+     * Deliberately destructive, on a task created for it. This is the finding
+     * `updateReminders` exists to route around: `fields: []` reads as "no
+     * column is protected", not "no column is written", so every column falls
+     * through to the zero-reapply path of mapping §6 item 13.
+     *
+     * It goes through raw http rather than updateTask because updateTask
+     * refuses to make this call at all - that refusal is the guard this test
+     * justifies, and if a future Vikunja stops behaving this way, this test
+     * fails and the guard can be reconsidered on evidence.
+     */
+    const { task } = await scratchTask("empty-fields", {});
+
+    await http.request("/tasks/bulk", {
+      method: "POST",
+      body: {
+        task_ids: [task.id],
+        fields: [],
+        values: {
+          reminders: [{ relative_period: -600, relative_to: "due_date" }],
+          assignees: [],
+        },
+      },
+    });
+
+    const wrecked = await http.request<Task>(`/tasks/${task.id}`);
+    expect(wrecked.priority ?? 0).toBe(0);
+    expect(wrecked.description ?? "").toBe("");
+    expect(seconds(wrecked.due_date)).toBeLessThan(seconds("1970-01-01T00:00:00Z") + 1);
+    // The reminder DID land, which is what makes the trap convincing.
+    expect(wrecked.reminders?.length).toBe(1);
   });
 });

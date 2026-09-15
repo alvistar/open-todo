@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskPatch } from "../../api/endpoints";
-import type { Task } from "../../api/types";
+import type { Task, TaskReminder } from "../../api/types";
 import { dueDateFromPhrase } from "../../model/duePhrase";
 import { TaskDetail } from "./TaskDetail";
 
@@ -45,11 +45,13 @@ interface Extras {
   onPrev?: () => void;
   onNext?: () => void;
   onSave?: (values: TaskPatch) => Promise<void>;
+  onSaveReminders?: (reminders: TaskReminder[]) => Promise<void>;
 }
 
 function open(over: Partial<Task> = {}, extra: Extras = {}) {
   const onClose = vi.fn();
   const onSave = extra.onSave ?? vi.fn(async () => {});
+  const onSaveReminders = extra.onSaveReminders ?? vi.fn(async () => {});
   render(
     <TaskDetail
       task={task(over)}
@@ -61,11 +63,12 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
       defaultDueTime={null}
       onClose={onClose}
       onSave={onSave}
+      onSaveReminders={onSaveReminders}
       {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
       {...(extra.onNext ? { onNext: extra.onNext } : {})}
     />,
   );
-  return { onClose, onSave };
+  return { onClose, onSave, onSaveReminders };
 }
 
 describe("the dialog frame", () => {
@@ -93,6 +96,7 @@ describe("the dialog frame", () => {
         defaultDueTime={null}
         onClose={vi.fn()}
         onSave={vi.fn(async () => {})}
+        onSaveReminders={vi.fn(async () => {})}
       />,
     );
     expect(screen.getByLabelText("Close")).toHaveFocus();
@@ -407,5 +411,84 @@ describe("the sidebar pickers", () => {
     // Measured in Todoist: the pick commits, the editor keeps its draft, and
     // the editor's own Cancel does not take the pick back with it.
     expect(screen.getByLabelText("Edit the task name")).toHaveValue("Half-typed name");
+  });
+});
+
+describe("the reminder picker", () => {
+  const openReminders = () => fireEvent.click(screen.getByLabelText("Reminders: change"));
+
+  const withDate = { due_date: "2026-09-20T18:00:00Z" };
+
+  it("adds a preset to the set that is already there, not instead of it", async () => {
+    const existing = [{ relative_period: -600, relative_to: "due_date" }];
+    const { onSaveReminders } = open({ ...withDate, reminders: existing });
+    openReminders();
+
+    fireEvent.click(screen.getByRole("button", { name: "1 day before" }));
+
+    // Vikunja replaces the whole list, so a partial set would delete the rest.
+    await waitFor(() =>
+      expect(onSaveReminders).toHaveBeenCalledWith([
+        ...existing,
+        { relative_period: -86_400, relative_to: "due_date" },
+      ]),
+    );
+  });
+
+  it("removes one reminder and keeps the others", async () => {
+    const { onSaveReminders } = open({
+      ...withDate,
+      reminders: [
+        { relative_period: -600, relative_to: "due_date" },
+        { relative_period: 0, relative_to: "due_date" },
+      ],
+    });
+    openReminders();
+
+    fireEvent.click(
+      screen.getByLabelText("Remove the reminder 10 minutes before it is due"),
+    );
+
+    await waitFor(() =>
+      expect(onSaveReminders).toHaveBeenCalledWith([
+        { relative_period: 0, relative_to: "due_date" },
+      ]),
+    );
+  });
+
+  it("will not offer an offset when there is no date to measure it from", () => {
+    open();
+    openReminders();
+
+    expect(
+      screen.queryByRole("button", { name: "1 day before" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Give the task a date/)).toBeInTheDocument();
+  });
+
+  it("takes an absolute reminder through the same grammar as the date field", async () => {
+    const { onSaveReminders } = open();
+    openReminders();
+
+    const field = screen.getByLabelText("Remind me at");
+    fireEvent.change(field, { target: { value: "tomorrow at 9" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    await waitFor(() => expect(onSaveReminders).toHaveBeenCalledTimes(1));
+    expect(onSaveReminders).toHaveBeenCalledWith([
+      { reminder: "2026-09-10T07:00:00.000Z" },
+    ]);
+  });
+
+  it("refuses a phrase it cannot read, and writes nothing", async () => {
+    const { onSaveReminders } = open();
+    openReminders();
+
+    const field = screen.getByLabelText("Remind me at");
+    fireEvent.change(field, { target: { value: "sometime soonish" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(await screen.findByText(/sometime soonish/)).toBeInTheDocument();
+    expect(onSaveReminders).not.toHaveBeenCalled();
   });
 });

@@ -196,8 +196,16 @@ export async function updateTask(
 ): Promise<Task> {
   const fields = Object.keys(values);
   if (fields.length === 0) {
-    // A caller bug, not a server one: ApiError would file it under "the
-    // instance did something odd".
+    /*
+     * A caller bug, not a server one: ApiError would file it under "the
+     * instance did something odd".
+     *
+     * It is also a GUARD, not a formality. An empty `fields` list does not
+     * mean "write no columns" - measured on `pinguino` 2026-09-15, it wipes
+     * the task, because no column is named and therefore none is re-read from
+     * the stored row. See `updateReminders` for the way to write a
+     * sub-resource without naming a column you meant to change.
+     */
     throw new Error("updateTask was asked to write no fields.");
   }
 
@@ -221,6 +229,36 @@ export async function updateTask(
     throw new ApiError(`Updating task ${task.id} did not return the updated task.`, 0);
   }
   return updated;
+}
+
+/**
+ * Replaces a task's reminders, and changes nothing else.
+ *
+ * It names `title` and writes back the title the SERVER gave us, which looks
+ * like a no-op and is not optional. Reminders live outside the `fields` guard,
+ * so the obvious call - an empty `fields` list carrying only reminders - looks
+ * like "write no columns". It is not.
+ *
+ * MEASURED on `pinguino` 2026-09-15: `fields: []` erased the task. A scratch
+ * task with priority 3, a due date and a description came back with priority
+ * 0, `due_date` unset and an empty description, with only the new reminder
+ * intact. An empty list means "no column is protected", not "no column is
+ * written", and the zero-reapply path of mapping §6 item 13 does the rest.
+ *
+ * Naming one column re-reads every OTHER column from the stored row, which is
+ * exactly what is wanted. `title` is the choice because it is a value we hold
+ * from the server copy and writing it back cannot trigger anything: `done`
+ * would run the repeat handler and ADVANCE a recurring task, and `project_id`
+ * resets the bucket (mapping §2). The cost is a narrow race - a rename by
+ * another client inside the poll window would be reverted - and that is the
+ * cheapest of the available harms.
+ */
+export function updateReminders(
+  http: Http,
+  task: Task,
+  reminders: TaskReminder[],
+): Promise<Task> {
+  return updateTask(http, task, { title: task.title }, { reminders });
 }
 
 /**

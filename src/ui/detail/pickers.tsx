@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { TaskPatch } from "../../api/endpoints";
-import { VIKUNJA_NULL_DATE } from "../../api/types";
+import { type Task, type TaskReminder, VIKUNJA_NULL_DATE } from "../../api/types";
 import { DUE_SHORTCUTS, type DuePhrase } from "../../model/duePhrase";
 import {
   PRIORITIES,
@@ -8,12 +8,18 @@ import {
   priorityLabel,
   priorityToVikunja,
 } from "../../model/priority";
+import {
+  canRemindRelatively,
+  describeReminder,
+  REMINDER_PRESETS,
+  relativeReminder,
+} from "../../model/reminders";
 import styles from "./pickers.module.css";
 
 /** The bodies the sidebar's `PickerField` renders. Each one only calls `commit`. */
 
-interface Control {
-  commit: (values: TaskPatch) => void;
+interface Control<TChange = TaskPatch> {
+  commit: (change: TChange) => void;
   busy: boolean;
 }
 
@@ -164,6 +170,117 @@ export function DuePicker({
           if (event.key !== "Enter") return;
           event.preventDefault();
           apply(phrase);
+        }}
+      />
+      {reason ? (
+        <p className={styles.reason} role="status">
+          {reason}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The reminder picker.
+ *
+ * Relative offsets are only offered when the task HAS a due date - they are
+ * measured from one, so on a task without a date they would be anchored to
+ * nothing and never fire. Saying that is better than hiding the row and
+ * leaving the reader to wonder.
+ *
+ * An absolute reminder reuses the date field's reader, so "tomorrow at 9" is
+ * read by the same grammar everywhere in the app.
+ */
+export function ReminderPicker({
+  task,
+  now,
+  timeZone,
+  defaultDueTime,
+  readPhrase,
+  commit,
+  busy,
+}: Control<TaskReminder[]> & {
+  task: Task;
+  now: Date;
+  timeZone: string;
+  defaultDueTime: string | null;
+  readPhrase: (phrase: string) => DuePhrase;
+}) {
+  const [phrase, setPhrase] = useState("");
+  const [reason, setReason] = useState<string | null>(null);
+  const current = task.reminders ?? [];
+  const relative = canRemindRelatively(task);
+
+  /* The whole new set, every time: Vikunja replaces the list rather than merging. */
+  const without = (index: number) => current.filter((_, i) => i !== index);
+
+  const addAbsolute = () => {
+    const result = readPhrase(phrase);
+    if (result.due === null) {
+      setReason(result.reason);
+      return;
+    }
+    setReason(null);
+    commit([...current, { reminder: result.due.toISOString() }]);
+  };
+
+  return (
+    <div>
+      {current.length > 0 ? (
+        <ul className={styles.options}>
+          {current.map((reminder, index) => (
+            <li key={`${reminder.reminder ?? ""}:${reminder.relative_period ?? ""}`}>
+              <button
+                type="button"
+                className={styles.option}
+                disabled={busy}
+                aria-label={`Remove the reminder ${describeReminder(reminder, now, timeZone, defaultDueTime)}`}
+                onClick={() => commit(without(index))}
+              >
+                {describeReminder(reminder, now, timeZone, defaultDueTime)}
+                <span className={styles.remove} aria-hidden="true">
+                  ×
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {relative ? (
+        <ul className={styles.options}>
+          {REMINDER_PRESETS.map((preset) => (
+            <li key={preset.seconds}>
+              <button
+                type="button"
+                className={styles.option}
+                disabled={busy}
+                onClick={() => commit([...current, relativeReminder(preset.seconds)])}
+              >
+                {preset.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={styles.note}>
+          Give the task a date to be reminded before it is due.
+        </p>
+      )}
+      <input
+        className={styles.phrase}
+        aria-label="Remind me at"
+        placeholder="Remind me at…"
+        value={phrase}
+        disabled={busy}
+        onChange={(event) => {
+          setPhrase(event.target.value);
+          setReason(null);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          addAbsolute();
         }}
       />
       {reason ? (

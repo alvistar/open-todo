@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     which is how the reference product behaves and was checked by experiment.
     A pick made while the name editor is open does not disturb it, and the
     editor's Cancel does not take the pick back.
+  - **Reminders can be added and removed.** Offsets from the due date (when it
+    is due, 10 minutes, 1 hour or 1 day before) and absolute ones you type in
+    words — "tomorrow at 9" — read by the same grammar as everything else.
+    Offsets are offered only when the task has a date, because that is what
+    they are measured from; without one the picker says so rather than
+    offering a reminder that would never fire.
   - The date picker carries Today / Tomorrow / This weekend / Next week, a
     field you can type a date into in words, and — when a date is set — a way
     to remove it. The typed field reads phrases with the same grammar the
