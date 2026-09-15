@@ -147,6 +147,65 @@ describe("updateTask", () => {
     expect(body.values.due_date).toBe("2026-09-20T18:00:00Z");
   });
 
+  it("writes the other columns the detail pane edits", async () => {
+    // description and project_id are in Vikunja's colsToUpdate, so they ride
+    // the same safe `fields` branch as title and due_date. Adding them is a
+    // key each: `fields` is derived from the values object.
+    const fetchImpl = vi.fn(async () => bulkOk([storedTask()]));
+    await updateTask(makeHttp(fetchImpl), storedTask(), {
+      description: "<p>Rewritten</p>",
+      project_id: 7,
+    });
+
+    const body = JSON.parse(
+      (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    );
+    expect(body.fields.sort()).toEqual(["description", "project_id"]);
+    expect(body.values.description).toBe("<p>Rewritten</p>");
+    expect(body.values.project_id).toBe(7);
+  });
+
+  it("takes an explicit reminders override instead of a doctored task", async () => {
+    /*
+     * Reminders reach the server only through the echo, because Vikunja
+     * handles them outside the `fields` guard. Authoring them by handing this
+     * function a modified task would work and would quietly break its stated
+     * contract - that `task` is a copy the SERVER produced. Naming the
+     * override keeps the contract true and makes the write visible at the call
+     * site.
+     */
+    const fetchImpl = vi.fn(async () => bulkOk([storedTask()]));
+    await updateTask(
+      makeHttp(fetchImpl),
+      storedTask(),
+      { done: true },
+      { reminders: [{ reminder: "2026-09-20T08:00:00Z" }] },
+    );
+
+    const body = JSON.parse(
+      (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    );
+    expect(body.values.reminders).toEqual([{ reminder: "2026-09-20T08:00:00Z" }]);
+    // The task's own assignees are still echoed: only reminders were named.
+    expect(body.values.assignees).toEqual([{ id: 7, username: "alvistar" }]);
+  });
+
+  it("clears reminders when the override is an empty list", async () => {
+    // The one case the echo cannot express by omission: "remove them all".
+    const fetchImpl = vi.fn(async () => bulkOk([storedTask()]));
+    await updateTask(
+      makeHttp(fetchImpl),
+      storedTask(),
+      { done: true },
+      { reminders: [] },
+    );
+
+    const body = JSON.parse(
+      (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    );
+    expect(body.values.reminders).toEqual([]);
+  });
+
   it("returns the updated task the server sends back", async () => {
     // Completing a RECURRING task returns done:false with an advanced due_date
     // (updateDone -> setTaskDates*), which is the only cheap way to learn the

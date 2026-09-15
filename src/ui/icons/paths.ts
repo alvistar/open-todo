@@ -84,6 +84,10 @@ export const icons = {
   chevronRight: {
     stroke: ["M9.5 6.5 15 12l-5.5 5.5"],
   },
+  /** The mirror of chevronRight. The task detail's prev/next pair needs both. */
+  chevronLeft: {
+    stroke: ["M14.5 6.5 9 12l5.5 5.5"],
+  },
 } satisfies Record<string, IconGlyph>;
 
 export type IconName = keyof typeof icons;

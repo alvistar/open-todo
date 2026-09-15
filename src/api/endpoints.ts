@@ -7,6 +7,7 @@ import type {
   LoginResponse,
   Project,
   Task,
+  TaskReminder,
   User,
 } from "./types";
 
@@ -127,9 +128,27 @@ export function addLabel(http: Http, taskId: number, labelId: number): Promise<u
 export interface TaskPatch {
   done?: boolean;
   title?: string;
+  /** Vikunja stores HTML from its own editor; see mapping §2. */
+  description?: string;
   /** RFC 3339; see D-map-2 for what an all-day date means. */
   due_date?: string;
   priority?: number;
+  /** Moving a task between projects. Resets its bucket, per mapping §2. */
+  project_id?: number;
+}
+
+/**
+ * Sub-resources that ride along with a column write.
+ *
+ * `reminders` is the only way to author reminders at all: Vikunja handles them
+ * OUTSIDE the `fields` guard, so they reach the server through the echo below
+ * and nowhere else. Naming them here rather than handing `updateTask` a
+ * modified task is what keeps its "server copy" contract true - and an empty
+ * list is the one thing the echo cannot say by omission, because omission is
+ * how the server is told to delete them.
+ */
+export interface TaskOverrides {
+  reminders?: TaskReminder[];
 }
 
 interface BulkTaskResponse {
@@ -165,11 +184,15 @@ interface BulkTaskResponse {
  * `assignees` happen to be absent echoes an empty list, and an empty list is
  * exactly how the server is told to delete them. There is no way to tell the
  * two apart on the wire, which is why the parameter is the whole Task.
+ *
+ * To CHANGE reminders, name them in `overrides` rather than doctoring the task:
+ * the contract above stays true and the write is visible where it is made.
  */
 export async function updateTask(
   http: Http,
   task: Task,
   values: TaskPatch,
+  overrides: TaskOverrides = {},
 ): Promise<Task> {
   const fields = Object.keys(values);
   if (fields.length === 0) {
@@ -185,7 +208,7 @@ export async function updateTask(
       fields,
       values: {
         ...values,
-        reminders: task.reminders ?? [],
+        reminders: overrides.reminders ?? task.reminders ?? [],
         assignees: task.assignees ?? [],
       },
     },
