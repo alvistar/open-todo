@@ -176,8 +176,13 @@ this order:
    against Vikunja's UI; gives a daily-usable app at slice one. Its parser must
    map dates, priority and recurrence onto Vikunja's fields, which is why the
    §5 mapping table is written first.
-2. **Keyboard navigation** — focus model across list and detail panes; cheap
-   once the list exists.
+2. ~~**Keyboard navigation**~~ — done 2026-09-15: one tab stop for the list,
+   Up/Down between rows, Enter to complete, `u` to undo. The "detail pane" half
+   is not built, because there is no detail pane: `TaskRow.onOpen` still has no
+   destination. Enter therefore means COMPLETE rather than OPEN — the only act
+   a row can perform today — and the key map is a design choice, not a
+   measurement: `docs/layout-specs.md` never captured hover or focus states
+   (§7 item 3), so there is no reference to copy here.
 3. **Drag reorder with persisted order** — `dnd-kit` for the gesture; the real
    work is how Vikunja's `position` field and kanban buckets represent order.
    **Check Vikunja's position semantics in Veyrn's Swift code during the

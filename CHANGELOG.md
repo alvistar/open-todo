@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     checks all of that against a real instance and cleans up after itself.
 
 ### Added
+- **The task list has a keyboard.** Up and Down move between tasks, Enter
+  completes the focused one (or reopens it), and `u` takes back a completion
+  while the row is still on screen. The list is now a single Tab stop instead
+  of one per row plus one per checkbox — stepping past a fifty-task view used
+  to take over a hundred Tab presses, which is keyboard support nobody could
+  use. (D4 step 2.)
 - **You can drop anything the quick-add parser recognised.** Every chip whose
   value came from your text — the date, the priority, the project, a repeat —
   now carries a ×. Pressing it clears that value and puts the words back into

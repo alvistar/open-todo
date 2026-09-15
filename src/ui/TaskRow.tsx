@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, Ref } from "react";
 import { scheduleColorVar, type TaskRowModel } from "../model/display";
 import { Icon } from "./icons/Icon";
 import { PriorityCheckbox } from "./PriorityCheckbox";
@@ -10,9 +10,28 @@ export interface TaskRowProps {
   /** Only ever offered while `task.undoable`; see D-write. */
   onUndo?: (task: TaskRowModel) => void;
   onOpen?: (task: TaskRowModel) => void;
+  /**
+   * The list owns the focus model (one tab stop, arrows inside), so it decides
+   * which row is reachable by Tab and holds the node to focus.
+   */
+  rowRef?: Ref<HTMLDivElement>;
+  tabIndex?: number;
+  /**
+   * The list's key handling, attached to the row because the row is what holds
+   * the focus. The list supplies it because the list is what knows the order.
+   */
+  onKeyDown?: (event: React.KeyboardEvent) => void;
 }
 
-export function TaskRow({ task, onToggleDone, onUndo, onOpen }: TaskRowProps) {
+export function TaskRow({
+  task,
+  onToggleDone,
+  onUndo,
+  onOpen,
+  rowRef,
+  tabIndex = 0,
+  onKeyDown,
+}: TaskRowProps) {
   const dueStyle = task.due
     ? ({ "--schedule-color": scheduleColorVar(task.due.kind) } as CSSProperties)
     : undefined;
@@ -22,19 +41,15 @@ export function TaskRow({ task, onToggleDone, onUndo, onOpen }: TaskRowProps) {
       {/* biome-ignore lint/a11y/useSemanticElements: a <button> cannot contain the
           row's own checkbox button; the row is a composite click target. */}
       <div
+        ref={rowRef}
         className={`${styles.row} ${task.done ? styles.done : ""}`}
         role="button"
         // Without this the row's accessible name is every scrap of text it
         // contains, including the checkbox's own label.
         aria-label={task.title}
-        tabIndex={0}
-        onClick={() => onOpen?.(task)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onOpen?.(task);
-          }
-        }}
+        tabIndex={tabIndex}
+        onKeyDown={onKeyDown}
+        {...(onOpen ? { onClick: () => onOpen(task) } : {})}
       >
         <span className={styles.check}>
           <PriorityCheckbox
