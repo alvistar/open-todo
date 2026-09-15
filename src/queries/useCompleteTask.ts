@@ -41,6 +41,10 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
   const [pending, setPending] = useState<ReadonlyMap<number, PendingRow>>(new Map());
 
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  // The callbacks are handed to a list that holds them across renders, so the
+  // in-flight check reads the map through a ref rather than a closure.
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
   // Read the options through a ref so a re-render with a new `now` does not
   // have to rebuild the callbacks the list is holding.
   const optionsRef = useRef(options);
@@ -130,10 +134,14 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
 
   const complete = useCallback(
     (task: Task, index: number) => {
-      // The row is drawn as done the moment it is clicked; a second click on
-      // the same row while the write is in flight is a double-click, not a
-      // second intent.
-      if (timers.current.has(task.id)) return;
+      // A second click on the same row while the write is in flight is a
+      // double-click, not a second intent. A click on a row that FAILED is the
+      // opposite - it is the retry - so that one clears the message and goes
+      // again rather than being swallowed for the rest of the timeout.
+      if (timers.current.has(task.id)) {
+        if (pendingRef.current.get(task.id)?.kind !== "failed") return;
+        clearTimer(task.id);
+      }
       timers.current.set(
         task.id,
         setTimeout(() => forget(task.id), LINGER_MS),
@@ -143,7 +151,7 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
       );
       void write(task, index, true);
     },
-    [forget, write],
+    [forget, write, clearTimer],
   );
 
   const undo = useCallback(

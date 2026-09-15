@@ -161,6 +161,27 @@ describe("when the write fails", () => {
   });
 });
 
+describe("retrying after a failure", () => {
+  it("goes again on the next click instead of being swallowed", async () => {
+    updateTask.mockRejectedValueOnce(new Error("Forbidden"));
+    const { result } = setup();
+
+    act(() => result.current.complete(task(), 0));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pending.get(91)?.kind).toBe("failed");
+
+    act(() => result.current.complete(task(), 0));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(updateTask).toHaveBeenCalledTimes(2);
+    expect(result.current.pending.get(91)?.kind).toBe("completed");
+  });
+});
+
 describe("reset", () => {
   it("forgets everything, which is what navigating away must do", async () => {
     const { result } = setup();
