@@ -29,6 +29,18 @@ export function sidebarProjects(
   inboxProjectId: number | null,
 ): Project[] {
   return (projects ?? [])
-    .filter((p) => p.id !== inboxProjectId && !p.is_archived)
+    .filter((p) => isRealProject(p) && p.id !== inboxProjectId && !p.is_archived)
     .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/**
+ * Vikunja returns a saved filter in the project list, with a NEGATIVE id
+ * (measured on `pinguino` 2026-09-15: `Today` is -10, `Upcoming` is -9).
+ *
+ * A filter is a query, not a place. Offering one as somewhere to put a task
+ * would write `project_id: -10`, and the app has no way to undo that from the
+ * UI it would then be unable to list the task in.
+ */
+export function isRealProject(project: Pick<Project, "id">): boolean {
+  return project.id > 0;
 }

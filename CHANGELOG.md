@@ -67,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `D-adverb` in `docs/HANDOVER.md`.
 
 ### Fixed
+- **Saved filters are no longer offered as projects.** Vikunja returns `Today`
+  and `Upcoming` from its project list, with negative ids and nothing else to
+  tell them apart. They were listed in the sidebar as if they were projects,
+  and `#Today` in the composer would have filed a task inside a saved search.
 - **The six-second window to undo a completion now actually appears.** It never
   did in `pnpm dev`: an unmount guard added during review stayed latched after
   React StrictMode's remount, so completed rows vanished instantly and the Undo

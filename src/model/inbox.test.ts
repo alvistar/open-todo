@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Project, User } from "../api/types";
-import { resolveInboxProjectId, sidebarProjects } from "./inbox";
+import { isRealProject, resolveInboxProjectId, sidebarProjects } from "./inbox";
 
 const project = (id: number, title: string, over: Partial<Project> = {}): Project =>
   ({ id, title, ...over }) as Project;
@@ -48,5 +48,23 @@ describe("sidebarProjects", () => {
       project(4, "Old", { is_archived: true }),
     ];
     expect(sidebarProjects(projects, 1).map((p) => p.title)).toEqual(["Admin", "Work"]);
+  });
+});
+
+describe("isRealProject", () => {
+  it("rejects a saved filter, which Vikunja lists with a negative id", () => {
+    // Measured on `pinguino`: GET /projects returns Today as -10, Upcoming -9.
+    expect(isRealProject({ id: -10 })).toBe(false);
+    expect(isRealProject({ id: 3 })).toBe(true);
+  });
+
+  it("keeps saved filters out of the project list entirely", () => {
+    const projects = [
+      { id: 1, title: "Inbox" },
+      { id: 3, title: "Work" },
+      { id: -10, title: "Today" },
+    ] as Project[];
+
+    expect(sidebarProjects(projects, 1).map((p) => p.title)).toEqual(["Work"]);
   });
 });

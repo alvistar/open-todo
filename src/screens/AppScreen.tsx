@@ -4,7 +4,7 @@ import { projectIdFromRoute, useRoute } from "../app/route";
 import { logOut } from "../auth/authStore";
 import { useLiveSource } from "../live/useLiveSource";
 import { groupTasksForView } from "../model/grouping";
-import { resolveInboxProjectId, sidebarProjects } from "../model/inbox";
+import { isRealProject, resolveInboxProjectId, sidebarProjects } from "../model/inbox";
 import { applyPending } from "../model/pending";
 import { type Decision, withDecisions } from "../model/quickadd/decisions";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
@@ -162,7 +162,11 @@ export function AppScreen() {
       // A task typed inside a project view belongs to that project unless the
       // phrase says otherwise.
       defaultProjectId: projectIdFromRoute(route) ?? inboxProjectId,
-      projects: (projectsQuery.data ?? []).map((p) => ({ id: p.id, title: p.title })),
+      // Saved filters come back from GET /projects too, with negative ids. A
+      // task cannot live in a query, so "#Today" must not resolve to one.
+      projects: (projectsQuery.data ?? [])
+        .filter(isRealProject)
+        .map((p) => ({ id: p.id, title: p.title })),
       labels: (labelsQuery.data ?? []).map((l) => ({ id: l.id, title: l.title })),
     }),
     [
