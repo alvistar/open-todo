@@ -1,0 +1,75 @@
+/* layout-specs §4: the title and the description are "editable on click", the
+   display carrying r3 and the same type as the value it replaces. */
+.display {
+  display: block;
+  width: 100%;
+  padding: 1px 4px;
+  margin: 0 -4px;
+  border-radius: 3px;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.display:hover {
+  background: var(--hover-fill);
+}
+
+.editor {
+  display: block;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--border-idle);
+  border-radius: var(--radius-base);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  resize: none;
+}
+
+.editor:focus {
+  border-color: var(--border-focus);
+  outline: none;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.button {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-base);
+  font: 600 13px / 32px var(--font-sans);
+}
+
+.cancel {
+  background: var(--hover-fill);
+  color: var(--text-on-secondary-button);
+}
+
+.save {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.save:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.error {
+  margin: 8px 0 0;
+  font: 400 12px / 18px var(--font-sans);
+  color: var(--schedule-overdue);
+}
+
+/* Said BEFORE the user types, not after they have lost something. */
+.notice {
+  margin: 0 0 8px;
+  font: 400 12px / 18px var(--font-sans);
+  color: var(--schedule-tomorrow);
+}

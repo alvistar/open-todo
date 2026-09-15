@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { TaskPatch } from "../../api/endpoints";
 import type { Task } from "../../api/types";
 import { TaskDetail } from "./TaskDetail";
 
@@ -22,11 +23,15 @@ const task = (over: Partial<Task> = {}): Task => ({
   ...over,
 });
 
-function open(
-  over: Partial<Task> = {},
-  props: Partial<Parameters<typeof TaskDetail>[0]> = {},
-) {
+interface Extras {
+  onPrev?: () => void;
+  onNext?: () => void;
+  onSave?: (values: TaskPatch) => Promise<void>;
+}
+
+function open(over: Partial<Task> = {}, extra: Extras = {}) {
   const onClose = vi.fn();
+  const onSave = extra.onSave ?? vi.fn(async () => {});
   render(
     <TaskDetail
       task={task(over)}
@@ -35,10 +40,12 @@ function open(
       timeZone="Europe/Rome"
       defaultDueTime={null}
       onClose={onClose}
-      {...props}
+      onSave={onSave}
+      {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
+      {...(extra.onNext ? { onNext: extra.onNext } : {})}
     />,
   );
-  return { onClose };
+  return { onClose, onSave };
 }
 
 describe("the dialog frame", () => {
@@ -63,6 +70,7 @@ describe("the dialog frame", () => {
         timeZone="Europe/Rome"
         defaultDueTime={null}
         onClose={vi.fn()}
+        onSave={vi.fn(async () => {})}
       />,
     );
     expect(screen.getByLabelText("Close")).toHaveFocus();
@@ -151,15 +159,117 @@ describe("what it shows", () => {
     expect(screen.getByText("Fill it")).toBeInTheDocument();
   });
 
-  it("offers no control it cannot honour yet", () => {
-    // Editing arrives field by field. Until then the dialog must not paint a
-    // button that does nothing - this app has shipped two of those already.
+  it("opens no editor until it is asked to", () => {
     open({ description: "something" });
     const named = screen
       .getAllByRole("button")
       .map((b) => b.getAttribute("aria-label") ?? b.textContent);
 
-    expect(named.filter((n) => n?.startsWith("Complete"))).toHaveLength(1);
     expect(named).not.toContain("Save");
+    expect(named).not.toContain("Cancel");
+  });
+});
+
+describe("editing the name and the description", () => {
+  it("turns the name into an editor on click, seeded with the value", () => {
+    open();
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+
+    expect(screen.getByLabelText("Edit the task name")).toHaveValue("Water the plants");
+  });
+
+  it("writes only the field it edits", async () => {
+    const onSave = vi.fn(async () => {});
+    open({}, { onSave });
+
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "Water the ferns" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({ title: "Water the ferns" }),
+    );
+  });
+
+  it("throws the draft away on Cancel and writes nothing", () => {
+    const onSave = vi.fn(async () => {});
+    open({}, { onSave });
+
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "nonsense" },
+    });
+    fireEvent.click(screen.getByText("Cancel"));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Water the plants")).toBeInTheDocument();
+  });
+
+  it("does NOT discard on Escape, and does not close the dialog either", () => {
+    // Measured in Todoist: Escape leaves the editor alone. Here it must also
+    // not reach the dialog, or one key would throw away the text AND close the
+    // pane it was in.
+    const { onClose } = open();
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    const editor = screen.getByLabelText("Edit the task name");
+    fireEvent.change(editor, { target: { value: "still here" } });
+
+    // Fired on the editor, which is where the user's focus is; it bubbles to
+    // the dialog's own window listener, and that listener is what must ignore
+    // it while a form control has the focus.
+    fireEvent.keyDown(editor, { key: "Escape" });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Edit the task name")).toHaveValue("still here");
+  });
+
+  it("keeps the editor and the text when the save fails", async () => {
+    // The draft is the only copy there is.
+    const onSave = vi.fn(async () => {
+      throw new Error("403 Forbidden");
+    });
+    open({}, { onSave });
+
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "kept" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => expect(screen.getByText("403 Forbidden")).toBeInTheDocument());
+    expect(screen.getByLabelText("Edit the task name")).toHaveValue("kept");
+  });
+
+  it("saves the description as the minimal HTML Vikunja stores", async () => {
+    const onSave = vi.fn(async () => {});
+    open({ description: "<p>old</p>" }, { onSave });
+
+    fireEvent.click(screen.getByLabelText("Edit the description"));
+    fireEvent.change(screen.getByLabelText("Edit the description"), {
+      target: { value: "one\ntwo" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({ description: "<p>one</p><p>two</p>" }),
+    );
+  });
+
+  it("warns BEFORE typing when formatting would be lost", () => {
+    // A description written in Veyrn with a link reads as plain text here, and
+    // saving would drop the link without anyone being told.
+    open({ description: '<p>See <a href="https://x">this</a></p>' });
+    fireEvent.click(screen.getByLabelText("Edit the description"));
+
+    expect(screen.getByText(/cannot keep/)).toBeInTheDocument();
+  });
+
+  it("says nothing when there is no formatting to lose", () => {
+    open({ description: "<p>plain</p>" });
+    fireEvent.click(screen.getByLabelText("Edit the description"));
+
+    expect(screen.queryByText(/cannot keep/)).not.toBeInTheDocument();
   });
 });

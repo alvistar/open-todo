@@ -11,8 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **You can open a task.** Enter on a focused row, or a click, opens the detail
   at the geometry measured in `docs/layout-specs.md` §4: the project it belongs
   to, its description, its sub-tasks, and its date, priority, labels and
-  reminders down the side. It reads, for now; editing arrives field by field
-  with the write each one needs.
+  reminders down the side. **Its name and its description are editable**: click
+  one, change it, press Save. Escape does not discard — Cancel does, and a
+  failed save keeps your text on screen with the reason.
+  - Editing a description that was written with formatting elsewhere says so
+    **before** you type, because open-todo shows descriptions as plain text and
+    would save them back that way.
 - **The task list has a keyboard**, with Todoist's own map: Up/Down or `J`/`K`
   move between tasks, **Enter opens** the focused one, `E` completes or reopens
   it, and `Z` takes back a completion while the row is still on screen. The list is now a single Tab stop instead

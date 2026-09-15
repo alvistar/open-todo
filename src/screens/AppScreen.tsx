@@ -12,6 +12,7 @@ import { type RowContext, toTaskRow } from "../model/taskRow";
 import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
+import { useUpdateTask } from "../queries/useUpdateTask";
 import { useLabels, useProjects, useUser, useViewTasks } from "../queries/useVikunja";
 import { readThemePreference, resolveTheme, setTheme } from "../theme/theme";
 import { TaskDetail } from "../ui/detail/TaskDetail";
@@ -82,6 +83,7 @@ export function AppScreen() {
   useLiveSource({ view, timeZone, enabled: !tasksQuery.isPending });
 
   const completing = useCompleteTask({ timeZone, defaultDueTime });
+  const editing = useUpdateTask();
 
   // Navigating away drops the pending rows: they are a few seconds of "you
   // just did this", not a place tasks are kept (D-write).
@@ -308,6 +310,9 @@ export function AppScreen() {
           timeZone={timeZone}
           defaultDueTime={defaultDueTime}
           onClose={() => setOpenTaskId(null)}
+          onSave={async (values) => {
+            await editing.mutateAsync({ task: openTask, values });
+          }}
           {...(openIndex > 0 ? { onPrev: () => step(-1) } : {})}
           {...(openIndex >= 0 && openIndex < tasks.length - 1
             ? { onNext: () => step(1) }

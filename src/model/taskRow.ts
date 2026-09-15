@@ -86,3 +86,35 @@ export function stripHtml(html: string): string {
     .replace(/&#39;/g, "'");
   return decoded.replace(/\s+/g, " ").trim();
 }
+
+/**
+ * True when the stored description carries markup this app cannot round-trip.
+ *
+ * Vikunja stores HTML from its own rich editor; open-todo shows it as one line
+ * of text and would save it back as text. Paragraphs and line breaks survive
+ * that trip. Anything else - a link, bold, a list, an image - does not, and the
+ * user who wrote it in Veyrn would never be told. So the editor says so first.
+ */
+export function isRichHtml(html: string | undefined): boolean {
+  if (!html) return false;
+  const tags = html.match(/<\/?([a-z][a-z0-9]*)\b[^>]*>/gi) ?? [];
+  return tags.some((tag) => {
+    const name = /<\/?([a-z][a-z0-9]*)/i.exec(tag)?.[1]?.toLowerCase();
+    return name !== undefined && !["p", "br", "div", "span"].includes(name);
+  });
+}
+
+/**
+ * Text back into the minimal HTML Vikunja expects: one paragraph per line.
+ * Nothing here invents markup the user did not type.
+ */
+export function toDescriptionHtml(text: string): string {
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const kept = lines.filter((line, i) => line !== "" || (i > 0 && i < lines.length - 1));
+  if (kept.every((line) => line === "")) return "";
+  return kept.map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}

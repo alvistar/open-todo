@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Project, Task } from "../api/types";
-import { type RowContext, stripHtml, toTaskRow } from "./taskRow";
+import {
+  isRichHtml,
+  type RowContext,
+  stripHtml,
+  toDescriptionHtml,
+  toTaskRow,
+} from "./taskRow";
 
 const NOW = new Date("2026-09-09T08:00:00Z");
 
@@ -93,5 +99,37 @@ describe("stripHtml", () => {
 
   it("removes tags without letting markup through", () => {
     expect(stripHtml('<img src=x onerror="alert(1)">hi')).toBe("hi");
+  });
+});
+
+describe("isRichHtml", () => {
+  it("is false for what this app can round-trip", () => {
+    expect(isRichHtml(undefined)).toBe(false);
+    expect(isRichHtml("")).toBe(false);
+    expect(isRichHtml("<p>Two lines</p><p>of plain text</p>")).toBe(false);
+    expect(isRichHtml("a<br>b")).toBe(false);
+  });
+
+  it("is true for markup that would be lost", () => {
+    // Written in Veyrn or Vikunja's own editor, invisible in our one-line
+    // display, and gone the moment someone edits the text here.
+    expect(isRichHtml('<p>See <a href="https://x">this</a></p>')).toBe(true);
+    expect(isRichHtml("<p><strong>Urgent</strong></p>")).toBe(true);
+    expect(isRichHtml("<ul><li>one</li></ul>")).toBe(true);
+  });
+});
+
+describe("toDescriptionHtml", () => {
+  it("makes one paragraph per line", () => {
+    expect(toDescriptionHtml("one\ntwo")).toBe("<p>one</p><p>two</p>");
+  });
+
+  it("escapes what the user typed rather than trusting it as markup", () => {
+    expect(toDescriptionHtml("a < b & c")).toBe("<p>a &lt; b &amp; c</p>");
+  });
+
+  it("gives an empty description for empty text", () => {
+    expect(toDescriptionHtml("")).toBe("");
+    expect(toDescriptionHtml("   \n  ")).toBe("");
   });
 });

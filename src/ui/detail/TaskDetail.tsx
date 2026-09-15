@@ -1,10 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { TaskPatch } from "../../api/endpoints";
 import type { Task } from "../../api/types";
 import { formatDueLabel, parseVikunjaDate } from "../../model/dates";
 import { priorityFromVikunja, priorityLabel } from "../../model/priority";
-import { stripHtml } from "../../model/taskRow";
+import { isRichHtml, stripHtml, toDescriptionHtml } from "../../model/taskRow";
 import { Icon } from "../icons/Icon";
 import { PriorityCheckbox } from "../PriorityCheckbox";
+import { EditableField } from "./EditableField";
 import styles from "./TaskDetail.module.css";
 
 /**
@@ -28,6 +30,8 @@ export interface TaskDetailProps {
   timeZone: string;
   defaultDueTime: string | null;
   onClose: () => void;
+  /** Writes the named columns. Rejecting keeps the editor open with its text. */
+  onSave: (values: TaskPatch) => Promise<void>;
   /** Absent at the ends of the list; the buttons are then disabled. */
   onPrev?: () => void;
   onNext?: () => void;
@@ -40,9 +44,12 @@ export function TaskDetail({
   timeZone,
   defaultDueTime,
   onClose,
+  onSave,
   onPrev,
   onNext,
 }: TaskDetailProps) {
+  /** At most one editor is open, so the dialog holds which. */
+  const [editing, setEditing] = useState<"title" | "description" | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   // Read through a ref so the effects do not depend on a callback the parent
@@ -68,7 +75,19 @@ export function TaskDetail({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target !== null &&
+        (/^(INPUT|TEXTAREA)$/.test(target.tagName) || target.isContentEditable);
+
       if (event.key === "Escape") {
+        /*
+         * Escape belongs to the dialog, not to an open editor. Todoist does
+         * not discard on Escape either, and if it did here the key would carry
+         * two destructive meanings at once - throw away the text AND close the
+         * pane it was in. Cancel is the only discard.
+         */
+        if (typing) return;
         event.preventDefault();
         onCloseRef.current();
         return;
@@ -174,13 +193,38 @@ export function TaskDetail({
               </span>
               <div className={styles.text}>
                 <h1 className={styles.title} id="task-detail-title">
-                  {task.title}
+                  <EditableField
+                    value={task.title}
+                    label="Edit the task name"
+                    editing={editing === "title"}
+                    onEdit={() => setEditing("title")}
+                    onClose={() => setEditing(null)}
+                    onSave={(next) => onSave({ title: next.trim() })}
+                  >
+                    {task.title}
+                  </EditableField>
                 </h1>
-                <p
-                  className={`${styles.description} ${description ? "" : styles.placeholder}`}
-                >
-                  {description || "No description"}
-                </p>
+                <div className={styles.description}>
+                  <EditableField
+                    value={description}
+                    label="Edit the description"
+                    multiline
+                    editing={editing === "description"}
+                    onEdit={() => setEditing("description")}
+                    onClose={() => setEditing(null)}
+                    onSave={(next) => onSave({ description: toDescriptionHtml(next) })}
+                    {...(isRichHtml(task.description)
+                      ? {
+                          notice:
+                            "This description was written with formatting open-todo cannot keep. Saving here turns it into plain text.",
+                        }
+                      : {})}
+                  >
+                    <span className={description ? "" : styles.placeholder}>
+                      {description || "No description"}
+                    </span>
+                  </EditableField>
+                </div>
                 {subtasks.length > 0 ? (
                   <div className={styles.subtasks}>
                     <ul className={styles.subtaskList}>

@@ -66,8 +66,7 @@ export function applyPending(tasks: Task[], pending: PendingRows): Task[] {
     .sort((a, b) => a.index - b.index);
 
   for (const row of missing) {
-    const restored =
-      row.kind === "completed" ? { ...row.task, done: true } : row.task;
+    const restored = row.kind === "completed" ? { ...row.task, done: true } : row.task;
     result.splice(Math.min(row.index, result.length), 0, restored);
     changed = true;
   }
