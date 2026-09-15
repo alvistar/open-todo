@@ -1,8 +1,9 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** foundation slice built (read-only app). All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-15. The app can complete a task (D-write), and a bare repeat adverb is offered rather than applied (D-adverb). Until then it could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. Next: keyboard navigation (D4 step 2).
+**Status:** the app reads *and writes*: quick-add, completion, a keyboard, and a
+full task-detail dialog. All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
+**Last session:** 2026-09-15 — two of them, in sequence. The first made a task completable (D-write) and turned a bare repeat adverb into an offer rather than a schedule (D-adverb); until then the app could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. The second gave the list a keyboard (D4 step 2) and built the whole task-detail dialog (D-detail): open a task, edit its name and description, pick its project, date, priority, labels and reminders, read and add comments, add sub-tasks. **Next:** D4 step 3 (drag reorder), with the incomplete Italian language pack (§4, D-vocab) as the other live candidate — see §7 item 11.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -10,10 +11,20 @@ owner's working language is Italian).
 
 ## 0. Read this first (new session starting from this repo)
 
-You are picking this up cold. The repo now contains this document, the
-research material, and a working read-only web app (the foundation slice).
-`pnpm install && pnpm dev` runs it; see the README for how to point it at an
-instance.
+You are picking this up cold. The repo contains this document, the research
+material, and a **working app that reads and writes** — quick-add with
+natural-language parsing, completion with an undo window, a keyboard, and a
+full task-detail dialog. `pnpm install && pnpm dev` runs it (port 5173; 5199 is
+what the last sessions used); see the README for how to point it at an instance.
+
+The gate is `npx tsc -b && npx biome check . && npx vitest run` — 642 tests,
+biome clean across all 135 files. Plus `node scripts/sync-version.mjs --check`
+and `node scripts/sync-design-tokens.mjs --check`. **Write tests against a real
+server are opt-in**: `VIKUNJA_TEST_URL` + `VIKUNJA_TEST_TOKEN` +
+`VIKUNJA_TEST_WRITE=1` on `src/api/integration.write.test.ts`. They are
+self-cleaning, and they run against the owner's **real** instance — keep the
+discipline the last sessions kept: prefix scratch tasks `open-todo `, delete
+them, and check there are zero leftovers.
 
 **Do this, in order:**
 
@@ -22,7 +33,10 @@ instance.
    produced it is probably gone.
 2. D3, D4 and D5 are decided (§4). Do not reopen them; D2 is settled
    per screen during the measuring pass.
-3. Go to §7 and start at its first unfinished step.
+3. Go to §7. Items 1-10 are done; **item 11 is the open list, ranked**.
+4. Before touching any write, read D-write and D-detail in §4 and items 13-21 of
+   `docs/data-model-mapping.md` §6. `POST /tasks/{id}` is not a patch — every
+   omitted field is erased — and several of the traps under that are silent.
 
 **How the owner wants decisions handled:** one at a time, as a written brief in
 the message (mechanism → what's wrong → why it matters → cost of each option →
@@ -176,13 +190,17 @@ this order:
    against Vikunja's UI; gives a daily-usable app at slice one. Its parser must
    map dates, priority and recurrence onto Vikunja's fields, which is why the
    §5 mapping table is written first.
-2. ~~**Keyboard navigation**~~ — done 2026-09-15: one tab stop for the list,
-   Up/Down between rows, Enter to complete, `u` to undo. The "detail pane" half
-   is not built, because there is no detail pane: `TaskRow.onOpen` still has no
-   destination. Enter therefore means COMPLETE rather than OPEN — the only act
-   a row can perform today — and the key map is a design choice, not a
-   measurement: `docs/layout-specs.md` never captured hover or focus states
-   (§7 item 3), so there is no reference to copy here.
+2. ~~**Keyboard navigation**~~ — done 2026-09-15: the list is **one tab stop**
+   with a roving `tabindex`, not fifty. The handler hangs off each ROW, not off
+   the scroll container, because the quick-add composer renders in that
+   container's footer and a handler up there would see every keystroke typed
+   into a task name (`u` would undo while you were spelling "usare").
+   **The key map was corrected the same day, in the commit that gave Enter a
+   destination** (`90fe290`): it is now Todoist's own, read off the product's
+   shortcut panel rather than invented — Enter **opens**, `E` completes, `Z`
+   undoes, `J`/`K` alias the arrows. The first cut shipped Enter=complete and
+   `u`=undo only because `TaskRow.onOpen` had no destination yet; D-detail gave
+   it one. Hover and focus states are still unmeasured (§7 item 3).
 3. **Drag reorder with persisted order** — `dnd-kit` for the gesture; the real
    work is how Vikunja's `position` field and kanban buckets represent order.
    **Check Vikunja's position semantics in Veyrn's Swift code during the
@@ -574,6 +592,103 @@ test that PASSES while asserting the wrong behaviour, so that a refactor could
 not quietly change its shape. Nothing is left to pin, so the file is deleted —
 recreate it when the next defect needs it.
 
+### D-detail — The task-detail dialog — **DECIDED 2026-09-15**
+
+D4 step 2 shipped a keyboard whose Enter had nowhere to go: `TaskRow.onOpen` had
+been declared since the foundation slice, plumbed through `ListView.onOpenTask`,
+and never supplied. That unterminated wire had already cost twice (the review's
+inert "Reopen" checkbox, and Enter having to mean COMPLETE). The dialog
+terminates it. Geometry is `docs/layout-specs.md` §4 at its measured numbers —
+864×750, r10, header 48, main 604 / sidebar 260.
+
+**The load-bearing decision: there are TWO commit models, and they are
+independent.** Both were measured on the reference product, not guessed.
+
+| Half | Fields | How it commits |
+|---|---|---|
+| Main column | name, description | opens on click, written **only by Save**; **Cancel is the only discard** |
+| Sidebar | project, date, priority, labels, reminders | **picking writes**. No Save, no Cancel |
+
+Settled by experiment before a line was written: open the title editor, type
+into it, change the priority, press Cancel. The title reverts; the priority
+stays, and survives a reload. So `EditableField` and `PickerField` share no
+state and neither closes the other.
+
+`Escape` does **not** discard in the main column — the dialog's own Escape
+closes the dialog, so a discarding Escape would throw away the text *and* the
+pane it was in. The dialog's key handler ignores Escape while a form control
+holds the focus.
+
+**A failed write never eats what you typed**, in either half: the editor stays
+open with the draft and the server's reason beneath it (the draft is the only
+copy that exists), and a failed pick keeps its picker open, because with no
+Save button to stay behind, closing would put the old value back on screen with
+nothing to explain it.
+
+**Where the task comes from.** The dialog reads it out of the open view's cached
+list, not a query of its own. One source of truth means the 20 s poll keeps an
+open dialog current for free and the two existing `queryKey[0] === "tasks"`
+invalidations keep working; a private detail key would be invisible to both, so
+the row behind the dialog and the dialog itself would disagree after every
+write. `useUpdateTask` writes the server's returned task into every cached view
+that holds it *before* invalidating, so both change in the same frame.
+The one deliberate exception is comments, under `["task", id, "comments"]` —
+**not** under `"tasks"`, or completing any task anywhere would refetch every
+open thread.
+
+**Decisions inside it worth not re-deriving:**
+
+1. **Descriptions and comments are HTML; this app shows them as one line of
+   text.** Saving that text back would silently drop any link, bold or list a
+   Veyrn user wrote. `isRichHtml` detects markup that cannot survive the round
+   trip and the editor says so **before** the first keystroke;
+   `toDescriptionHtml` escapes what is typed and wraps it one paragraph per
+   line, inventing no markup the user did not write.
+2. **An edited name is parsed the way the composer parses a new one**, and the
+   **sidebar is the feedback** — the owner chose it over chips beside the field.
+   The rows show what Save would set and say "(when you save)", because a colour
+   alone would make the channel invisible to a screen reader. It never names a
+   column whose value already matches (naming a column is what makes it written
+   — mapping §6 item 13 — so re-writing an unchanged value is a free chance to
+   clobber a concurrent edit), never saves a phrase that leaves no name behind,
+   and never creates a label. The phrase is re-read with a fresh clock at Save,
+   because a preview computed at the last keystroke is a day stale in a tab left
+   open overnight.
+3. **The date picker's shortcuts are PHRASES, not computed dates**, run through
+   `dueDateFromPhrase` — the same acceptor the composer uses, so the button and
+   the field under it cannot disagree about what "tomorrow" means. Two
+   consequences, both accepted: "This weekend" is not in the grammar, so that
+   shortcut sends "saturday"; and a half-understood phrase is **refused**
+   rather than half-applied. D-vocab all the way down.
+4. **Creating a label is a BUTTON, never a keystroke.** Enter in the filter
+   field does nothing on purpose: the label namespace is shared by every task in
+   the instance, so a typo committed by typing is not undoable by whoever made
+   it. The button names what it will create. And `PUT /labels` accepts a
+   duplicate title (§6 item 19), so `canCreateLabel` is the only thing standing
+   between an instance and two labels called `urgent`.
+5. **A sub-task is shown under its parent and nowhere else.** `ViewDef` gains
+   `includes` and `belongs` is *defined* in terms of it, with a test asserting
+   `belongs` implies `includes` for every view, so the fetched-list filter and
+   the poll's in-view predicate cannot drift. Vikunja's filter language cannot
+   express "has no parent", so this is client-side either way.
+   `rowContext.tasksById` is still built from the **unfiltered** list, or every
+   "1 / 3" badge would under-report its own children. Stated rather than
+   discovered later: a child whose parent is not in the view — done, or in
+   another project — is visible nowhere. That matches the reference product and
+   is the likeliest bug report.
+6. **Nothing is painted that cannot be honoured.** The first cut of the dialog
+   was read-only and deliberately drew no control it could not yet write;
+   editing arrived field by field with the write each one needs. A button that
+   does nothing is the defect this app keeps relearning.
+
+**Verified against `pinguino` in the browser, not only in jsdom**, at every
+step, and every scratch task, label and comment deleted afterwards. The
+server-side findings are `docs/data-model-mapping.md` §6 items 15-21.
+
+**Known gap with the reference product, measured and never decided:** it asks
+*"Ignorare le modifiche non salvate?"* before discarding an edit; open-todo's
+Cancel just discards.
+
 ---
 
 ## 5. Data model gap: Vikunja ↔ Todoist
@@ -626,9 +741,9 @@ public HTTP API only, which carries no such obligation.
 3. ~~Measure and record layout specs~~ — done 2026-09-09
    (`docs/layout-specs.md`, `docs/sketches/reference-20260909.html`). Still
    open from that pass: hover/focus states were not measured (`:hover` cannot
-   be triggered from `orca eval`); the "Prossime" (upcoming) and project-with-
-   sections views were not measured; **the D3 accent hue has not been picked
-   yet** — the sketch uses the measured accent as a placeholder.
+   be triggered from `orca eval`), and the "Prossime" (upcoming) and
+   project-with-sections views were not measured. (The accent hue, open when
+   this item was written, was picked the same day — item 5.)
 4. ~~Write the Vikunja↔Todoist data-model mapping table~~ — done 2026-09-09
    (`docs/data-model-mapping.md`). Position semantics verified from Vikunja's
    own source, not Veyrn (Veyrn never writes positions). Its §6 records what was
@@ -685,11 +800,72 @@ public HTTP API only, which carries no such obligation.
    - One thing that run corrected, worth not rediscovering: Vikunja stores
      `due_date` to the SECOND, so a date carrying milliseconds comes back
      rounded and an exact comparison fails on noise.
-9. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
-   WebSocket events (D6). Start from `pkg/websocket/listener.go` and
-   `validEvents` in `connection.go`; the open question is how to resolve the
-   recipients of a project-scoped event. Before the OIDC part: add the SPA's origin to `cors.origins` on
-   `pinguino` and its URL to the Keycloak client's redirect URIs.
+9. ~~D4 slice 2 (keyboard navigation)~~ — done 2026-09-15 (D4 step 2 in §4).
+   One tab stop with a roving `tabindex`, the handler on the row rather than the
+   scroll container, and Todoist's own key map: Enter opens, `E` completes, `Z`
+   undoes, `J`/`K` alias the arrows. The map was corrected inside the same
+   session, in the commit that gave Enter a destination.
+   One defect from that slice is worth not rediscovering: the review's fix for
+   "setState after unmount" left `live` false forever after StrictMode's
+   mount/unmount/mount, so **the six-second undo window was dead in `pnpm dev`
+   and fine in a production build** — correct where nobody looks, broken where
+   the app is actually run. `renderHook` does not reproduce it and the tests
+   still cannot catch it; it was found by driving the app, which is written into
+   the test file so the next person does not trust the suite here.
+
+10. ~~The task-detail dialog~~ — done 2026-09-15 (D-detail in §4). Twelve
+    commits; `git log 5c18a4f..ad9be97` carries the reasoning, the measurements
+    and the rejected alternatives, and is the thing to read rather than this
+    summary. Notes for whoever continues:
+    - **Two commit models, both measured.** Main column (name, description)
+      needs an explicit Save and Cancel is the only discard; the sidebar
+      (project, date, priority, labels, reminders) **commits on pick**. They are
+      independent — a pick made while the name editor is open survives that
+      editor's Cancel. See D-detail before touching either.
+    - **Every write still goes through `updateTask`**, which names its fields
+      via `/tasks/bulk`. The traps measured on the way, each pinned by
+      `src/api/integration.write.test.ts`: an **empty `fields` list wipes the
+      task** (§6 item 17 — priority, due date and description were zeroed while
+      the reminder landed intact, which is what makes it convincing); a saved
+      filter arrives in `GET /projects` with a **negative id** and must never be
+      offered as a destination (item 15, `isRealProject`); an **absolute
+      reminder reads back as `relative_period: 0` with no `relative_to`**, so
+      branch on `relative_to` and never on the period (item 18); `PUT /labels`
+      **accepts duplicate titles** (item 19); `PUT /tasks/{parent}/relations`
+      sets **both sides**, so the inverse must not be written too (item 20).
+    - `deleteTask` still has **no UI**. It exists for the write test's cleanup.
+      A delete affordance is its own slice: confirmation, entry point,
+      reversibility.
+
+11. **Open, ranked.** Nothing here is started.
+    1. **The Italian language pack is incomplete** — `TODO(F3)`, `TODO(F5)` and
+       `TODO(F6)` in `src/model/quickadd/lang/pack.ts`. Those defects are closed
+       in **English only**, so `ogni secondo martedì` is silently scheduled as a
+       plain Tuesday and `ogni giorno a partire da lunedì` invents a due date.
+       The comments say **"Do not 'complete' this list as a tidy-up"**: this
+       needs the interview and the corpus gates, not a guess.
+    2. **D4 step 3 — drag reorder** (`dnd-kit`; position semantics are already
+       answered in `docs/data-model-mapping.md` §3), then **D4 step 4 — general
+       undo / toasts**.
+    3. **The participle veto left open by D-adverb** — no rule separates
+       `disdire il servizio pagato mensilmente` from `controllare il saldo
+       mensilmente`. The decision was to offer, not apply; the veto stays open,
+       and it is cheap to measure against the 4325-phrase corpus.
+    4. **F7**, an accepted limitation: Italian decimal commas (`corri ogni
+       1,5 km`) take the list rule's refusal and warn about a repeat nobody
+       wrote. Recorded in `docs/data-model-mapping.md` §5.
+    5. **A delete affordance** (item 10 above).
+    6. **Never measured**, from the original recon: hover and focus states, the
+       Upcoming view, and a project view with sections (item 3 above).
+    7. **The unsaved-changes confirmation** the reference product shows and
+       open-todo does not (D-detail, last paragraph).
+
+12. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
+    WebSocket events (D6). Start from `pkg/websocket/listener.go` and
+    `validEvents` in `connection.go`; the open question is how to resolve the
+    recipients of a project-scoped event. Before the OIDC part: add the SPA's
+    origin to `cors.origins` on `pinguino` and its URL to the Keycloak client's
+    redirect URIs.
 
 ---
 
