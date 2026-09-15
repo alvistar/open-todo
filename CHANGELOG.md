@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **You can now tick a task off.** Until this release the app could log in,
+  list and create, and nothing else: `TaskRow` had carried an unwired
+  `onToggleDone` prop since the foundation slice, so a task could be written
+  and never completed. `updateTask` and `deleteTask` are the writes D4 assumed
+  already existed. Decision and rationale: `D-write` in `docs/HANDOVER.md`.
+  - A completed row stays on screen for about six seconds, struck through,
+    with an **Undo**. Every view in this app filters `done = false` and there
+    is no Completed view, so without that window a misclick would put a task
+    out of reach until you opened Vikunja's own web UI.
+  - A **repeating** task is not completed by Vikunja, it is advanced: the
+    server sets `done` back to false and moves the dates forward. The row
+    therefore stays and reports its next date. It gets no Undo — the previous
+    due date is gone and the server keeps no history of it, so undoing could
+    only write back a guess.
+  - A failed write puts the row back and says why, on the row itself.
+  - The write goes through `POST /tasks/bulk` for a single task, which is the
+    only v1 path that names the fields it writes. `POST /tasks/{id}` is not a
+    patch: it re-applies every omitted field as its zero value, so the obvious
+    one-line toggle would have erased each task's description, dates,
+    priority, reminders, assignees **and its recurrence**.
+  - `src/api/integration.write.test.ts` (new, behind `VIKUNJA_TEST_WRITE=1`)
+    checks all of that against a real instance and cleans up after itself.
+
 ### Fixed
 - **Six quick-add defects found by a 4325-phrase corpus**, each one silent.
   Every fix is a §5 grammar amendment recorded in `docs/data-model-mapping.md`.

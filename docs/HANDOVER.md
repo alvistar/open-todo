@@ -2,7 +2,7 @@
 
 **Created:** 2026-09-09
 **Status:** foundation slice built (read-only app). All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-10. Quick-add closed against §5 (D-vocab): the date grammar is now enforced rather than merely documented, out-of-grammar phrases are reported instead of silently reinterpreted, and a quoted line opts out entirely. Next: keyboard navigation (D4 step 2).
+**Last session:** 2026-09-15. The app can complete a task (D-write). Until then it could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. Next: keyboard navigation (D4 step 2).
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -584,7 +584,25 @@ public HTTP API only, which carries no such obligation.
    §5 grammar was closed against it the same day (D-vocab) — both entries are
    in §4, and §5.1 of the mapping doc is the enforced table.
    Next: keyboard navigation, then drag reorder, then undo.
-8. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
+8. ~~Make a task completable~~ — done 2026-09-15 (D-write in §4). `updateTask`
+   and `deleteTask`, the checkbox wired to the first of them, a six-second
+   linger with an Undo, and the repeating case reported rather than faked.
+   Notes for whoever continues:
+   - **`POST /tasks/{id}` erases every field the body omits.** Read off the
+     v2.5.0 source and recorded as `docs/data-model-mapping.md` §6 item 13.
+     Every future write — inline edit, reschedule, project move — goes through
+     `updateTask`, which names its fields. Do not add a second write path
+     without reading that row first.
+   - `deleteTask` exists with no UI behind it, for the write test's cleanup.
+     A delete affordance is its own slice: confirmation, entry point,
+     reversibility.
+   - `src/api/integration.write.test.ts` is the probe for all of it, behind
+     `VIKUNJA_TEST_WRITE=1`. Re-run it after a server upgrade, the way §6 item
+     7-12 were re-run.
+   - Still open from this pass: **it has not yet been run against `pinguino`**
+     at the time of writing, so items 13 and 14 are read-from-source, not
+     measured.
+9. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
    WebSocket events (D6). Start from `pkg/websocket/listener.go` and
    `validEvents` in `connection.go`; the open question is how to resolve the
    recipients of a project-scoped event. Before the OIDC part: add the SPA's origin to `cors.origins` on
