@@ -58,6 +58,22 @@ pnpm test src/api/integration.test.ts
 It only reads: it checks `/info`, the user's default project, and that the
 filter forms this app relies on are still accepted.
 
+A second integration test **writes**, and so needs a third variable on top of
+those two — it cannot run by accident:
+
+```bash
+VIKUNJA_TEST_URL=https://vikunja.example \
+VIKUNJA_TEST_TOKEN=tk_... \
+VIKUNJA_TEST_WRITE=1 \
+pnpm test src/api/integration.write.test.ts
+```
+
+It creates two scratch tasks in your default project, completes and reopens
+them, and deletes them at the end. What it is checking is that completing a
+task does not erase the rest of it, and that a repeating task is advanced
+rather than completed — see `D-write` in `docs/HANDOVER.md` for why that is
+not a given.
+
 ## Deploy
 
 `pnpm build` produces `dist/`, a folder of static files. Serve it from any web
