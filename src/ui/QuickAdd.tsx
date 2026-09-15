@@ -146,7 +146,15 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
    * scrolled internally to follow the caret while the overlay did not, so past
    * about one line the marks sat under unrelated glyphs and the overlay painted
    * over the toolbar.
+   *
+   * `text` is a TRIGGER, not a read: the body measures the DOM, which has
+   * already been given the new value by the time this runs. Biome sees an
+   * unused dependency and offers to drop it - that fix would stop the box
+   * growing altogether. It cannot be moved into `onChange` either, because
+   * `text` is also reset after a submit and cleared by the toolbar, and both
+   * of those need the box to shrink back.
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: text is what must re-run this, not what it reads.
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;

@@ -35,6 +35,9 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
  * otherwise leave a stray .ts that biome, tsc and vitest all pick up.
  */
 const BASELINE_FILE = "src/model/quickadd/.datePhrase.baseline.tmp.ts";
+/* Written and removed through this ONE value. Two other spellings of the same
+   path used to sit at the call sites, which is how the named one drifted into
+   being unused: three ways to say it, and the tidiest one said by nobody. */
 const BASELINE_PATH = new URL(BASELINE_FILE, `file://${ROOT}`);
 
 const TZ = "Europe/Rome";
@@ -94,10 +97,7 @@ const baselineSource = execFileSync(
   ["show", `${BASELINE_REF}:src/model/quickadd/datePhrase.ts`],
   { cwd: ROOT, encoding: "utf8" },
 );
-writeFileSync(
-  new URL(BASELINE_FILE, import.meta.url.replace(/scripts\/.*$/, "")),
-  baselineSource,
-);
+writeFileSync(BASELINE_PATH, baselineSource);
 
 const server = await createServer({ root: ROOT, server: { middlewareMode: true } });
 try {
@@ -117,7 +117,5 @@ try {
   );
 } finally {
   await server.close();
-  rmSync(new URL(BASELINE_FILE, import.meta.url.replace(/scripts\/.*$/, "")), {
-    force: true,
-  });
+  rmSync(BASELINE_PATH, { force: true });
 }

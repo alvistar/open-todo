@@ -107,6 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `D-adverb` in `docs/HANDOVER.md`.
 
 ### Fixed
+- The lint run is clean again. `quickadd-corpus-diff` had three spellings of
+  one path and used the tidiest one nowhere; the composer's auto-growing box
+  keeps the dependency that makes it grow, now with the reason written down.
 - **Sub-tasks no longer appear twice.** A task with a parent was listed both
   under its parent and as an ordinary row of its own.
 - **Saved filters are no longer offered as projects.** Vikunja returns `Today`
