@@ -175,3 +175,19 @@
 .affordanceIcon {
   margin-right: 11px;
 }
+
+/* A run the parser recognised but did NOT apply: its words are still part of
+   the task name, so it must not read as "taken out of the title". No fill, a
+   dotted rule underneath, which is as much as an aria-hidden layer under a
+   transparent textarea can say. */
+.markOff {
+  background: none;
+  box-shadow: inset 0 -1px 0 0 var(--border-idle);
+}
+
+/* Recognised and waiting for the user to decide (D-adverb). Same idea, in the
+   accent, so it reads as an offer rather than as something switched off. */
+.markSuggested {
+  background: none;
+  box-shadow: inset 0 -2px 0 0 var(--accent-secondary-fill);
+}

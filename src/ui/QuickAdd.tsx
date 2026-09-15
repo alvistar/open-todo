@@ -3,7 +3,11 @@ import { type FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "
 import { classifySchedule, formatDueLabel } from "../model/dates";
 import { scheduleColorVar } from "../model/display";
 import { priorityFromVikunja, priorityLabel } from "../model/priority";
-import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
+import {
+  parseQuickAdd,
+  type QuickAddContext,
+  type QuickAddSpan,
+} from "../model/quickadd/parse";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Icon } from "./icons/Icon";
 import styles from "./QuickAdd.module.css";
@@ -19,21 +23,40 @@ export interface QuickAddProps {
   busy?: boolean;
 }
 
-/** Splits the text into plain and highlighted runs, for the overlay. */
-function runs(text: string, spans: { start: number; end: number }[]) {
-  const out: { text: string; marked: boolean; start: number }[] = [];
+interface Run {
+  text: string;
+  start: number;
+  /** Absent on the plain stretches between spans. */
+  span?: QuickAddSpan;
+}
+
+/** Splits the text into plain and recognised runs, for the overlay. */
+function runs(text: string, spans: QuickAddSpan[]): Run[] {
+  const out: Run[] = [];
   let cursor = 0;
   for (const span of spans) {
     if (span.start > cursor) {
-      out.push({ text: text.slice(cursor, span.start), marked: false, start: cursor });
+      out.push({ text: text.slice(cursor, span.start), start: cursor });
     }
-    out.push({ text: text.slice(span.start, span.end), marked: true, start: span.start });
+    out.push({ text: text.slice(span.start, span.end), start: span.start, span });
     cursor = span.end;
   }
   if (cursor < text.length) {
-    out.push({ text: text.slice(cursor), marked: false, start: cursor });
+    out.push({ text: text.slice(cursor), start: cursor });
   }
   return out;
+}
+
+/**
+ * How a recognised run is painted. A span that is not APPLIED keeps its words
+ * in the task name, so it must not look the same as one that was taken out of
+ * it: `off` is a value the user switched off, `suggested` is one the parser
+ * reported without acting on (D-adverb).
+ */
+function markClass(span: QuickAddSpan): string {
+  if (span.suggested && span.off) return `${styles.mark} ${styles.markSuggested}`;
+  if (span.off) return `${styles.mark} ${styles.markOff}`;
+  return styles.mark ?? "";
 }
 
 export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
@@ -123,7 +146,11 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
         <div className={styles.highlight} aria-hidden="true">
           {runs(text, parsed.spans).map((run) => (
             <Fragment key={`${run.start}-${run.text}`}>
-              {run.marked ? <span className={styles.mark}>{run.text}</span> : run.text}
+              {run.span ? (
+                <span className={markClass(run.span)}>{run.text}</span>
+              ) : (
+                run.text
+              )}
             </Fragment>
           ))}
         </div>
