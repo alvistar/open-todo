@@ -29,8 +29,13 @@ export interface UseCompleteTaskOptions {
 
 export interface CompleteTaskApi {
   pending: PendingRows;
-  /** `index` is where the row sits now, so it can be put back if it is dropped. */
-  complete: (task: Task, index: number) => void;
+  /**
+   * What the checkbox does: completes the task, or takes back a completion
+   * that is still lingering. The caller does not have to know which, and must
+   * not - a row drawn as done advertises "Reopen" and has to honour it.
+   * `index` is where the row sits now, so it can be put back if it is dropped.
+   */
+  toggle: (task: Task, index: number) => void;
   undo: (taskId: number) => void;
   /** Forget everything, e.g. on navigation. */
   reset: () => void;
@@ -40,15 +45,20 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
   const queryClient = useQueryClient();
   const [pending, setPending] = useState<ReadonlyMap<number, PendingRow>>(new Map());
 
+  /*
+   * The same map as the state, for the event handlers to read without being
+   * rebuilt on every change. It is written only from event and timer callbacks,
+   * never during render, so concurrent rendering cannot tear it.
+   */
+  const rows = useRef(new Map<number, PendingRow>());
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
-  // The callbacks are handed to a list that holds them across renders, so the
-  // in-flight check reads the map through a ref rather than a closure.
-  const pendingRef = useRef(pending);
-  pendingRef.current = pending;
-  // Read the options through a ref so a re-render with a new `now` does not
-  // have to rebuild the callbacks the list is holding.
+  /** Ids with a write on the wire right now. */
+  const inFlight = useRef(new Set<number>());
+  const live = useRef(true);
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   const clearTimer = useCallback((taskId: number) => {
     const timer = timers.current.get(taskId);
@@ -59,12 +69,8 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
   const forget = useCallback(
     (taskId: number) => {
       clearTimer(taskId);
-      setPending((current) => {
-        if (!current.has(taskId)) return current;
-        const next = new Map(current);
-        next.delete(taskId);
-        return next;
-      });
+      if (!rows.current.delete(taskId)) return;
+      if (live.current) setPending(new Map(rows.current));
     },
     [clearTimer],
   );
@@ -72,7 +78,8 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
   const put = useCallback(
     (row: PendingRow, ttl: number) => {
       clearTimer(row.task.id);
-      setPending((current) => new Map(current).set(row.task.id, row));
+      rows.current.set(row.task.id, row);
+      if (live.current) setPending(new Map(rows.current));
       timers.current.set(
         row.task.id,
         setTimeout(() => forget(row.task.id), ttl),
@@ -90,17 +97,17 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
 
   const write = useCallback(
     async (task: Task, index: number, done: boolean) => {
+      inFlight.current.add(task.id);
       try {
         const updated = await updateTask(http, task, { done });
 
-        if (done && isRepeating(task)) {
-          /*
-           * The server did not complete it. `updateDone` ran the repeat_mode
-           * handler, which set done back to false and moved the dates forward,
-           * so the row stays where it is and says what happened. It gets no
-           * Undo: the previous due date is gone and Vikunja keeps no history
-           * of it, so "undoing" could only write back a date we guessed.
-           */
+        if (!done) {
+          forget(task.id);
+        } else if (isRepeating(task)) {
+          // The server did not complete it: `updateDone` ran the repeat_mode
+          // handler, which put done back to false and moved the dates on. The
+          // row carries the server's own copy from here, so it shows the new
+          // date rather than the one the user was looking at.
           put(
             {
               task: updated,
@@ -110,10 +117,8 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
             },
             LINGER_MS,
           );
-        } else if (done) {
-          put({ task: updated, index, kind: "completed" }, LINGER_MS);
         } else {
-          forget(task.id);
+          put({ task: updated, index, kind: "completed" }, LINGER_MS);
         }
         refreshTasks();
       } catch (error) {
@@ -122,64 +127,86 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
             task,
             index,
             kind: "failed",
-            message:
-              error instanceof Error ? error.message : "The change could not be saved.",
+            message: `Not saved: ${
+              error instanceof Error ? error.message : "the change did not go through."
+            }`,
           },
           FAILURE_MS,
         );
+      } finally {
+        inFlight.current.delete(task.id);
       }
     },
     [put, forget, refreshTasks],
   );
 
-  const complete = useCallback(
-    (task: Task, index: number) => {
-      // A second click on the same row while the write is in flight is a
-      // double-click, not a second intent. A click on a row that FAILED is the
-      // opposite - it is the retry - so that one clears the message and goes
-      // again rather than being swallowed for the rest of the timeout.
-      if (timers.current.has(task.id)) {
-        if (pendingRef.current.get(task.id)?.kind !== "failed") return;
-        clearTimer(task.id);
-      }
-      timers.current.set(
-        task.id,
-        setTimeout(() => forget(task.id), LINGER_MS),
-      );
-      setPending((current) =>
-        new Map(current).set(task.id, { task, index, kind: "completed" }),
-      );
-      void write(task, index, true);
-    },
-    [forget, write, clearTimer],
-  );
-
   const undo = useCallback(
     (taskId: number) => {
-      const row = pending.get(taskId);
+      const row = rows.current.get(taskId);
       if (row?.kind !== "completed") return;
       forget(taskId);
       void write(row.task, row.index, false);
     },
-    [pending, forget, write],
+    [forget, write],
+  );
+
+  const toggle = useCallback(
+    (task: Task, index: number) => {
+      // A second click while the write is on the wire is a double-click, not a
+      // second intent - and it must be caught BEFORE the two branches below,
+      // or a fast double-click on a plain task would complete it and then
+      // immediately take that back.
+      if (inFlight.current.has(task.id)) return;
+
+      const current = rows.current.get(task.id);
+
+      // The row is already drawn as done and says "Reopen": honour that.
+      if (current?.kind === "completed") {
+        undo(task.id);
+        return;
+      }
+      // A click on a row that FAILED is the retry: clear the message, go again.
+      if (current?.kind === "failed") clearTimer(task.id);
+      // An `advanced` row has nothing to toggle; the server moved it on.
+      if (current?.kind === "advanced") return;
+
+      /*
+       * A repeating task is never marked completed, not even for the length of
+       * the round trip. The server will advance it rather than complete it, so
+       * striking the row through would be a lie, and offering the Undo that
+       * goes with a completed row would offer to restore a date that no longer
+       * exists anywhere (D-write decision 5).
+       */
+      put(
+        isRepeating(task)
+          ? { task, index, kind: "advanced" }
+          : { task, index, kind: "completed" },
+        LINGER_MS,
+      );
+      void write(task, index, true);
+    },
+    [undo, put, write, clearTimer],
   );
 
   const reset = useCallback(() => {
     for (const timer of timers.current.values()) clearTimeout(timer);
     timers.current.clear();
+    rows.current.clear();
     setPending(new Map());
   }, []);
 
-  // Timers outlive the component otherwise, and fire setState on a dead one.
   useEffect(() => {
     const running = timers.current;
     return () => {
+      // A write can still be in flight when this unmounts; `live` is what stops
+      // it landing on a dead component.
+      live.current = false;
       for (const timer of running.values()) clearTimeout(timer);
       running.clear();
     };
   }, []);
 
-  return { pending, complete, undo, reset };
+  return { pending, toggle, undo, reset };
 }
 
 function nextLabel(task: Task, options: UseCompleteTaskOptions): string {

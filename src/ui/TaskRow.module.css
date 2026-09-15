@@ -103,22 +103,28 @@
   white-space: nowrap;
 }
 
-/* A transient note: what just happened to this row. It may be an error
-   message, so it is the one meta item allowed to shrink and ellipsise. */
+/* A transient note: what just happened to this row. It can be a server error
+   message, so `min-width: 0` is what lets it shrink past its own text - a flex
+   item will not go below its content width without it - and the ellipsis is
+   what the shrinking then produces. The full string is in the title. */
 .note {
-  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* 32x32 hit target (DESIGN.md), on a 16px row. The vertical padding bleeds
+   back out through equal negative margins, so the meta row stays 16px and the
+   measured 59/79px of layout-specs §2.3 are unchanged: 8 + 16 + 8 = 32 tall,
+   6 + text + 6 wide. This is the one control whose miss cannot be undone -
+   the task has already left every view by the time it is on screen. */
 .undo {
   flex: 0 0 auto;
-  margin-right: 8px;
-  padding: 0;
+  margin: -8px 2px -8px 0;
+  padding: 8px 6px;
   background: none;
   border: 0;
-  font: 500 12px / 16px var(--font-sans);
+  font: 600 12px / 16px var(--font-sans);
   color: var(--accent);
   cursor: pointer;
 }

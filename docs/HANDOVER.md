@@ -444,19 +444,30 @@ parser exists to write.
    moves a write onto a surface nothing here has verified. It is the fallback if
    the bulk probe fails against `pinguino`.
 
-2. **`updateTask` is written as a general patch** — `(id, fields, values)` — with
+2. **`updateTask` is written as a general patch** — `(task, values)` — with
    the done toggle as its only caller for now. Inline edit, reschedule and
    project moves are the same call. `deleteTask` (`DELETE /tasks/{id}`) lands
    beside it, **API only, with no affordance in the UI**: its reason to exist
    today is that the write test must not leave litter on `pinguino`, and a
    delete button brings its own confirmation, entry point and reversibility
    questions, which belong to their own slice.
+   It takes the whole task, not an id, because the echo above has to come from
+   somewhere and a caller cannot be trusted to remember it. The contract is
+   that the task is a copy the SERVER produced: a hand-built object missing
+   `reminders` echoes `[]`, and `[]` is precisely how the server is told to
+   delete them. Nothing on the wire distinguishes the two.
 
 3. **Completing is optimistic, with a rollback.** The row updates on click; a
    failed call puts it back and says why *on the row itself*, not in a banner or
    a toast. A pending checkbox on a self-hosted instance is the exact
    Vikunja-UI feeling this repo exists to remove (§1). The general toast system
    belongs to D4 step 4 and is not built early here.
+   Two things the review added, recorded here rather than left as undocumented
+   behaviour: a failure message stays twice as long as a success (10s against
+   6s, because it has to be read), and **a click on a failed row is the retry**
+   — the double-click guard keys off a write being on the wire, not off a
+   message being on screen, or a failure would deaden its own checkbox for ten
+   seconds and read as a second failure.
 
 4. **A completed row lingers for about six seconds with an Undo, then goes.**
    Every view filters `notDone()` on the server and `!task.done` in `belongs()`,
@@ -478,7 +489,12 @@ parser exists to write.
    **It gets no Undo**, because the previous due date is gone and the server
    keeps no history of it; writing back the date we happened to have cached
    would be a plausible invented value, which is the thing D-vocab forbade in
-   the parser.
+   the parser. The check happens BEFORE the call, not on the response: a
+   repeating row must never be struck through even for the length of a round
+   trip, or it offers, briefly, exactly the Undo this paragraph refuses.
+   The row is also restored if the write's own refetch drops it — advancing a
+   task due today to tomorrow takes it out of Today, and the message would
+   otherwise vanish in the instant it was earned.
 
 6. **Sidebar counts are invalidated once the write is confirmed**, the way
    `useCreateTask` already does it, rather than being decremented optimistically

@@ -39,10 +39,15 @@ export type PendingRows = ReadonlyMap<number, PendingRow>;
 /**
  * Overlays the pending rows on a view's tasks.
  *
- * Only `completed` changes the list: it marks the task done so the checkbox
- * fills immediately, and puts the row back if the poller has already removed
- * it. `advanced` and `failed` leave the server's copy alone - their whole
- * effect is a message on the row, which the view model attaches.
+ * `completed` marks the task done, so the checkbox fills at once. Both it and
+ * `advanced` are also RESTORED when they are no longer in the list, because
+ * both can leave it while their message is still on screen: a completed task
+ * stops matching every view's `done = false`, and a task advanced to tomorrow
+ * stops matching Today. Without that, the row and its "Done. Next: ..." would
+ * vanish in the same instant the write succeeded.
+ *
+ * `failed` is left exactly as the server still has it - the row never moved,
+ * and the rollback is that nothing here touches it.
  */
 export function applyPending(tasks: Task[], pending: PendingRows): Task[] {
   if (pending.size === 0) return tasks;
@@ -55,13 +60,15 @@ export function applyPending(tasks: Task[], pending: PendingRows): Task[] {
   });
 
   const present = new Set(tasks.map((task) => task.id));
-  // Oldest first, so two rows completed in a row land in a stable order.
+  // By index, so two rows restored at once land in the order they sat in.
   const missing = [...pending.values()]
-    .filter((row) => row.kind === "completed" && !present.has(row.task.id))
+    .filter((row) => row.kind !== "failed" && !present.has(row.task.id))
     .sort((a, b) => a.index - b.index);
 
   for (const row of missing) {
-    result.splice(Math.min(row.index, result.length), 0, { ...row.task, done: true });
+    const restored =
+      row.kind === "completed" ? { ...row.task, done: true } : row.task;
+    result.splice(Math.min(row.index, result.length), 0, restored);
     changed = true;
   }
 

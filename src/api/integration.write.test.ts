@@ -21,7 +21,7 @@
  * It cleans up after itself: every task it creates is deleted at the end.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { createTask, deleteTask, getUser, updateTask } from "./endpoints";
+import { deleteTask, getUser, updateTask } from "./endpoints";
 import { createHttp } from "./http";
 import type { Task } from "./types";
 
@@ -47,11 +47,45 @@ async function scratchProjectId(): Promise<number> {
 }
 
 /**
- * Creates a task directly, so it can carry a reminder — `createTask` only
- * writes what the quick-add grammar produces, and a reminder is not in it.
+ * A task carrying one of everything a completion could erase.
+ *
+ * Created directly rather than through `createTask`, which only writes what the
+ * quick-add grammar produces - a reminder is not in it. The assignee goes on
+ * afterwards through its own sub-resource, the only way to set one.
  */
-function createRich(projectId: number, body: Record<string, unknown>): Promise<Task> {
-  return http.request<Task>(`/projects/${projectId}/tasks`, { method: "PUT", body });
+async function scratchTask(
+  name: string,
+  extra: Record<string, unknown>,
+): Promise<{ task: Task; due: string }> {
+  const projectId = await scratchProjectId();
+  const due = new Date(Date.now() + 86_400_000).toISOString();
+
+  const fresh = await http.request<Task>(`/projects/${projectId}/tasks`, {
+    method: "PUT",
+    body: {
+      title: `open-todo write test: ${name}`,
+      description: "<p>Kept, not wiped.</p>",
+      due_date: due,
+      priority: 3,
+      percent_done: 0.5,
+      reminders: [{ relative_period: -3600, relative_to: "due_date" }],
+      ...extra,
+    },
+  });
+  created.push(fresh.id);
+
+  const user = await getUser(http);
+  await http.request(`/tasks/${fresh.id}/assignees`, {
+    method: "PUT",
+    body: { user_id: user.id },
+  });
+
+  // Re-read, because the create response predates the assignee and because
+  // updateTask's contract is that it is handed a copy the SERVER produced.
+  const task = await http.request<Task>(`/tasks/${fresh.id}`);
+  expect(task.reminders?.length).toBe(1);
+  expect(task.assignees?.length).toBe(1);
+  return { task, due };
 }
 
 const seconds = (iso: string | null | undefined) =>
@@ -72,42 +106,36 @@ afterAll(async () => {
 
 describe.skipIf(!enabled)("live Vikunja instance (writes)", () => {
   it("completing a task leaves the rest of it alone", { timeout: 30_000 }, async () => {
-    const projectId = await scratchProjectId();
-    const due = new Date(Date.now() + 86_400_000).toISOString();
-    const task = await createRich(projectId, {
-      title: "open-todo write test: plain",
-      description: "<p>Kept, not wiped.</p>",
-      due_date: due,
-      priority: 3,
-      percent_done: 0.5,
-      reminders: [{ relative_period: -3600, relative_to: "due_date" }],
-    });
-    created.push(task.id);
-    expect(task.reminders?.length).toBe(1);
+    const { task, due } = await scratchTask("plain", {});
 
     const done = await updateTask(http, task, { done: true });
 
     expect(done.done).toBe(true);
+    // Every column the single-task route would have zeroed.
     expect(done.description).toContain("Kept, not wiped.");
     expect(seconds(done.due_date)).toBe(seconds(due));
     expect(done.priority).toBe(3);
     // The two the `fields` guard does NOT cover, which updateTask echoes back.
     expect(done.reminders?.length).toBe(1);
+    expect(done.assignees?.length).toBe(1);
 
     const reopened = await updateTask(http, done, { done: false });
     expect(reopened.done).toBe(false);
     expect(reopened.reminders?.length).toBe(1);
+    expect(reopened.assignees?.length).toBe(1);
   });
 
-  it("completing a repeating task advances it instead", { timeout: 30_000 }, async () => {
-    const projectId = await scratchProjectId();
-    const due = new Date(Date.now() + 86_400_000).toISOString();
-    const task = await createTask(http, projectId, {
-      title: "open-todo write test: repeating",
-      due_date: due,
-      repeat_after: 86_400,
-    });
-    created.push(task.id);
+  it("completing a repeating task advances it and keeps everything else", {
+    timeout: 30_000,
+  }, async () => {
+    /*
+     * The combination D-write exists to protect, and the one the first cut of
+     * this test missed by splitting it in two. A repeat is stored as two
+     * ordinary columns, repeat_after and repeat_mode, so it is erased by the
+     * same mechanism that erases the description - and losing it means the
+     * task repeats once and then silently stops.
+     */
+    const { task, due } = await scratchTask("repeating", { repeat_after: 86_400 });
 
     const after = await updateTask(http, task, { done: true });
 
@@ -115,7 +143,10 @@ describe.skipIf(!enabled)("live Vikunja instance (writes)", () => {
     // and moves the dates on by exactly one interval.
     expect(after.done).toBe(false);
     expect(seconds(after.due_date)).toBe(seconds(due) + 86_400);
-    // The recurrence itself must survive, or the task repeats once and stops.
     expect(after.repeat_after).toBe(86_400);
+    expect(after.description).toContain("Kept, not wiped.");
+    expect(after.priority).toBe(3);
+    expect(after.reminders?.length).toBe(1);
+    expect(after.assignees?.length).toBe(1);
   });
 });

@@ -85,6 +85,30 @@ describe("applyPending", () => {
     expect(result[0]?.done).toBe(false);
   });
 
+  it("puts an advanced repeating task back when the view no longer wants it", () => {
+    // Completing a task due today advances it to tomorrow, which Today's
+    // filter then rejects - so the refetch that confirms the write is also
+    // what removes the row carrying "Done. Next: ...".
+    const advanced = task(2, { due_date: "2026-09-17T18:00:00Z", repeat_after: 86400 });
+    const result = applyPending(
+      [task(1)],
+      pendingMap({ task: advanced, kind: "advanced", index: 1, message: "Done." }),
+    );
+
+    expect(result.map((t) => t.id)).toEqual([1, 2]);
+    // Restored as the server has it: not done, and carrying the NEW date.
+    expect(result[1]?.done).toBe(false);
+    expect(result[1]?.due_date).toBe("2026-09-17T18:00:00Z");
+  });
+
+  it("does not resurrect a failed row, which never left in the first place", () => {
+    const result = applyPending(
+      [task(1)],
+      pendingMap({ task: task(2), kind: "failed", index: 1, message: "Not saved" }),
+    );
+    expect(result.map((t) => t.id)).toEqual([1]);
+  });
+
   it("leaves a failed write showing the task as it still is", () => {
     const tasks = [task(1)];
     const result = applyPending(

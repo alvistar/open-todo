@@ -242,7 +242,7 @@ export function AppScreen() {
         onToggleDone={(row) => {
           const index = tasks.findIndex((task) => task.id === row.id);
           const task = tasks[index];
-          if (task) completing.complete(task, index);
+          if (task) completing.toggle(task, index);
         }}
         onUndo={(row) => completing.undo(row.id)}
         footer={

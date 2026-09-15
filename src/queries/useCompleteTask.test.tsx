@@ -49,7 +49,7 @@ afterEach(() => {
 describe("completing a plain task", () => {
   it("marks it pending the moment it is clicked, before the server answers", () => {
     const { result } = setup();
-    act(() => result.current.complete(task(), 2));
+    act(() => result.current.toggle(task(), 2));
 
     expect(result.current.pending.get(91)?.kind).toBe("completed");
     expect(result.current.pending.get(91)?.index).toBe(2);
@@ -57,7 +57,7 @@ describe("completing a plain task", () => {
 
   it("lets go after the linger, so the row finally leaves the view", async () => {
     const { result } = setup();
-    act(() => result.current.complete(task(), 0));
+    act(() => result.current.toggle(task(), 0));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(LINGER_MS + 1);
     });
@@ -65,22 +65,45 @@ describe("completing a plain task", () => {
     expect(result.current.pending.size).toBe(0);
   });
 
-  it("ignores a second click while the first is in flight", async () => {
+  it("ignores a second click while the first is on the wire", async () => {
+    // Without the in-flight guard this would complete and then immediately
+    // undo, because the row is already drawn as done by the first click.
     const { result } = setup();
-    act(() => result.current.complete(task(), 0));
-    act(() => result.current.complete(task(), 0));
+    act(() => result.current.toggle(task(), 0));
+    act(() => result.current.toggle(task(), 0));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
     expect(updateTask).toHaveBeenCalledTimes(1);
+    expect(result.current.pending.get(91)?.kind).toBe("completed");
+  });
+
+  it("takes the completion back when the settled row is clicked again", async () => {
+    // The row says "Reopen" once it is drawn as done, and the checkbox has to
+    // honour its own label - the Undo text is not the only way back.
+    const { result } = setup();
+    act(() => result.current.toggle(task(), 0));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await act(async () => {
+      result.current.toggle(task(), 0);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(updateTask).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), {
+      done: false,
+    });
+    expect(result.current.pending.size).toBe(0);
   });
 });
 
 describe("undo", () => {
   it("writes done back to false and drops the row", async () => {
     const { result } = setup();
-    act(() => result.current.complete(task(), 0));
+    act(() => result.current.toggle(task(), 0));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
@@ -101,7 +124,7 @@ describe("undo", () => {
       task({ done: false, repeat_after: 86400, due_date: "2026-09-17T18:00:00Z" }),
     );
     const { result } = setup();
-    act(() => result.current.complete(task({ repeat_after: 86400 }), 0));
+    act(() => result.current.toggle(task({ repeat_after: 86400 }), 0));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
@@ -115,6 +138,20 @@ describe("undo", () => {
 });
 
 describe("a repeating task", () => {
+  it("is never drawn as completed, not even during the round trip", async () => {
+    // The server will advance it, not complete it. Striking it through would
+    // be a lie, and the Undo that comes with a completed row would offer to
+    // restore a date that no longer exists anywhere.
+    const { result } = setup();
+    act(() => result.current.toggle(task({ repeat_after: 86400 }), 0));
+
+    expect(result.current.pending.get(91)?.kind).toBe("advanced");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  });
+
   it("is reported as advanced, with its next date, not as completed", async () => {
     // The server sets done back to false and moves the dates forward, so the
     // row must NOT disappear.
@@ -122,7 +159,7 @@ describe("a repeating task", () => {
       task({ done: false, repeat_after: 86400, due_date: "2026-09-17T18:00:00Z" }),
     );
     const { result } = setup();
-    act(() => result.current.complete(task({ repeat_after: 86400 }), 0));
+    act(() => result.current.toggle(task({ repeat_after: 86400 }), 0));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -136,7 +173,7 @@ describe("a repeating task", () => {
     // The monthly mode ignores repeat_after; a task can repeat with zero.
     updateTask.mockResolvedValue(task({ done: false, repeat_mode: 1 }));
     const { result } = setup();
-    act(() => result.current.complete(task({ repeat_mode: 1 }), 0));
+    act(() => result.current.toggle(task({ repeat_mode: 1 }), 0));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -150,14 +187,16 @@ describe("when the write fails", () => {
   it("puts the row back and says why", async () => {
     updateTask.mockRejectedValue(new Error("Forbidden"));
     const { result } = setup();
-    act(() => result.current.complete(task(), 0));
+    act(() => result.current.toggle(task(), 0));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
     expect(result.current.pending.get(91)?.kind).toBe("failed");
-    expect(result.current.pending.get(91)?.message).toBe("Forbidden");
+    // Prefixed, because the server's own message ("Forbidden") lands on the
+    // row on its own and reads as a label rather than as something failing.
+    expect(result.current.pending.get(91)?.message).toBe("Not saved: Forbidden");
   });
 });
 
@@ -166,13 +205,13 @@ describe("retrying after a failure", () => {
     updateTask.mockRejectedValueOnce(new Error("Forbidden"));
     const { result } = setup();
 
-    act(() => result.current.complete(task(), 0));
+    act(() => result.current.toggle(task(), 0));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(result.current.pending.get(91)?.kind).toBe("failed");
 
-    act(() => result.current.complete(task(), 0));
+    act(() => result.current.toggle(task(), 0));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
@@ -185,7 +224,7 @@ describe("retrying after a failure", () => {
 describe("reset", () => {
   it("forgets everything, which is what navigating away must do", async () => {
     const { result } = setup();
-    act(() => result.current.complete(task(), 0));
+    act(() => result.current.toggle(task(), 0));
     act(() => result.current.reset());
 
     expect(result.current.pending.size).toBe(0);

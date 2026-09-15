@@ -159,15 +159,23 @@ interface BulkTaskResponse {
  *
  * Taking the whole task rather than an id is what makes that impossible to
  * forget. `src/api/integration.write.test.ts` checks it against a real server.
+ *
+ * CONTRACT: `task` must be a copy the SERVER gave us - from a listing, or from
+ * this call's own response. A hand-built object whose `reminders` or
+ * `assignees` happen to be absent echoes an empty list, and an empty list is
+ * exactly how the server is told to delete them. There is no way to tell the
+ * two apart on the wire, which is why the parameter is the whole Task.
  */
 export async function updateTask(
   http: Http,
-  task: Pick<Task, "id" | "reminders" | "assignees">,
+  task: Task,
   values: TaskPatch,
 ): Promise<Task> {
   const fields = Object.keys(values);
   if (fields.length === 0) {
-    throw new ApiError("updateTask was asked to write no fields.", 0);
+    // A caller bug, not a server one: ApiError would file it under "the
+    // instance did something odd".
+    throw new Error("updateTask was asked to write no fields.");
   }
 
   const response = await http.request<BulkTaskResponse | Task[]>("/tasks/bulk", {
