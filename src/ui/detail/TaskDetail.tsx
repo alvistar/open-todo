@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { TaskPatch } from "../../api/endpoints";
-import type { Label, Task, TaskReminder } from "../../api/types";
+import type { Label, Task, TaskComment, TaskReminder } from "../../api/types";
 import { formatDueLabel, parseVikunjaDate } from "../../model/dates";
 import type { DuePhrase } from "../../model/duePhrase";
 import { priorityFromVikunja, priorityLabel } from "../../model/priority";
@@ -9,6 +9,7 @@ import { isRichHtml, stripHtml, toDescriptionHtml } from "../../model/taskRow";
 import type { TitleEdit } from "../../model/titleEdit";
 import { Icon } from "../icons/Icon";
 import { PriorityCheckbox } from "../PriorityCheckbox";
+import { Comments } from "./Comments";
 import { EditableField } from "./EditableField";
 import { PickerField } from "./PickerField";
 import {
@@ -63,6 +64,9 @@ export interface TaskDetailProps {
   readTitleEdit: (raw: string) => TitleEdit;
   /** Saves an edited name and everything its phrase named, in one go. */
   onSaveTitle: (raw: string) => Promise<void>;
+  comments: readonly TaskComment[];
+  commentsLoading: boolean;
+  onAddComment: (html: string) => Promise<void>;
   now: Date;
   timeZone: string;
   defaultDueTime: string | null;
@@ -84,6 +88,9 @@ export function TaskDetail({
   onChangeLabel,
   readTitleEdit,
   onSaveTitle,
+  comments,
+  commentsLoading,
+  onAddComment,
   now,
   timeZone,
   defaultDueTime,
@@ -306,6 +313,11 @@ export function TaskDetail({
                     </ul>
                   </div>
                 ) : null}
+                <Comments
+                  comments={comments}
+                  loading={commentsLoading}
+                  onAdd={onAddComment}
+                />
               </div>
             </div>
           </div>

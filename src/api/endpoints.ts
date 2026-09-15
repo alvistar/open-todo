@@ -7,6 +7,7 @@ import type {
   LoginResponse,
   Project,
   Task,
+  TaskComment,
   TaskReminder,
   User,
 } from "./types";
@@ -295,6 +296,36 @@ export function updateReminders(
   reminders: TaskReminder[],
 ): Promise<Task> {
   return updateTask(http, task, { title: task.title }, { reminders });
+}
+
+/**
+ * A task's comments, oldest first, as `GET /tasks/{id}/comments` returns them.
+ *
+ * Measured on `pinguino` 2026-09-15: the body field is `comment` and carries
+ * HTML, and the author comes back expanded on both the list and the create.
+ */
+export function listComments(
+  http: Http,
+  taskId: number,
+  signal?: AbortSignal,
+): Promise<TaskComment[]> {
+  return fetchAllPages<TaskComment>(
+    http,
+    `/tasks/${taskId}/comments`,
+    signal ? { signal } : {},
+  );
+}
+
+/** Adds one (`PUT /tasks/{id}/comments`). Vikunja's create verb again. */
+export function createComment(
+  http: Http,
+  taskId: number,
+  comment: string,
+): Promise<TaskComment> {
+  return http.request<TaskComment>(`/tasks/${taskId}/comments`, {
+    method: "PUT",
+    body: { comment },
+  });
 }
 
 /**

@@ -23,11 +23,13 @@
 import { afterAll, describe, expect, it } from "vitest";
 import {
   addLabel,
+  createComment,
   createLabel,
   deleteLabel,
   deleteTask,
   getTask,
   getUser,
+  listComments,
   listProjects,
   removeLabel,
   updateReminders,
@@ -311,5 +313,33 @@ describe.skipIf(!enabled)("live Vikunja instance (writes)", () => {
     expect(without.labels ?? []).toHaveLength(0);
     expect(without.priority).toBe(3);
     expect(without.reminders?.length).toBe(1);
+  });
+
+  it("a comment is stored and read back, and bumps comment_count", {
+    timeout: 30_000,
+  }, async () => {
+    const { task } = await scratchTask("comments", {});
+
+    const created = await createComment(http, task.id, "<p>first note</p>");
+    expect(created.comment).toContain("first note");
+    expect(created.author?.username).toBeTruthy();
+
+    const listed = await listComments(http, task.id);
+    expect(listed.map((c) => c.id)).toContain(created.id);
+
+    /*
+     * The row badge reads `comment_count`, which is absent without the expand
+     * (mapping §6 item 2) - so this asserts the flag, not just the comment.
+     */
+    const withCount = await http.request<Task[]>(
+      `/tasks?filter=id = ${task.id}&expand=comment_count`,
+    );
+    expect(withCount[0]?.comment_count).toBe(1);
+
+    // And the task itself is untouched by any of it.
+    const after = await getTask(http, task.id);
+    expect(after.description).toContain("Kept, not wiped.");
+    expect(after.priority).toBe(3);
+    expect(after.reminders?.length).toBe(1);
   });
 });

@@ -15,11 +15,18 @@ import { inboxView, projectView, todayView, type ViewDef } from "../model/views"
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
 import {
+  useCreateComment,
   useTaskLabel,
   useUpdateReminders,
   useUpdateTask,
 } from "../queries/useUpdateTask";
-import { useLabels, useProjects, useUser, useViewTasks } from "../queries/useVikunja";
+import {
+  useLabels,
+  useProjects,
+  useTaskComments,
+  useUser,
+  useViewTasks,
+} from "../queries/useVikunja";
 import { readThemePreference, resolveTheme, setTheme } from "../theme/theme";
 import { TaskDetail } from "../ui/detail/TaskDetail";
 import { ListView } from "../ui/ListView";
@@ -92,6 +99,7 @@ export function AppScreen() {
   const editing = useUpdateTask();
   const reminding = useUpdateReminders();
   const labelling = useTaskLabel();
+  const commenting = useCreateComment();
 
   // Navigating away drops the pending rows: they are a few seconds of "you
   // just did this", not a place tasks are kept (D-write).
@@ -154,6 +162,7 @@ export function AppScreen() {
   const [composerOpen, setComposerOpen] = useState(false);
   /** The task whose detail is open, by id; it is read back out of `tasks`. */
   const [openTaskId, setOpenTaskId] = useState<number | null>(null);
+  const commentsQuery = useTaskComments(openTaskId);
 
   /*
    * Where the detail dialog can move a task. The Inbox is named first because
@@ -369,6 +378,11 @@ export function AppScreen() {
           allLabels={labelsQuery.data ?? []}
           onChangeLabel={async (change) => {
             await labelling.mutateAsync({ task: openTask, change });
+          }}
+          comments={commentsQuery.data ?? []}
+          commentsLoading={commentsQuery.isPending && openTaskId !== null}
+          onAddComment={async (html) => {
+            await commenting.mutateAsync({ taskId: openTask.id, comment: html });
           }}
           readTitleEdit={(raw) =>
             titleEdit(raw, openTask, { ...quickAddContext, now: new Date() })

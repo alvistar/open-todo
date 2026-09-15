@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { http } from "../api/client";
-import { getInfo, getUser, listLabels, listProjects, listTasks } from "../api/endpoints";
+import {
+  getInfo,
+  getUser,
+  listComments,
+  listLabels,
+  listProjects,
+  listTasks,
+} from "../api/endpoints";
 import type { Task } from "../api/types";
 import type { ViewDef } from "../model/views";
 import { queryKeys } from "./keys";
@@ -49,8 +56,26 @@ export function useViewTasks(view: ViewDef | null, timeZone: string) {
         orderBy: view.orderBy,
         includeNulls: view.includeNulls,
         timezone: timeZone,
+        // The row's "n comments" badge. Absent without this - measured,
+        // mapping §6 item 2.
+        expand: "comment_count",
         ...(signal ? { signal } : {}),
       });
     },
+  });
+}
+
+/**
+ * One task's comments.
+ *
+ * Its own key, outside the `tasks` predicate on purpose (see `keys.ts`), and
+ * only fetched while a dialog is open on that task.
+ */
+export function useTaskComments(taskId: number | null) {
+  return useQuery({
+    queryKey: queryKeys.taskComments(taskId ?? 0),
+    enabled: taskId !== null,
+    queryFn: ({ signal }) =>
+      taskId === null ? Promise.resolve([]) : listComments(http, taskId, signal),
   });
 }

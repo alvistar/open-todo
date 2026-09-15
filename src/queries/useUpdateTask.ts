@@ -3,13 +3,14 @@ import { http } from "../api/client";
 import type { TaskOverrides, TaskPatch } from "../api/endpoints";
 import {
   addLabel,
+  createComment,
   createLabel,
   getTask,
   removeLabel,
   updateReminders,
   updateTask,
 } from "../api/endpoints";
-import type { Task, TaskReminder } from "../api/types";
+import type { Task, TaskComment, TaskReminder } from "../api/types";
 import type { LabelChange } from "../ui/detail/pickers";
 import { queryKeys } from "./keys";
 
@@ -109,6 +110,29 @@ export function useTaskLabel() {
       if ("create" in change) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.labels });
       }
+    },
+  });
+}
+
+/**
+ * Adds a comment.
+ *
+ * Two invalidations, not one: the comment list under its own key, and the task
+ * lists for the `comment_count` the row badge reads. They are separate keys on
+ * purpose, so completing a task does not refetch every comment thread.
+ */
+export function useCreateComment() {
+  const queryClient = useQueryClient();
+
+  return useMutation<TaskComment, Error, { taskId: number; comment: string }>({
+    mutationFn: ({ taskId, comment }) => createComment(http, taskId, comment),
+    onSuccess: (_created, { taskId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.taskComments(taskId),
+      });
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === "tasks",
+      });
     },
   });
 }

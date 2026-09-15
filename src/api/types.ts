@@ -65,6 +65,19 @@ export interface TaskReminder {
   relative_to?: "due_date" | "start_date" | "end_date" | string;
 }
 
+/**
+ * A comment. Vikunja stores it as HTML from its own editor, exactly like a
+ * description (mapping §2), so it is read and written through the same
+ * plain-text conversion.
+ */
+export interface TaskComment {
+  id: number;
+  comment: string;
+  author?: User | null;
+  created: string;
+  updated: string;
+}
+
 export interface Task {
   id: number;
   identifier?: string;

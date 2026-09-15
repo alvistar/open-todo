@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     which is how the reference product behaves and was checked by experiment.
     A pick made while the name editor is open does not disturb it, and the
     editor's Cancel does not take the pick back.
+  - **Comments.** A task's thread is shown under its description, with who
+    wrote each one and when, and there is a box to add another. Like
+    descriptions they are HTML, so one written with formatting elsewhere says
+    so rather than quietly appearing as bare text — and a send that fails
+    keeps what you typed.
   - **The name is read the way the composer reads one.** Type "call mum
     tomorrow #Work p1" into a task's name and the sidebar shows the date, the
     project and the priority it would set, before you press Save — that

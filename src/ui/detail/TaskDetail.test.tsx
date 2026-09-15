@@ -7,6 +7,16 @@ import { titleEdit } from "../../model/titleEdit";
 import type { LabelChange } from "./pickers";
 import { TaskDetail } from "./TaskDetail";
 
+const COMMENTS = [
+  {
+    id: 5,
+    comment: "<p>Rang them, no answer.</p>",
+    author: { id: 2, username: "sam", created: "", updated: "" },
+    created: "2026-09-08T09:30:00Z",
+    updated: "2026-09-08T09:30:00Z",
+  },
+];
+
 const ALL_LABELS = [
   { id: 1, title: "errand" },
   { id: 2, title: "reading" },
@@ -69,6 +79,7 @@ interface Extras {
   onSaveReminders?: (reminders: TaskReminder[]) => Promise<void>;
   onChangeLabel?: (change: LabelChange) => Promise<void>;
   onSaveTitle?: (raw: string) => Promise<void>;
+  onAddComment?: (html: string) => Promise<void>;
 }
 
 function open(over: Partial<Task> = {}, extra: Extras = {}) {
@@ -77,6 +88,7 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
   const onSaveReminders = extra.onSaveReminders ?? vi.fn(async () => {});
   const onChangeLabel = extra.onChangeLabel ?? vi.fn(async () => {});
   const onSaveTitle = extra.onSaveTitle ?? vi.fn(async () => {});
+  const onAddComment = extra.onAddComment ?? vi.fn(async () => {});
   render(
     <TaskDetail
       task={task(over)}
@@ -93,11 +105,21 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
       onChangeLabel={onChangeLabel}
       readTitleEdit={readTitleEdit}
       onSaveTitle={onSaveTitle}
+      comments={COMMENTS}
+      commentsLoading={false}
+      onAddComment={onAddComment}
       {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
       {...(extra.onNext ? { onNext: extra.onNext } : {})}
     />,
   );
-  return { onClose, onSave, onSaveReminders, onChangeLabel, onSaveTitle };
+  return {
+    onClose,
+    onSave,
+    onSaveReminders,
+    onChangeLabel,
+    onSaveTitle,
+    onAddComment,
+  };
 }
 
 describe("the dialog frame", () => {
@@ -130,6 +152,9 @@ describe("the dialog frame", () => {
         onChangeLabel={vi.fn(async () => {})}
         readTitleEdit={readTitleEdit}
         onSaveTitle={vi.fn(async () => {})}
+        comments={[]}
+        commentsLoading={false}
+        onAddComment={vi.fn(async () => {})}
       />,
     );
     expect(screen.getByLabelText("Close")).toHaveFocus();
@@ -614,6 +639,9 @@ describe("the label picker", () => {
         onChangeLabel={vi.fn(async () => {})}
         readTitleEdit={readTitleEdit}
         onSaveTitle={vi.fn(async () => {})}
+        comments={[]}
+        commentsLoading={false}
+        onAddComment={vi.fn(async () => {})}
       />,
     );
     fireEvent.click(screen.getByLabelText("Labels: change"));
@@ -716,5 +744,87 @@ describe("the name being typed, previewed in the sidebar", () => {
     expect(screen.getByText(/this weekend/)).toBeInTheDocument();
     // D-vocab: the words stay in the name and no date is invented.
     expect(screen.getByLabelText("Date: change")).toHaveTextContent("No date");
+  });
+});
+
+describe("comments", () => {
+  it("shows who said what, and when", () => {
+    open();
+
+    expect(screen.getByText("Rang them, no answer.")).toBeInTheDocument();
+    expect(screen.getByText("sam")).toBeInTheDocument();
+  });
+
+  it("sends what was typed as the minimal HTML Vikunja stores", async () => {
+    const { onAddComment } = open();
+
+    fireEvent.change(screen.getByLabelText("Add a comment"), {
+      target: { value: "Tried again\nstill nothing" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() =>
+      expect(onAddComment).toHaveBeenCalledWith("<p>Tried again</p><p>still nothing</p>"),
+    );
+  });
+
+  it("will not send an empty comment", () => {
+    const { onAddComment } = open();
+
+    expect(screen.getByRole("button", { name: "Comment" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Add a comment"), {
+      target: { value: "   " },
+    });
+    expect(screen.getByRole("button", { name: "Comment" })).toBeDisabled();
+    expect(onAddComment).not.toHaveBeenCalled();
+  });
+
+  it("keeps the text when sending fails", async () => {
+    const onAddComment = vi.fn(async () => {
+      throw new Error("500 Server Error");
+    });
+    open({}, { onAddComment });
+
+    fireEvent.change(screen.getByLabelText("Add a comment"), {
+      target: { value: "worth keeping" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    expect(await screen.findByText("500 Server Error")).toBeInTheDocument();
+    // The box is cleared on success only: a failed send must not eat the text.
+    expect(screen.getByLabelText("Add a comment")).toHaveValue("worth keeping");
+  });
+
+  it("says when a comment was written with formatting it cannot show", () => {
+    render(
+      <TaskDetail
+        task={task()}
+        projectName="Work"
+        projects={PROJECTS}
+        readDuePhrase={readDuePhrase}
+        now={NOW}
+        timeZone="Europe/Rome"
+        defaultDueTime={null}
+        onClose={vi.fn()}
+        onSave={vi.fn(async () => {})}
+        onSaveReminders={vi.fn(async () => {})}
+        allLabels={ALL_LABELS}
+        onChangeLabel={vi.fn(async () => {})}
+        readTitleEdit={readTitleEdit}
+        onSaveTitle={vi.fn(async () => {})}
+        comments={[
+          {
+            id: 9,
+            comment: '<p>See <a href="https://x">this</a></p>',
+            created: "2026-09-08T09:30:00Z",
+            updated: "2026-09-08T09:30:00Z",
+          },
+        ]}
+        commentsLoading={false}
+        onAddComment={vi.fn(async () => {})}
+      />,
+    );
+
+    expect(screen.getByText(/formatting open-todo cannot show/)).toBeInTheDocument();
   });
 });
