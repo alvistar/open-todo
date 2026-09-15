@@ -408,6 +408,92 @@ Vikunja is AGPL and open-todo is MIT (§6), so no code was copied.
 
 ---
 
+### D-write — Writes beyond creation, starting with completing a task — **DECIDED 2026-09-15**
+
+D4 ordered the interaction slices (quick-add, keyboard, drag reorder, undo) and
+assumed the mutations underneath them existed. They did not. Until this
+decision the API client could `login`, read, `createTask` and `addLabel` and
+nothing else: **a user could write a task and never tick it off**, and
+`TaskRow`'s `onToggleDone` prop had been declared since the foundation slice
+with no call behind it. Completion is therefore not a step inside D4 — it is the
+layer D4 stands on, and it comes before D4 step 2.
+
+**The finding that shapes everything below.** `POST /api/v1/tasks/{id}` is not a
+patch. In Vikunja 2.5.0 `updateSingleTask` (`pkg/models/tasks.go`) merges the
+body over the stored row with `mergo.WithOverride`, which skips zero values, and
+then **re-applies every zero by hand** so that an omitted field is an erased
+field. A body of `{"id":123,"done":true}` wipes `description`, `due_date`,
+`start_date`, `end_date`, `priority`, `percent_done`, `hex_color`,
+`repeat_after`, `repeat_mode`, `is_favorite`, every reminder and every assignee.
+`title`, `project_id`, `labels`, `related_tasks` and `position` survive. The
+obvious one-line toggle would therefore destroy the recurrence the quick-add
+parser exists to write.
+
+**Decisions:**
+
+1. **The wire call is `POST /api/v1/tasks/bulk`** with
+   `{"task_ids":[id],"fields":["done"],"values":{"done":true}}`. It is the only
+   v1 path that reaches the `fields` branch, where columns that are not named
+   are re-read from the stored row instead of zeroed. A plural endpoint used for
+   one row, chosen because it is safe by construction rather than by convention,
+   and because it stays on `/api/v1` (§6) and costs one round trip.
+   Rejected: read-modify-write on `POST /tasks/{id}` (two round trips per click,
+   and the update response is not re-hydrated, so `labels` and `related_tasks`
+   come back hollow and a naive cache write loses them); `PATCH /api/v2/tasks/{id}`,
+   which this build does synthesise and which has the cleanest semantics, but
+   moves a write onto a surface nothing here has verified. It is the fallback if
+   the bulk probe fails against `pinguino`.
+
+2. **`updateTask` is written as a general patch** — `(id, fields, values)` — with
+   the done toggle as its only caller for now. Inline edit, reschedule and
+   project moves are the same call. `deleteTask` (`DELETE /tasks/{id}`) lands
+   beside it, **API only, with no affordance in the UI**: its reason to exist
+   today is that the write test must not leave litter on `pinguino`, and a
+   delete button brings its own confirmation, entry point and reversibility
+   questions, which belong to their own slice.
+
+3. **Completing is optimistic, with a rollback.** The row updates on click; a
+   failed call puts it back and says why *on the row itself*, not in a banner or
+   a toast. A pending checkbox on a self-hosted instance is the exact
+   Vikunja-UI feeling this repo exists to remove (§1). The general toast system
+   belongs to D4 step 4 and is not built early here.
+
+4. **A completed row lingers for about six seconds with an Undo, then goes.**
+   Every view filters `notDone()` on the server and `!task.done` in `belongs()`,
+   so a completed task leaves the app entirely and is recoverable only through
+   Vikunja's own web UI. The linger is a set of ids in the view layer that
+   overrides `belongs()` — the first app state that does not come from the
+   server — so it is deliberately short-lived and is dropped on navigation. Not
+   chosen: keeping the row until the view changes (a to-do list that fills with
+   done things), and keeping it until the next full fetch (~100 s, a duration
+   that cannot be explained to the user).
+
+5. **A recurring task is not completed by the server; it is advanced.**
+   `updateDone` runs the `repeat_mode` handler, which sets `done` back to
+   `false` and moves `due_date`, `start_date`, `end_date` and the reminders
+   forward, then sets `done_at = now()` anyway — so a recurring task persists
+   `done: false` **with** a fresh `done_at`. Nothing here may read `done_at` as
+   "is completed". The app therefore checks `repeat_after`/`repeat_mode` before
+   the call: a recurring row does not disappear, it shows its next date.
+   **It gets no Undo**, because the previous due date is gone and the server
+   keeps no history of it; writing back the date we happened to have cached
+   would be a plausible invented value, which is the thing D-vocab forbade in
+   the parser.
+
+6. **Sidebar counts are invalidated once the write is confirmed**, the way
+   `useCreateTask` already does it, rather than being decremented optimistically
+   in a second place.
+
+7. **Verified against `pinguino` by `src/api/integration.write.test.ts`**, a new
+   file gated on a third variable (`VIKUNJA_TEST_WRITE=1`) so the default test
+   run still needs no server. It creates a task carrying a description, a due
+   date, a priority and a recurrence, completes it, asserts that **nothing was
+   erased** and that the due date advanced, reopens it, and deletes it.
+   `src/api/integration.test.ts` keeps its read-only promise unchanged: that
+   promise is what makes it safe to run without thinking.
+
+---
+
 ## 5. Data model gap: Vikunja ↔ Todoist
 
 Required in every scenario; scope depends on D1. Known mismatches to map:

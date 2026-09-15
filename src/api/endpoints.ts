@@ -119,6 +119,88 @@ export function addLabel(http: Http, taskId: number, labelId: number): Promise<u
   });
 }
 
+/**
+ * The task fields open-todo writes. Each key present becomes one entry in the
+ * bulk call's `fields` list, so writing a field and naming it cannot drift
+ * apart.
+ */
+export interface TaskPatch {
+  done?: boolean;
+  title?: string;
+  /** RFC 3339; see D-map-2 for what an all-day date means. */
+  due_date?: string;
+  priority?: number;
+}
+
+interface BulkTaskResponse {
+  tasks?: Task[] | null;
+}
+
+/**
+ * Writes named fields of ONE task, leaving the rest of it alone.
+ *
+ * It goes through the BULK endpoint for a single task on purpose. Vikunja's
+ * single-task route, `POST /tasks/{id}`, is not a patch: `updateSingleTask`
+ * merges the body over the stored row with mergo (which skips zero values) and
+ * then re-applies every zero by hand, so a body of `{id, done}` erases
+ * description, due_date, start/end date, priority, percent_done, hex_color,
+ * repeat_after, repeat_mode, is_favorite, every reminder and every assignee.
+ * `POST /tasks/bulk` is the only v1 path that passes a `fields` list, and under
+ * `fields` the columns that are not named are re-read from the stored row.
+ * Measured against the v2.5.0 source; see D-write in docs/HANDOVER.md.
+ *
+ * Two sub-resources are NOT covered by that guard and are therefore echoed back
+ * from the caller's copy of the task:
+ *
+ *   - assignees: `updateTaskAssignees` runs before the guard and reads an empty
+ *     list as "the user removed them all";
+ *   - reminders: `updateReminders` deletes every row and re-inserts whatever
+ *     the payload carries, which for an omitted list is nothing.
+ *
+ * Taking the whole task rather than an id is what makes that impossible to
+ * forget. `src/api/integration.write.test.ts` checks it against a real server.
+ */
+export async function updateTask(
+  http: Http,
+  task: Pick<Task, "id" | "reminders" | "assignees">,
+  values: TaskPatch,
+): Promise<Task> {
+  const fields = Object.keys(values);
+  if (fields.length === 0) {
+    throw new ApiError("updateTask was asked to write no fields.", 0);
+  }
+
+  const response = await http.request<BulkTaskResponse | Task[]>("/tasks/bulk", {
+    method: "POST",
+    body: {
+      task_ids: [task.id],
+      fields,
+      values: {
+        ...values,
+        reminders: task.reminders ?? [],
+        assignees: task.assignees ?? [],
+      },
+    },
+  });
+
+  // The handler returns the BulkTask struct with `tasks` filled in; its own
+  // swagger annotation promises a bare array. Accept either.
+  const updated = Array.isArray(response) ? response[0] : response?.tasks?.[0];
+  if (!updated) {
+    throw new ApiError(`Updating task ${task.id} did not return the updated task.`, 0);
+  }
+  return updated;
+}
+
+/**
+ * Deletes a task. Vikunja soft-deletes with 30-day retention, and `deleted_at`
+ * is not a filterable field (mapping §6 item 3), so the incremental poll can
+ * never report this: whoever calls it removes the row locally.
+ */
+export function deleteTask(http: Http, taskId: number): Promise<void> {
+  return http.request<void>(`/tasks/${taskId}`, { method: "DELETE" });
+}
+
 export interface ListTasksParams {
   /** A Vikunja filter expression; see ./filter.ts. */
   filter?: string;
