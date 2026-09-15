@@ -3,6 +3,7 @@ import type { Project, Task } from "../api/types";
 import { projectIdFromRoute, useRoute } from "../app/route";
 import { logOut } from "../auth/authStore";
 import { useLiveSource } from "../live/useLiveSource";
+import { dueDateFromPhrase } from "../model/duePhrase";
 import { groupTasksForView } from "../model/grouping";
 import { isRealProject, resolveInboxProjectId, sidebarProjects } from "../model/inbox";
 import { applyPending } from "../model/pending";
@@ -148,6 +149,29 @@ export function AppScreen() {
   const [openTaskId, setOpenTaskId] = useState<number | null>(null);
 
   /*
+   * Where the detail dialog can move a task. The Inbox is named first because
+   * it is not in `sidebarProjects` - that list leaves it out precisely so the
+   * sidebar does not show it twice - and an archived project is not a place a
+   * task can be put.
+   */
+  const moveTargets = useMemo(
+    () => [
+      ...(inboxProjectId === null
+        ? []
+        : [
+            {
+              id: inboxProjectId,
+              title:
+                projectsQuery.data?.find((p) => p.id === inboxProjectId)?.title ??
+                "Inbox",
+            },
+          ]),
+      ...projects.map((p) => ({ id: p.id, title: p.title })),
+    ],
+    [inboxProjectId, projectsQuery.data, projects],
+  );
+
+  /*
    * `now` here is only for the composer's live preview. The value written to
    * Vikunja is taken at submit time instead: none of this memo's dependencies
    * change with the clock, so a tab left open overnight would keep parsing
@@ -177,6 +201,19 @@ export function AppScreen() {
       projectsQuery.data,
       labelsQuery.data,
     ],
+  );
+
+  /*
+   * Read the clock HERE, not from `quickAddContext` above: that memo's `now` is
+   * pinned for the composer's live preview, and the date picker resolves its
+   * phrase at the moment of the pick. Sharing the memo would make "tomorrow"
+   * mean yesterday-plus-one in a tab left open overnight - the same trap
+   * `submitQuickAdd` re-reads the clock to avoid.
+   */
+  const readDuePhrase = useCallback(
+    (phrase: string) =>
+      dueDateFromPhrase(phrase, { ...quickAddContext, now: new Date() }),
+    [quickAddContext],
   );
 
   const submitQuickAdd = useCallback(
@@ -310,6 +347,8 @@ export function AppScreen() {
             projectsQuery.data?.find((p) => p.id === openTask.project_id)?.title ??
             "Inbox"
           }
+          projects={moveTargets}
+          readDuePhrase={readDuePhrase}
           now={rowContext.now}
           timeZone={timeZone}
           defaultDueTime={defaultDueTime}

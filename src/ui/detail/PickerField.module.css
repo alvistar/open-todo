@@ -1,0 +1,65 @@
+/* The sidebar row of layout-specs §4, with its value turned into a control.
+   The label and the resting value keep the read-only metrics exactly. */
+.field {
+  position: relative;
+}
+
+.label {
+  font: 600 12px / 28px var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 28px;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border-radius: 3px;
+  text-align: left;
+  font: 400 12px / 28px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.value:hover {
+  background: var(--hover-fill);
+}
+
+.empty {
+  color: var(--text-secondary);
+}
+
+.valueText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popover {
+  position: absolute;
+  z-index: 1;
+  top: 100%;
+  right: 0;
+  left: 0;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid var(--border-idle);
+  border-radius: var(--radius-base);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-modal);
+}
+
+.error {
+  margin: 8px 0 0;
+  font: 400 12px / 18px var(--font-sans);
+  color: var(--schedule-overdue);
+}
+
+/* The popover is a <fieldset> because it groups the controls that write one
+   field; the browser's own border and inline sizing are not wanted. */
+.popover {
+  min-inline-size: 0;
+  border-width: 1px;
+}

@@ -2,7 +2,25 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskPatch } from "../../api/endpoints";
 import type { Task } from "../../api/types";
+import { dueDateFromPhrase } from "../../model/duePhrase";
 import { TaskDetail } from "./TaskDetail";
+
+const PROJECTS = [
+  { id: 1, title: "Inbox" },
+  { id: 3, title: "Work" },
+  { id: 7, title: "Home" },
+];
+
+/** The real acceptor, with the test's clock: the picker's phrases are not mocked. */
+const readDuePhrase = (phrase: string) =>
+  dueDateFromPhrase(phrase, {
+    now: NOW,
+    timeZone: "Europe/Rome",
+    defaultDueTime: null,
+    defaultProjectId: 1,
+    projects: [],
+    labels: [],
+  });
 
 /*
  * The first test in this repo that drives a dialog. It pins the things a modal
@@ -36,6 +54,8 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
     <TaskDetail
       task={task(over)}
       projectName="Work"
+      projects={PROJECTS}
+      readDuePhrase={readDuePhrase}
       now={NOW}
       timeZone="Europe/Rome"
       defaultDueTime={null}
@@ -66,6 +86,8 @@ describe("the dialog frame", () => {
       <TaskDetail
         task={task()}
         projectName="Work"
+        projects={PROJECTS}
+        readDuePhrase={readDuePhrase}
         now={NOW}
         timeZone="Europe/Rome"
         defaultDueTime={null}
@@ -271,5 +293,119 @@ describe("editing the name and the description", () => {
     fireEvent.click(screen.getByLabelText("Edit the description"));
 
     expect(screen.queryByText(/cannot keep/)).not.toBeInTheDocument();
+  });
+});
+
+/*
+ * The sidebar's commit model, measured in Todoist on 2026-09-15 and the
+ * opposite of the main column's: picking writes. There is no Save here, and
+ * the last two tests pin the interaction that experiment settled - a pick and
+ * an open editor do not touch each other.
+ */
+describe("the sidebar pickers", () => {
+  const openPicker = (label: string) =>
+    fireEvent.click(screen.getByLabelText(`${label}: change`));
+
+  it("writes a priority the moment it is picked, with no Save to press", async () => {
+    const { onSave } = open({ priority: 0 });
+    openPicker("Priority");
+
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "P1" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ priority: 4 }));
+  });
+
+  it("moves the task to the project that was picked", async () => {
+    const { onSave } = open({ project_id: 3 });
+    openPicker("Project");
+
+    fireEvent.click(screen.getByRole("button", { name: "Home" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ project_id: 7 }));
+  });
+
+  it("reads a date shortcut through the acceptor, not a date of its own", async () => {
+    const { onSave } = open();
+    openPicker("Date");
+
+    fireEvent.click(screen.getByRole("button", { name: "Tomorrow" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const written = (onSave as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      due_date: string;
+    };
+    // 2026-09-10, all-day, at the 20:00 Rome fallback of D-map-2.
+    expect(written.due_date).toBe("2026-09-10T18:00:00.000Z");
+  });
+
+  it("refuses a phrase it cannot read, and writes nothing", async () => {
+    const { onSave } = open();
+    openPicker("Date");
+
+    const field = screen.getByLabelText("Type a date");
+    fireEvent.change(field, { target: { value: "this weekend" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(await screen.findByText(/this weekend/)).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("offers to clear only a date that exists, and clears it with the null date", async () => {
+    const { onSave } = open({ due_date: "2026-09-20T18:00:00Z" });
+    openPicker("Date");
+
+    fireEvent.click(screen.getByRole("button", { name: "No date" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({ due_date: "0001-01-01T00:00:00Z" }),
+    );
+  });
+
+  it("does not offer to clear a date that is not set", () => {
+    open();
+    openPicker("Date");
+
+    expect(screen.queryByRole("button", { name: "No date" })).not.toBeInTheDocument();
+  });
+
+  it("stays open and says why when the write fails", async () => {
+    const onSave = vi.fn(async () => {
+      throw new Error("Vikunja said no.");
+    });
+    open({ priority: 0 }, { onSave });
+    openPicker("Priority");
+    fireEvent.click(screen.getByRole("button", { name: "P1" }));
+
+    expect(await screen.findByText("Vikunja said no.")).toBeInTheDocument();
+    // Still open: with no Save button to stay behind, closing would leave the
+    // old value on screen with nothing to explain it.
+    expect(screen.getByRole("button", { name: "P2" })).toBeInTheDocument();
+  });
+
+  it("gives Escape to the open picker, not to the dialog behind it", () => {
+    const { onClose } = open();
+    openPicker("Priority");
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "P1" }), { key: "Escape" });
+
+    expect(screen.queryByRole("button", { name: "P1" })).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("leaves an open title editor alone when the sidebar commits", async () => {
+    const { onSave } = open({ priority: 0 });
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "Half-typed name" },
+    });
+
+    openPicker("Priority");
+    fireEvent.click(screen.getByRole("button", { name: "P1" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ priority: 4 }));
+
+    // Measured in Todoist: the pick commits, the editor keeps its draft, and
+    // the editor's own Cancel does not take the pick back with it.
+    expect(screen.getByLabelText("Edit the task name")).toHaveValue("Half-typed name");
   });
 });

@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type { TaskPatch } from "../../api/endpoints";
 import type { Task } from "../../api/types";
 import { formatDueLabel, parseVikunjaDate } from "../../model/dates";
+import type { DuePhrase } from "../../model/duePhrase";
 import { priorityFromVikunja, priorityLabel } from "../../model/priority";
 import { isRichHtml, stripHtml, toDescriptionHtml } from "../../model/taskRow";
 import { Icon } from "../icons/Icon";
 import { PriorityCheckbox } from "../PriorityCheckbox";
 import { EditableField } from "./EditableField";
+import { PickerField } from "./PickerField";
+import { DuePicker, PriorityPicker, type ProjectOption, ProjectPicker } from "./pickers";
 import styles from "./TaskDetail.module.css";
 
 /**
@@ -26,6 +29,13 @@ export interface TaskDetailProps {
   task: Task;
   /** The project the breadcrumb names. */
   projectName: string;
+  /** Every project this task can be moved to, in the order the picker lists them. */
+  projects: readonly ProjectOption[];
+  /**
+   * Reads the date field's phrases with the composer's own acceptor. A callback
+   * so the clock is read at the moment of the pick, not when the dialog opened.
+   */
+  readDuePhrase: (phrase: string) => DuePhrase;
   now: Date;
   timeZone: string;
   defaultDueTime: string | null;
@@ -40,6 +50,8 @@ export interface TaskDetailProps {
 export function TaskDetail({
   task,
   projectName,
+  projects,
+  readDuePhrase,
   now,
   timeZone,
   defaultDueTime,
@@ -246,29 +258,52 @@ export function TaskDetail({
 
           <div className={styles.sidebar}>
             <div className={styles.fields}>
-              <div>
-                <div className={styles.fieldLabel}>Project</div>
-                <div className={styles.fieldValue}>
-                  <Icon name="project" size={16} />
-                  {projectName}
-                </div>
-              </div>
+              <PickerField
+                label="Project"
+                icon="project"
+                value={projectName}
+                onCommit={onSave}
+              >
+                {(control) => (
+                  <ProjectPicker
+                    projects={projects}
+                    current={task.project_id}
+                    {...control}
+                  />
+                )}
+              </PickerField>
               <hr className={styles.rule} />
-              <div>
-                <div className={styles.fieldLabel}>Date</div>
-                <div className={`${styles.fieldValue} ${due ? "" : styles.fieldEmpty}`}>
-                  <Icon name="today" size={16} />
-                  {due ? formatDueLabel(due, now, timeZone, defaultDueTime) : "No date"}
-                </div>
-              </div>
+              <PickerField
+                label="Date"
+                icon="today"
+                value={
+                  due ? formatDueLabel(due, now, timeZone, defaultDueTime) : "No date"
+                }
+                empty={!due}
+                onCommit={onSave}
+              >
+                {(control) => (
+                  <DuePicker
+                    hasDate={due !== null}
+                    readPhrase={readDuePhrase}
+                    {...control}
+                  />
+                )}
+              </PickerField>
               <hr className={styles.rule} />
-              <div>
-                <div className={styles.fieldLabel}>Priority</div>
-                <div className={styles.fieldValue}>
-                  <Icon name="flag" size={16} />
-                  {priorityLabel(priorityFromVikunja(task.priority))}
-                </div>
-              </div>
+              <PickerField
+                label="Priority"
+                icon="flag"
+                value={priorityLabel(priorityFromVikunja(task.priority))}
+                onCommit={onSave}
+              >
+                {(control) => (
+                  <PriorityPicker
+                    current={priorityFromVikunja(task.priority)}
+                    {...control}
+                  />
+                )}
+              </PickerField>
               <hr className={styles.rule} />
               <div>
                 <div className={styles.fieldLabel}>Labels</div>

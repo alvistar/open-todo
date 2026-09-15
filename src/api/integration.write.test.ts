@@ -21,9 +21,9 @@
  * It cleans up after itself: every task it creates is deleted at the end.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { deleteTask, getUser, updateTask } from "./endpoints";
+import { deleteTask, getUser, listProjects, updateTask } from "./endpoints";
 import { createHttp } from "./http";
-import type { Task } from "./types";
+import { type Task, VIKUNJA_NULL_DATE } from "./types";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -152,5 +152,44 @@ describe.skipIf(!enabled)("live Vikunja instance (writes)", () => {
     expect(after.priority).toBe(3);
     expect(after.reminders?.length).toBe(1);
     expect(after.assignees?.length).toBe(1);
+  });
+
+  it("the sidebar's writes change one column and erase nothing", {
+    timeout: 30_000,
+  }, async () => {
+    /*
+     * Step 3 of the detail dialog writes three columns through this same
+     * endpoint, and two of them carry a claim this test is here to settle:
+     * that the bulk route accepts a project MOVE at all, and that Vikunja
+     * reads the year-1 date as "unset" rather than storing it as a real date
+     * in the year 1. Both are cheap to assert and expensive to be wrong about.
+     */
+    const { task, due } = await scratchTask("sidebar", {});
+
+    const prioritised = await updateTask(http, task, { priority: 4 });
+    expect(prioritised.priority).toBe(4);
+    expect(seconds(prioritised.due_date)).toBe(seconds(due));
+    expect(prioritised.reminders?.length).toBe(1);
+    expect(prioritised.assignees?.length).toBe(1);
+
+    const elsewhere = (await listProjects(http)).find(
+      (project) => project.id !== task.project_id && !project.is_archived,
+    );
+    if (!elsewhere) {
+      throw new Error("This test needs a second, unarchived project to move a task to.");
+    }
+    const moved = await updateTask(http, prioritised, { project_id: elsewhere.id });
+    expect(moved.project_id).toBe(elsewhere.id);
+    expect(moved.description).toContain("Kept, not wiped.");
+    expect(moved.priority).toBe(4);
+    expect(moved.reminders?.length).toBe(1);
+
+    const cleared = await updateTask(http, moved, { due_date: VIKUNJA_NULL_DATE });
+    // Whatever shape the server echoes back, it must not be a real date.
+    expect(seconds(cleared.due_date)).toBeLessThan(seconds("1970-01-01T00:00:00Z") + 1);
+    expect(cleared.priority).toBe(4);
+    expect(cleared.description).toContain("Kept, not wiped.");
+    expect(cleared.reminders?.length).toBe(1);
+    expect(cleared.assignees?.length).toBe(1);
   });
 });

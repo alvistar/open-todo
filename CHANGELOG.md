@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Editing a description that was written with formatting elsewhere says so
     **before** you type, because open-todo shows descriptions as plain text and
     would save them back that way.
+  - **The date, the priority and the project are now editable too**, from the
+    side of the dialog — and these have no Save: picking a value writes it,
+    which is how the reference product behaves and was checked by experiment.
+    A pick made while the name editor is open does not disturb it, and the
+    editor's Cancel does not take the pick back.
+  - The date picker carries Today / Tomorrow / This weekend / Next week, a
+    field you can type a date into in words, and — when a date is set — a way
+    to remove it. The typed field reads phrases with the same grammar the
+    composer uses, so a phrase open-todo refuses in one place is refused in
+    the other, and it never invents a date it did not understand.
 - **The task list has a keyboard**, with Todoist's own map: Up/Down or `J`/`K`
   move between tasks, **Enter opens** the focused one, `E` completes or reopens
   it, and `Z` takes back a completion while the row is still on screen. The list is now a single Tab stop instead
@@ -71,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `Upcoming` from its project list, with negative ids and nothing else to
   tell them apart. They were listed in the sidebar as if they were projects,
   and `#Today` in the composer would have filed a task inside a saved search.
+  Found while building the detail dialog's project picker, which would have
+  written a task into one.
 - **The six-second window to undo a completion now actually appears.** It never
   did in `pnpm dev`: an unmount guard added during review stayed latched after
   React StrictMode's remount, so completed rows vanished instantly and the Undo
