@@ -1,5 +1,5 @@
 import type { TaskPatch } from "../api/endpoints";
-import { type Task, VIKUNJA_NULL_DATE } from "../api/types";
+import { type Task, type TaskReminder, VIKUNJA_NULL_DATE } from "../api/types";
 import { priorityFromVikunja, priorityLabel } from "./priority";
 
 /**
@@ -93,4 +93,63 @@ export function undoableChange(
   }
 
   return null;
+}
+
+/** The two halves of a label pick; the third, creation, is not undoable. */
+export type LabelPick = { labelId: number; attached: boolean } | { create: string };
+
+export interface UndoableLabel {
+  message: string;
+  previous: { labelId: number; attached: boolean };
+}
+
+/**
+ * Attaching and detaching a label are each other's undo.
+ *
+ * CREATING one is not offered, and that is the point of this function rather
+ * than an oversight in it. A new label goes into a namespace shared by every
+ * task on the instance, so undoing it means deleting something another task
+ * may already carry. D-detail already made creation a deliberate button, not a
+ * keystroke, because a typo there is not undoable by whoever made it — an Undo
+ * would be that same keystroke wearing a friendlier face.
+ */
+export function undoableLabelChange(
+  change: LabelPick,
+  labelName: (labelId: number) => string | undefined,
+): UndoableLabel | null {
+  if ("create" in change) return null;
+  const name = labelName(change.labelId);
+  // Nothing is said that cannot be said properly: "Added @5" is worse than
+  // silence.
+  if (!name) return null;
+  return {
+    message: `${change.attached ? "Added" : "Removed"} @${name}`,
+    previous: { labelId: change.labelId, attached: !change.attached },
+  };
+}
+
+export interface UndoableReminders {
+  message: string;
+  previous: TaskReminder[];
+}
+
+/**
+ * Reminders are replaced as a SET, never patched — §6 item 17 records what
+ * happens to a task when you try to write them alone — so the only honest undo
+ * is the whole previous set, taken from the server's copy.
+ */
+export function undoableReminderChange(
+  before: readonly TaskReminder[],
+  after: readonly TaskReminder[],
+  describe: (reminder: TaskReminder) => string,
+): UndoableReminders | null {
+  if (JSON.stringify(before) === JSON.stringify(after)) return null;
+  const first = after[0];
+  const message =
+    after.length === 0
+      ? "Reminders cleared"
+      : after.length === 1 && first
+        ? `Reminder set: ${describe(first)}`
+        : `${after.length} reminders set`;
+  return { message, previous: [...before] };
 }

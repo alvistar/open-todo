@@ -1066,10 +1066,19 @@ public HTTP API only, which carries no such obligation.
        render an explicit "not built yet" screen under their OWN name instead
        of silently showing Today under Today's heading.
 
-    3. **Undo is offered for three writes, not all of them.** A completion has
-       the row linger, and the sidebar picks have a toast; a label change, a
-       reminder change, an added sub-task and a comment have none. Each is
-       reversible — the pattern is `undoableChange`'s — and none is done.
+    3. ~~**Undo is offered for three writes, not all of them**~~ — extended
+       2026-09-16 to label attach/detach and to reminders. Three writes still
+       have none, and the item's old claim that "each is reversible" was
+       **wrong** for all three:
+       - **Creating a label** puts it in a namespace shared by every task on
+         the instance, so undoing means deleting something another task may
+         already carry. D-detail already made creation a button rather than a
+         keystroke for that reason; an Undo would be the keystroke again.
+       - **A sub-task** and **a comment** are creations, so undoing is a
+         DELETE. `deleteTask` exists with no affordance (item 10) and there is
+         no delete-comment route in the client at all; removing only the
+         relation would leave an orphan task invisible from that screen.
+         These belong to the delete slice, not to this one.
     4. **The participle veto left open by D-adverb** — no rule separates
        `disdire il servizio pagato mensilmente` from `controllare il saldo
        mensilmente`. The decision was to offer, not apply; the veto stays open,

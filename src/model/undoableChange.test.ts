@@ -12,7 +12,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { type Task, VIKUNJA_NULL_DATE } from "../api/types";
-import { undoableChange } from "./undoableChange";
+import {
+  undoableChange,
+  undoableLabelChange,
+  undoableReminderChange,
+} from "./undoableChange";
 
 const task = (over: Partial<Task> = {}): Task =>
   ({
@@ -127,5 +131,70 @@ describe("what is deliberately not offered", () => {
      * Undo that only half works.
      */
     expect(undoableChange(task(), { project_id: 9, priority: 4 }, context)).toBeNull();
+  });
+});
+
+describe("labels", () => {
+  const name = (id: number) => (id === 5 ? "telefono" : "urgente");
+
+  it("takes back an attach by detaching the same label", () => {
+    expect(undoableLabelChange({ labelId: 5, attached: true }, name)).toEqual({
+      message: "Added @telefono",
+      previous: { labelId: 5, attached: false },
+    });
+  });
+
+  it("takes back a detach by attaching it again", () => {
+    expect(undoableLabelChange({ labelId: 5, attached: false }, name)).toEqual({
+      message: "Removed @telefono",
+      previous: { labelId: 5, attached: true },
+    });
+  });
+
+  it("offers NOTHING for creating a label", () => {
+    /*
+     * The one that must not be offered. Creating a label puts it in a
+     * namespace shared by every task in the instance, so undoing it means
+     * deleting something another task may already carry — and D-detail already
+     * made creation a deliberate button precisely because a typo there is not
+     * undoable by the person who made it. An Undo would be that keystroke with
+     * a friendlier face.
+     */
+    expect(undoableLabelChange({ create: "nuovo" }, name)).toBeNull();
+  });
+
+  it("says nothing it cannot name", () => {
+    // A label the list does not have yet: better no toast than "Added @5".
+    expect(
+      undoableLabelChange({ labelId: 99, attached: true }, () => undefined),
+    ).toBeNull();
+  });
+});
+
+describe("reminders", () => {
+  const before = [{ relative_period: -3600, relative_to: "due_date" }];
+  const describe1 = () => "1 hour before";
+
+  it("puts the old list back, whole", () => {
+    // Reminders are replaced as a set, never patched (§6 item 17 is what
+    // happens when you try), so the only honest undo is the previous set.
+    const change = undoableReminderChange(before, [], describe1);
+    expect(change).toEqual({ message: "Reminders cleared", previous: before });
+  });
+
+  it("names a single reminder rather than counting it", () => {
+    expect(undoableReminderChange([], before, describe1)?.message).toBe(
+      "Reminder set: 1 hour before",
+    );
+  });
+
+  it("counts several", () => {
+    const two = [...before, { reminder: "2026-09-20T09:00:00Z" }];
+    expect(undoableReminderChange([], two, describe1)?.message).toBe("2 reminders set");
+  });
+
+  it("is not offered when the set did not change", () => {
+    expect(undoableReminderChange(before, before, describe1)).toBeNull();
+    expect(undoableReminderChange([], [], describe1)).toBeNull();
   });
 });

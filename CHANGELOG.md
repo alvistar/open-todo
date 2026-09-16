@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     at a position and jumping once it learns the real one.
 
 ### Added
+- **Adding or removing a label, and changing a task's reminders, now offer an
+  Undo too** — the same one-click way back as the date, project and priority
+  pickers. Reminders are put back as the whole set they were, since that is how
+  Vikunja stores them.
+  - Creating a NEW label still has no Undo, on purpose: the label belongs to
+    every task on your instance, so taking it back could remove one another
+    task already uses.
 - **Picking a date, a project or a priority in a task now offers an Undo.**
   Those pickers write the moment you choose (there is no Save button, on
   purpose), and two of them can carry the task out of the list you were looking

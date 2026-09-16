@@ -11,6 +11,7 @@ import { applyPending } from "../model/pending";
 import { listViewId } from "../model/projectViews";
 import { type Decision, withDecisions } from "../model/quickadd/decisions";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
+import { describeReminder } from "../model/reminders";
 import {
   asksTheSameAs,
   filterIdFromProjectId,
@@ -18,7 +19,11 @@ import {
 } from "../model/savedFilters";
 import { type RowContext, toTaskRow } from "../model/taskRow";
 import { titleEdit } from "../model/titleEdit";
-import { undoableChange } from "../model/undoableChange";
+import {
+  undoableChange,
+  undoableLabelChange,
+  undoableReminderChange,
+} from "../model/undoableChange";
 import {
   inboxView,
   projectView,
@@ -534,12 +539,57 @@ export function AppScreen() {
             });
           }}
           onSaveReminders={async (reminders) => {
-            await reminding.mutateAsync({ task: openTask, reminders });
+            const change = undoableReminderChange(
+              openTask.reminders ?? [],
+              reminders,
+              (reminder) =>
+                describeReminder(reminder, new Date(), timeZone, defaultDueTime),
+            );
+            const fresh = await reminding.mutateAsync({ task: openTask, reminders });
+            if (!change) return;
+            toasts.show({
+              message: change.message,
+              action: {
+                label: "Undo",
+                run: async () => {
+                  // The server's latest copy, for the same reason the sidebar
+                  // undo uses it: updateReminders names a column and echoes
+                  // the rest off whatever task it is handed.
+                  await reminding.mutateAsync({
+                    task: fresh,
+                    reminders: change.previous,
+                  });
+                },
+              },
+            });
           }}
           allLabels={labelsQuery.data ?? []}
           onChangeLabel={async (change) => {
-            await labelling.mutateAsync({ task: openTask, change });
+            const undo = undoableLabelChange(
+              change,
+              (labelId) => labelsQuery.data?.find((l) => l.id === labelId)?.title,
+            );
+            const fresh = await labelling.mutateAsync({ task: openTask, change });
+            if (!undo) return;
+            toasts.show({
+              message: undo.message,
+              action: {
+                label: "Undo",
+                run: async () => {
+                  await labelling.mutateAsync({ task: fresh, change: undo.previous });
+                },
+              },
+            });
           }}
+          /*
+           * No Undo, deliberately. Undoing a CREATION means deleting — here a
+           * whole task, which `deleteTask` could do and no affordance in this
+           * app offers, because deletion carries its own questions about
+           * confirmation and reversibility (§7). Removing only the relation
+           * would leave an orphan task the user cannot see from here, which is
+           * worse than no offer. Same for the comment below, which has no
+           * delete route in the client at all.
+           */
           onAddSubtask={async (title) => {
             await subtasking.mutateAsync({ parent: openTask, title });
           }}
