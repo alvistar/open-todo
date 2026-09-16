@@ -1060,21 +1060,33 @@ public HTTP API only, which carries no such obligation.
        never contained a phrase of this shape, which is exactly why the defect
        survived. A green corpus is evidence about what it covers and nothing
        else.
-    2. **Undo is offered for three writes, not all of them.** A completion has
+    2. **Three sidebar entries go to the wrong screen.** Measured 2026-09-16:
+       `#/upcoming`, `#/search` and `#/labels` — and any unknown route — all
+       render **Today**, heading included, because `AppScreen`'s view memo ends
+       in `return todayView(...)` with no case for them and `Route` is a bare
+       `string`. The sidebar offers them as navigation and they silently take
+       you somewhere else. This is the defect D-detail named — "a button that
+       does nothing is the defect this app keeps relearning" — one step worse,
+       because these do something wrong rather than nothing. Cheapest honest
+       fix is to render an explicit "not built yet" view for a route with no
+       handler; the real fix is Upcoming, which mapping §4 already specifies
+       and whose saved filter (-9, `/filters/8`) already exists on `pinguino`.
+
+    3. **Undo is offered for three writes, not all of them.** A completion has
        the row linger, and the sidebar picks have a toast; a label change, a
        reminder change, an added sub-task and a comment have none. Each is
        reversible — the pattern is `undoableChange`'s — and none is done.
-    3. **The participle veto left open by D-adverb** — no rule separates
+    4. **The participle veto left open by D-adverb** — no rule separates
        `disdire il servizio pagato mensilmente` from `controllare il saldo
        mensilmente`. The decision was to offer, not apply; the veto stays open,
        and it is cheap to measure against the 4325-phrase corpus.
-    4. ~~**F7**~~ — measured closed 2026-09-16: `corri ogni 1,5 km` matches no
+    5. ~~**F7**~~ — measured closed 2026-09-16: `corri ogni 1,5 km` matches no
        recurrence and raises no warning. The later rule about what may follow a
        complete schedule closed it; nobody had re-measured. Mapping §5 updated.
-    5. **A delete affordance** (item 10 above).
-    6. **Never measured**, from the original recon: hover and focus states, the
+    6. **A delete affordance** (item 10 above).
+    7. **Never measured**, from the original recon: hover and focus states, the
        Upcoming view, and a project view with sections (item 3 above).
-    7. **The unsaved-changes confirmation** the reference product shows and
+    8. **The unsaved-changes confirmation** the reference product shows and
        open-todo does not (D-detail, last paragraph).
 
 14. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
