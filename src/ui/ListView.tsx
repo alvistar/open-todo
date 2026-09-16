@@ -268,45 +268,43 @@ export function ListView({
     total === 0 ? (
       <p className={styles.empty}>{emptyMessage}</p>
     ) : (
-      <>
-        {sections.map((section, index) => (
-          <section key={section.key} className={styles.section}>
-            {section.title ? (
-              <SectionHeader
-                title={section.title}
-                {...(section.count === undefined ? {} : { count: section.count })}
-                first={index === 0}
-              />
-            ) : null}
-            <ul className={styles.list}>
-              <SortableContext
-                items={section.tasks.map((task) => task.id)}
-                strategy={verticalListSortingStrategy}
-                disabled={!reorderable}
-              >
-                {section.tasks.map((task) => {
-                  const rowProps = {
-                    tabIndex: task.id === tabStop ? 0 : -1,
-                    onKeyDown: rowKeyDown(task),
-                    rowRef: (el: HTMLDivElement | null) => {
-                      if (el) rows.current.set(task.id, el);
-                      else rows.current.delete(task.id);
-                    },
-                    ...(onToggleDone ? { onToggleDone } : {}),
-                    ...(onUndo ? { onUndo } : {}),
-                    ...(onOpenTask ? { onOpen: onOpenTask } : {}),
-                  };
-                  return reorderable ? (
-                    <SortableRow key={task.id} task={task} rowProps={rowProps} />
-                  ) : (
-                    <TaskRow key={task.id} task={task} {...rowProps} />
-                  );
-                })}
-              </SortableContext>
-            </ul>
-          </section>
-        ))}
-      </>
+      sections.map((section, index) => (
+        <section key={section.key} className={styles.section}>
+          {section.title ? (
+            <SectionHeader
+              title={section.title}
+              {...(section.count === undefined ? {} : { count: section.count })}
+              first={index === 0}
+            />
+          ) : null}
+          <ul className={styles.list}>
+            <SortableContext
+              items={section.tasks.map((task) => task.id)}
+              strategy={verticalListSortingStrategy}
+              disabled={!reorderable}
+            >
+              {section.tasks.map((task) => {
+                const rowProps = {
+                  tabIndex: task.id === tabStop ? 0 : -1,
+                  onKeyDown: rowKeyDown(task),
+                  rowRef: (el: HTMLDivElement | null) => {
+                    if (el) rows.current.set(task.id, el);
+                    else rows.current.delete(task.id);
+                  },
+                  ...(onToggleDone ? { onToggleDone } : {}),
+                  ...(onUndo ? { onUndo } : {}),
+                  ...(onOpenTask ? { onOpen: onOpenTask } : {}),
+                };
+                return reorderable ? (
+                  <SortableRow key={task.id} task={task} rowProps={rowProps} />
+                ) : (
+                  <TaskRow key={task.id} task={task} {...rowProps} />
+                );
+              })}
+            </SortableContext>
+          </ul>
+        </section>
+      ))
     );
 
   return (

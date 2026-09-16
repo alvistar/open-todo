@@ -245,7 +245,11 @@ Cancelling with text present opens the confirmation modal (§5).
 - Header toolbar reserves a 1157px-wide empty left cell. Ours can hold the
   breadcrumb / project colour instead.
 - Drag handle at `opacity 0` until hover is fine on desktop but gives touch
-  users no affordance. Revisit when the drag slice is built (D4 step 3).
+  users no affordance. **Settled 2026-09-16 when the drag slice was built:**
+  hover-only on a fine pointer, as measured, but visible at rest and dimmed
+  (`opacity .45`) under `@media (pointer: coarse)` — where there is no hover,
+  a hover-revealed affordance does not exist at all. It is also revealed by
+  `:focus-visible`, since an invisible focused control is worse than none.
 
 ---
 

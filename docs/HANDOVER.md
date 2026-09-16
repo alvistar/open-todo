@@ -1,9 +1,11 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** the app reads *and writes*: quick-add, completion, a keyboard, and a
-full task-detail dialog. All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-15 — two of them, in sequence. The first made a task completable (D-write) and turned a bare repeat adverb into an offer rather than a schedule (D-adverb); until then the app could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. The second gave the list a keyboard (D4 step 2) and built the whole task-detail dialog (D-detail): open a task, edit its name and description, pick its project, date, priority, labels and reminders, read and add comments, add sub-tasks. **Next:** D4 step 3 (drag reorder), with the incomplete Italian language pack (§4, D-vocab) as the other live candidate — see §7 item 11.
+**Status:** the app reads *and writes*: quick-add, completion, a keyboard, a
+full task-detail dialog, and a manual order that persists in Vikunja. All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
+**Previous session:** 2026-09-15 — two of them, in sequence. The first made a task completable (D-write) and turned a bare repeat adverb into an offer rather than a schedule (D-adverb); until then the app could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. The second gave the list a keyboard (D4 step 2) and built the whole task-detail dialog (D-detail).
+
+**Last session:** 2026-09-16 — D4 step 3 (D-order): a list can be reordered by drag or by Alt+Arrow, and the order is written to Vikunja, in projects, in Inbox and in Today. The slice was larger than it looks, because the app could not READ an order either — every list was a flat `GET /tasks` where §3 says `position` means nothing. The probes that opened it found §3 **wrong about who renumbers** a crowded view (§6 item 23: the client must), and driving the app found Today silently losing its "Overdue" heading with all 713 tests green. **Next:** D4 step 4 (general undo / toasts), with the incomplete Italian language pack (§4, D-vocab) as the other live candidate — see §7 item 12.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -17,8 +19,8 @@ natural-language parsing, completion with an undo window, a keyboard, and a
 full task-detail dialog. `pnpm install && pnpm dev` runs it (port 5173; 5199 is
 what the last sessions used); see the README for how to point it at an instance.
 
-The gate is `npx tsc -b && npx biome check . && npx vitest run` — 642 tests,
-biome clean across all 135 files. Plus `node scripts/sync-version.mjs --check`
+The gate is `npx tsc -b && npx biome check . && npx vitest run` — 716 tests,
+biome clean across all 145 files. Plus `node scripts/sync-version.mjs --check`
 and `node scripts/sync-design-tokens.mjs --check`. **Write tests against a real
 server are opt-in**: `VIKUNJA_TEST_URL` + `VIKUNJA_TEST_TOKEN` +
 `VIKUNJA_TEST_WRITE=1` on `src/api/integration.write.test.ts`. They are
@@ -33,10 +35,13 @@ them, and check there are zero leftovers.
    produced it is probably gone.
 2. D3, D4 and D5 are decided (§4). Do not reopen them; D2 is settled
    per screen during the measuring pass.
-3. Go to §7. Items 1-10 are done; **item 11 is the open list, ranked**.
-4. Before touching any write, read D-write and D-detail in §4 and items 13-21 of
-   `docs/data-model-mapping.md` §6. `POST /tasks/{id}` is not a patch — every
-   omitted field is erased — and several of the traps under that are silent.
+3. Go to §7. Items 1-11 are done; **item 12 is the open list, ranked**.
+4. Before touching any write, read D-write, D-detail and D-order in §4 and
+   items 13-30 of `docs/data-model-mapping.md` §6. `POST /tasks/{id}` is not a
+   patch — every omitted field is erased — and several of the traps under that
+   are silent. A position is the one write that does NOT go through
+   `updateTask`: it is not a task column, and the bulk route refuses it (item
+   27).
 
 **How the owner wants decisions handled:** one at a time, as a written brief in
 the message (mechanism → what's wrong → why it matters → cost of each option →
@@ -592,6 +597,83 @@ test that PASSES while asserting the wrong behaviour, so that a refactor could
 not quietly change its shape. Nothing is left to pin, so the file is deleted —
 recreate it when the next defect needs it.
 
+### D-order — Drag reorder, and what §3 got wrong — **DECIDED 2026-09-16**
+
+D4 step 3. The owner chose the full scope: project lists, Inbox **and** Today.
+
+**The slice was larger than "add dnd-kit", because the app could not READ an
+order, let alone write one.** Every list was a flat `GET /tasks` sorted by due
+date, and §3 says a task fetched that way carries `position` 0 — meaningless.
+`Task.position`, `Task.bucket_id` and `Project.views` had all been typed since
+the foundation slice and read nowhere. So the manual order arranged in Vikunja
+or in Veyrn was invisible here.
+
+**Everything rested on a route nobody had called.** §3's route name, midpoint
+arithmetic and renumber rule were read off Vikunja's source on `main`, and this
+instance has already retired a route between versions (`/tasks/all` → 400). The
+slice therefore opened with probes, not code, and they are kept in the two
+integration files: §6 items 22-30.
+
+**What the probes changed:**
+
+1. **There is no server-side renumber** (item 23). §3 said a gap below
+   `MinPositionSpacing` makes the server rewrite the view. It does not — a
+   position written 0.001 from its neighbour was stored verbatim and 0 of 3
+   neighbours moved. The recalculation is the FRONTEND's, which is what §3's own
+   citation always was. That inverts the consequence: nothing protects a view
+   from its gaps converging, so **the client must renumber**, and a client that
+   merely re-read would get the same crowded numbers back and halve them again
+   until two tasks share a float and the order falls back to id. `useReorderTask`
+   spreads the view back out at 2^16, one write per task, then re-reads.
+2. **Discovery is free** (item 25): `GET /projects` carries `views[]` inline.
+3. **Today's existing saved filter is already ours** (item 26): `/filters/9`
+   asks `done = false && due_date < now/d+1d`, character for character what
+   `todayView()` builds, and its view returns the same 9 ids as the ad-hoc
+   listing (item 30). The adoption question §4 raised is settled by measurement.
+
+**Decisions worth not re-deriving:**
+
+- **`position: 0` and `position: undefined` are not the same thing.** 0 is real —
+  §3 gives it to the first task in an empty view — while undefined means "never
+  read through a view". The incremental poll is deliberately a flat `GET /tasks`
+  (its comment says why), so `carryViewPosition` folds its copies onto the held
+  ones: every field from the server, the position from us. A newcomer has the
+  field DELETED, not zeroed, and sorts last. Zeroing it would claim the top.
+- **The reorder API takes IDS, not indices.** The rendered list is not the cached
+  array: the cache also holds sub-tasks, shown under their parent and nowhere
+  else, and rows lingering after a completion. It is also more correct — a hidden
+  sub-task between two visible rows still occupies the position space, and the
+  midpoint must account for it. Verified live: moving a row one place in
+  "Personale" stored 16640, the midpoint of a hidden sub-task at 512 and the
+  task at 32768.
+- **The reorder mutation never invalidates.** A refetch landing before the server
+  has the new position renders the OLD order, which reads as the drag being
+  refused. It writes the authoritative array itself, and the poll is told to
+  stand still while a write is on the wire.
+- **`onMutate` cancels AFTER the optimistic write.** The usual recipe cancels
+  first, but `cancelQueries` awaits the in-flight fetch — awaiting the network
+  before the row moves is the one thing a drag may never do. A test caught it.
+- **dnd-kit's `attributes` and `listeners` go on the HANDLE, never the row.**
+  They carry their own `role="button"` and `tabIndex=0`, which would collide with
+  the row's deliberate `role="button"` and make every row tabbable again — the
+  exact defect D4 step 2 removed. Cost, measured by building both ways:
+  **+15.3 kB gzip** (115.35 → 130.62 kB).
+- **A move stays inside its section.** Once a list is position-ordered, sections
+  come from the DUE DATE while order comes from position, so a section's rows are
+  not contiguous in the position space. A drag from "Overdue" into today would
+  write a correct position and render the row straight back — a gesture that
+  visibly does nothing. Crossing means reschedule, which nobody asked for.
+- **open-todo does not create the Today filter.** That would put an object in the
+  user's Vikunja, visible in Veyrn and the web UI, because they opened a screen.
+  No matching filter means no handle, and no explanation of Vikunja's data model.
+
+**The defect only driving the app found, and the one to remember:**
+`groupTasksForView` identified the view by `view.key === "today"`. The key became
+`today@v42` when it started carrying its view id, the comparison silently
+stopped matching, and **Today lost its "Overdue" heading while all 713 tests
+stayed green**. Grouping is now its own field on `ViewDef`. A key identifies a
+cache entry; it does not declare behaviour. Look for the same shape elsewhere.
+
 ### D-detail — The task-detail dialog — **DECIDED 2026-09-15**
 
 D4 step 2 shipped a keyboard whose Enter had nowhere to go: `TaskRow.onOpen` had
@@ -837,16 +919,36 @@ public HTTP API only, which carries no such obligation.
       A delete affordance is its own slice: confirmation, entry point,
       reversibility.
 
-11. **Open, ranked.** Nothing here is started.
+11. ~~D4 step 3 (drag reorder)~~ — done 2026-09-16 (D-order in §4). Probes
+    first (§6 items 22-30), then view-scoped reading, then the poll made to
+    stop undoing the order, then the write, then dnd-kit, then Today on its
+    saved filter. Notes for whoever continues:
+    - **The renumber is ours, not the server's** (§6 item 23). §3 said
+      otherwise and was measured wrong. `useReorderTask` spreads a crowded
+      view back out at 2^16 per task; without it the gaps halve forever.
+    - **Every list now reads through a view endpoint** when one can be
+      resolved, and only that listing carries positions. The incremental poll
+      is still flat on purpose, so `carryViewPosition` is what stops an edit
+      anywhere from throwing a row to the top of a hand-arranged list.
+    - **A key identifies a cache entry; it does not declare behaviour.**
+      `groupTasksForView` compared `view.key === "today"`, the key became
+      `today@v42`, and Today lost its Overdue heading with the whole suite
+      green. Worth grepping for the same shape.
+    - Upcoming is untouched. It has a saved filter (-9, `/filters/8`) and
+      would take the same treatment, but its day grouping makes a cross-day
+      drag a reschedule, which is its own decision.
+
+12. **Open, ranked.** Nothing here is started.
     1. **The Italian language pack is incomplete** — `TODO(F3)`, `TODO(F5)` and
        `TODO(F6)` in `src/model/quickadd/lang/pack.ts`. Those defects are closed
        in **English only**, so `ogni secondo martedì` is silently scheduled as a
        plain Tuesday and `ogni giorno a partire da lunedì` invents a due date.
        The comments say **"Do not 'complete' this list as a tidy-up"**: this
        needs the interview and the corpus gates, not a guess.
-    2. **D4 step 3 — drag reorder** (`dnd-kit`; position semantics are already
-       answered in `docs/data-model-mapping.md` §3), then **D4 step 4 — general
-       undo / toasts**.
+    2. **D4 step 4 — general undo / toasts.** There is still no toast
+       primitive: transient messages are inline `role="status"` elements in
+       nine places, and the reorder failure is one more line under the list.
+       `useCompleteTask`'s linger is the only timer-expiry mechanism there is.
     3. **The participle veto left open by D-adverb** — no rule separates
        `disdire il servizio pagato mensilmente` from `controllare il saldo
        mensilmente`. The decision was to offer, not apply; the veto stays open,
@@ -860,7 +962,7 @@ public HTTP API only, which carries no such obligation.
     7. **The unsaved-changes confirmation** the reference product shows and
        open-todo does not (D-detail, last paragraph).
 
-12. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
+13. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
     WebSocket events (D6). Start from `pkg/websocket/listener.go` and
     `validEvents` in `connection.go`; the open question is how to resolve the
     recipients of a project-scoped event. Before the OIDC part: add the SPA's

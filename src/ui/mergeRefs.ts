@@ -13,9 +13,7 @@ import type { Ref } from "react";
  * a ref that never hears it holds a detached node — for the list's `rows` map
  * that is a leak which grows with every task that leaves the view.
  */
-export function mergeRefs<T>(
-  ...refs: (Ref<T> | undefined)[]
-): (value: T | null) => void {
+export function mergeRefs<T>(...refs: (Ref<T> | undefined)[]): (value: T | null) => void {
   return (value) => {
     for (const ref of refs) {
       if (!ref) continue;

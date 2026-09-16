@@ -35,7 +35,9 @@ describe("listViewId", () => {
     // kanban view. Reordering against the wrong one would write a real order
     // into a space nothing on this screen reads.
     expect(
-      listViewId(project([{ id: 8, project_id: 1, title: "Kanban", view_kind: "kanban" }])),
+      listViewId(
+        project([{ id: 8, project_id: 1, title: "Kanban", view_kind: "kanban" }]),
+      ),
     ).toBeNull();
   });
 
