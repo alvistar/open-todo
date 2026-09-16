@@ -13,6 +13,7 @@ import {
   updateTask,
 } from "../api/endpoints";
 import type { Task, TaskComment, TaskReminder } from "../api/types";
+import { carryViewPosition } from "../live/reconcile";
 import type { LabelChange } from "../ui/detail/pickers";
 import { queryKeys } from "./keys";
 
@@ -47,13 +48,24 @@ export function useUpdateTask() {
  * then reconciles. Without the first step the open dialog would show the old
  * value until a refetch landed - it reads the task out of the view's list, on
  * purpose.
+ *
+ * The position is carried across rather than adopted. Everything here answers
+ * through `POST /tasks/bulk`, which is not a view endpoint, so its copy carries
+ * the meaningless `position: 0` of mapping §3 - the same 0 the incremental poll
+ * produces. Writing it into a position-ordered view would put a renamed or
+ * rescheduled task at the TOP of a hand-arranged list on the next re-sort, and
+ * `carryViewPosition` would then read that 0 as a genuine position and keep it
+ * there. The invalidation below usually repairs it first, but the two are
+ * racing, and a race the user loses looks like the list rearranging itself.
  */
 function writeBack(queryClient: QueryClient, updated: Task): void {
   queryClient.setQueriesData<Task[]>(
     { predicate: (query) => query.queryKey[0] === "tasks" },
     (current) =>
       current?.some((task) => task.id === updated.id)
-        ? current.map((task) => (task.id === updated.id ? updated : task))
+        ? current.map((task) =>
+            task.id === updated.id ? carryViewPosition(task, updated) : task,
+          )
         : current,
   );
   void queryClient.invalidateQueries({

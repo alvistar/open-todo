@@ -127,6 +127,18 @@ describe("matchRecurrence — rejected, never approximated", () => {
     "ogni giorno a partire da lunedì",
     "ogni giorno a partire dal 15",
     "ogni settimana a cominciare da lunedì",
+    /*
+     * F6 again, with the BARE preposition — which is how anyone actually says
+     * it. The pack shipped only the explicit forms, on the grounds that a bare
+     * "da" would refuse "ogni giorno da fare"; measured, these three did the
+     * exact damage the TODO described: a repeat, a due date nobody asked for,
+     * and a title collapsed to "da". Safe now because the rule already
+     * requires a DATE after the starting word, and "fare" is not one.
+     */
+    "ogni giorno da lunedì",
+    "ogni settimana da lunedì",
+    "ogni mese dal 15 settembre",
+    "ogni giorno da oggi",
     // Formerly F4: a list of day NUMBERS matched nothing and said nothing,
     // because the rule needed a weekday either side of the separator.
     "ogni 5,6 alle 15",
@@ -159,6 +171,42 @@ describe("matchRecurrence — rejected, never approximated", () => {
 
   it("returns null when there is no recurrence at all", () => {
     expect(r("just a plain task")).toBeNull();
+  });
+});
+
+describe("the bare preposition does not eat ordinary Italian", () => {
+  /*
+   * The whole reason the pack declined to ship a bare "da". These are not
+   * schedules with a start date, they are daily tasks whose text happens to
+   * contain the commonest preposition in the language — and every one of them
+   * has to keep its repeat.
+   */
+  it.each([
+    ["ogni giorno da fare", DAY],
+    ["ogni lunedì da ricordare", WEEK],
+    ["comprare ogni giorno da Luigi", DAY],
+    ["ogni giorno dalla prima pagina", DAY],
+    ["ogni settimana da dedicare al report", WEEK],
+    // "dalle" is left out of the list on purpose: this is a daily task with a
+    // time, and the hint admits a bare digit, so admitting "dalle" would
+    // refuse a form that works.
+    ["ogni giorno dalle 9", DAY],
+  ])("accepts %s", (text, expected) => {
+    expect(r(text)).toMatchObject({ repeatAfter: expected });
+  });
+
+  it("does not read a month abbreviation out of the middle of a word", () => {
+    /*
+     * F10. "dic" sits inside "de-dic-are", and the start-date hint was the one
+     * place in the grammar whose month alternation carried no word boundary —
+     * the date rule has always bounded it. So "ogni settimana da dedicare al
+     * report" was refused as a repeat starting in December.
+     *
+     * Same class as the "mon" inside "month" regression above, and reachable
+     * only once the bare preposition existed, which is how it surfaced.
+     */
+    expect(r("ogni settimana da dedicare al report")?.rejected).toBeUndefined();
+    expect(r("ogni giorno da agevolare il lavoro")).toMatchObject({ repeatAfter: DAY });
   });
 });
 

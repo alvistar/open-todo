@@ -1,4 +1,5 @@
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "../ConfirmDialog";
 import styles from "./EditableField.module.css";
 
 /**
@@ -32,6 +33,8 @@ export interface EditableFieldProps {
    * draft itself still lives in the editor, so nothing re-seeds it.
    */
   onDraft?: (draft: string) => void;
+  /** True while the open editor holds changes nobody has saved. */
+  onDirty?: (dirty: boolean) => void;
 }
 
 export function EditableField({
@@ -45,6 +48,7 @@ export function EditableField({
   multiline = false,
   notice,
   onDraft,
+  onDirty,
 }: EditableFieldProps) {
   if (!editing) {
     return (
@@ -75,6 +79,7 @@ export function EditableField({
       onSave={onSave}
       {...(notice === undefined ? {} : { notice })}
       {...(onDraft === undefined ? {} : { onDraft })}
+      {...(onDirty === undefined ? {} : { onDirty })}
     />
   );
 }
@@ -87,6 +92,7 @@ interface EditorProps {
   onSave: (next: string) => Promise<void>;
   notice?: string;
   onDraft?: (draft: string) => void;
+  onDirty?: (dirty: boolean) => void;
 }
 
 function Editor({
@@ -97,11 +103,30 @@ function Editor({
   onSave,
   notice,
   onDraft,
+  onDirty,
 }: EditorProps) {
   const [draft, setDraft] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const focused = useRef(false);
+
+  /** Changed work, which is the only kind worth asking about. */
+  const dirty = draft !== initial;
+
+  /*
+   * Reported upward so the DIALOG can ask the same question its Cancel does.
+   * Closing the whole pane over an unsaved draft loses the same work by a
+   * different door, and that door is wider.
+   */
+  const onDirtyRef = useRef(onDirty);
+  onDirtyRef.current = onDirty;
+  useEffect(() => {
+    onDirtyRef.current?.(dirty);
+    // Cleared on unmount, or a closed editor would leave the dialog believing
+    // there is still something to lose.
+    return () => onDirtyRef.current?.(false);
+  }, [dirty]);
 
   /** Focus once, on the node itself, without an effect that outlives it. */
   const takeFocus = (node: HTMLTextAreaElement | HTMLInputElement | null) => {
@@ -176,7 +201,18 @@ function Editor({
         <button
           type="button"
           className={`${styles.button} ${styles.cancel}`}
-          onClick={onClose}
+          /*
+           * Cancel asks before it throws work away, and only when there IS
+           * work: an editor opened and left alone closes without a word.
+           *
+           * Measured on the reference product 2026-09-16 — "Ignorare le
+           * modifiche non salvate? / Le modifiche non salvate andranno perse."
+           * — and its editor stays open BEHIND the question, which is why this
+           * renders the confirmation rather than closing first. The question
+           * is theirs; the button verbs follow this app's own, so Discard and
+           * Keep editing read the same here as they do in the composer.
+           */
+          onClick={() => (dirty ? setConfirming(true) : onClose())}
         >
           Cancel
         </button>
@@ -193,6 +229,19 @@ function Editor({
         <p className={styles.error} role="status">
           {error}
         </p>
+      ) : null}
+      {confirming ? (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          body="Unsaved changes will be lost."
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          onConfirm={() => {
+            setConfirming(false);
+            onClose();
+          }}
+          onCancel={() => setConfirming(false)}
+        />
       ) : null}
     </div>
   );

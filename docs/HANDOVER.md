@@ -1,8 +1,12 @@
 # open-todo — Handover
 
 **Created:** 2026-09-09
-**Status:** foundation slice built (read-only app). All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-15. The app can complete a task (D-write), and a bare repeat adverb is offered rather than applied (D-adverb). Until then it could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. Next: keyboard navigation (D4 step 2).
+**Status:** the app reads *and writes*: quick-add, completion, a keyboard, a
+full task-detail dialog, a manual order that persists in Vikunja, and undo
+toasts. **All four D4 interaction slices are built.** All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
+**Previous session:** 2026-09-15 — two of them, in sequence. The first made a task completable (D-write) and turned a bare repeat adverb into an offer rather than a schedule (D-adverb); until then the app could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. The second gave the list a keyboard (D4 step 2) and built the whole task-detail dialog (D-detail).
+
+**Last session:** 2026-09-16 — D4 step 3 (D-order): a list can be reordered by drag or by Alt+Arrow, and the order is written to Vikunja, in projects, in Inbox and in Today. The slice was larger than it looks, because the app could not READ an order either — every list was a flat `GET /tasks` where §3 says `position` means nothing. The probes that opened it found §3 **wrong about who renumbers** a crowded view (§6 item 23: the client must), and driving the app found Today silently losing its "Overdue" heading with all 713 tests green. **D4 is complete** (quick-add, keyboard, drag reorder, undo toasts). **Next:** the incomplete Italian language pack (§4, D-vocab) is the ranked candidate — see §7 item 13.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -10,19 +14,38 @@ owner's working language is Italian).
 
 ## 0. Read this first (new session starting from this repo)
 
-You are picking this up cold. The repo now contains this document, the
-research material, and a working read-only web app (the foundation slice).
-`pnpm install && pnpm dev` runs it; see the README for how to point it at an
-instance.
+You are picking this up cold. The repo contains this document, the research
+material, and a **working app that reads and writes** — quick-add with
+natural-language parsing, completion with an undo window, a keyboard, and a
+full task-detail dialog. `pnpm install && pnpm dev` runs it (port 5173; 5199 is
+what the last sessions used); see the README for how to point it at an instance.
+
+The gate is `npx tsc -b && npx biome check . && npx vitest run` — 716 tests,
+biome clean across all 145 files. Plus `node scripts/sync-version.mjs --check`
+and `node scripts/sync-design-tokens.mjs --check`. **Write tests against a real
+server are opt-in**: `VIKUNJA_TEST_URL` + `VIKUNJA_TEST_TOKEN` +
+`VIKUNJA_TEST_WRITE=1` on `src/api/integration.write.test.ts`. They are
+self-cleaning, and they run against the owner's **real** instance — keep the
+discipline the last sessions kept: prefix scratch tasks `open-todo `, delete
+them, and check there are zero leftovers.
 
 **Do this, in order:**
 
+0. **Run `git branch -a` and `git log --oneline main..<branch>` for each.** This
+   document is only true of the branch it sits on, and on 2026-09-16 that cost a
+   day of duplicated work — see **D-branches** in §4 before anything else.
 1. Read §1 (purpose) and §2 (what was found and what was rejected). Do not
    re-derive them — the reconnaissance pass is done and the Todoist tab that
    produced it is probably gone.
 2. D3, D4 and D5 are decided (§4). Do not reopen them; D2 is settled
    per screen during the measuring pass.
-3. Go to §7 and start at its first unfinished step.
+3. Go to §7. Items 1-12 are done; **item 13 is the open list, ranked**.
+4. Before touching any write, read D-write, D-detail and D-order in §4 and
+   items 13-30 of `docs/data-model-mapping.md` §6. `POST /tasks/{id}` is not a
+   patch — every omitted field is erased — and several of the traps under that
+   are silent. A position is the one write that does NOT go through
+   `updateTask`: it is not a task column, and the bulk route refuses it (item
+   27).
 
 **How the owner wants decisions handled:** one at a time, as a written brief in
 the message (mechanism → what's wrong → why it matters → cost of each option →
@@ -78,11 +101,16 @@ permanent maintenance. **Do not revisit this without a new reason.**
 
 ## 3. What is already in this repo
 
-- `research/todoist-tokens-light.json` — 713 resolved CSS custom properties
-  captured from the live app in **light theme** (`theme_todoist`, the default).
-- `research/todoist-tokens-dark.json` — the same 713 properties resolved under
-  **dark theme** (`theme_dark`), captured 2026-09-09. 336 values differ from
-  light; the key sets are identical, so the two files diff cleanly by key.
+- **The Todoist token captures are NOT in this repository.** 713 resolved CSS
+  custom properties in light theme (`theme_todoist`) and the same 713 under
+  dark (`theme_dark`), captured 2026-09-09; 336 values differ between them and
+  the key sets are identical, so the two diff cleanly by key. They were purged
+  from the public history on 2026-09-16, before the repo was published: a
+  verbatim dump of a commercial product's design tokens is not ours to host,
+  and neither is a pointer to wherever a copy of it sits. `research/measure-dom.js`
+  — which IS ours — reproduces the capture from a running page; do that rather
+  than go looking for the files. What the app actually uses is
+  `src/theme/tokens.css` and `DESIGN.md`, derived from them and original.
 
 How Todoist themes: a class on `<html>` (`theme_todoist`, `theme_dark`,
 `theme_tangerine`, …) selects override rules already present in the loaded
@@ -176,18 +204,24 @@ this order:
    against Vikunja's UI; gives a daily-usable app at slice one. Its parser must
    map dates, priority and recurrence onto Vikunja's fields, which is why the
    §5 mapping table is written first.
-2. ~~**Keyboard navigation**~~ — done 2026-09-15: one tab stop for the list,
-   Up/Down between rows, Enter to complete, `u` to undo. The "detail pane" half
-   is not built, because there is no detail pane: `TaskRow.onOpen` still has no
-   destination. Enter therefore means COMPLETE rather than OPEN — the only act
-   a row can perform today — and the key map is a design choice, not a
-   measurement: `docs/layout-specs.md` never captured hover or focus states
-   (§7 item 3), so there is no reference to copy here.
+2. ~~**Keyboard navigation**~~ — done 2026-09-15: the list is **one tab stop**
+   with a roving `tabindex`, not fifty. The handler hangs off each ROW, not off
+   the scroll container, because the quick-add composer renders in that
+   container's footer and a handler up there would see every keystroke typed
+   into a task name (`u` would undo while you were spelling "usare").
+   **The key map was corrected the same day, in the commit that gave Enter a
+   destination** (`6d83331`): it is now Todoist's own, read off the product's
+   shortcut panel rather than invented — Enter **opens**, `E` completes, `Z`
+   undoes, `J`/`K` alias the arrows. The first cut shipped Enter=complete and
+   `u`=undo only because `TaskRow.onOpen` had no destination yet; D-detail gave
+   it one. Hover and focus states are still unmeasured (§7 item 3).
 3. **Drag reorder with persisted order** — `dnd-kit` for the gesture; the real
    work is how Vikunja's `position` field and kanban buckets represent order.
    **Check Vikunja's position semantics in Veyrn's Swift code during the
    foundation slice**, so the list component is not built on a wrong assumption.
-4. **Undo toasts** — depends on every mutation being reversible; cheapest last.
+4. ~~**Undo toasts**~~ — done 2026-09-16: a toast region bottom-left, with an
+   Undo on the dialog's sidebar picks and a home for the reorder failure. See
+   **D-toast** below for what deliberately did NOT move into it.
 
 Rejected: drag reorder first (weeks before anything is usable; mapping table
 postponed); keyboard first (polish before the ability to add quickly).
@@ -283,7 +317,7 @@ curl -sS -o /dev/null -D - -X OPTIONS \
   -H "Origin: https://open-todo.example" \
   -H "Access-Control-Request-Method: GET" \
   -H "Access-Control-Request-Headers: authorization" \
-  https://vikunja.internal.thealvistar.com/api/v1/tasks/all | grep -i access-control
+  https://<your-vikunja-host>/api/v1/tasks/all | grep -i access-control
 ```
 
 Framework rationale (unchanged): the React ecosystem (`dnd-kit`, TanStack)
@@ -343,7 +377,7 @@ construction while the matchers were hand-written and became a claim nobody was
 checking the moment chrono arrived. chrono's vocabulary is far wider and cannot
 be configured per word, and `parse.ts` removes whatever the date layer matched
 from the title — so the user lost a word *and* gained a due date. Measured on
-`2ab17ce`, reference 10 September 2026, Europe/Rome:
+`dc78ff1`, reference 10 September 2026, Europe/Rome:
 
 | typed | title became | due |
 |---|---|---|
@@ -565,14 +599,387 @@ twice). Three of the four look like genuine repeats and now take one click. That
 is the trade — a click on the common case buys the removal of a silent wrong
 answer on the uncommon one.
 
-Not taken, and worth revisiting because it is cheap to measure against the
-4325-phrase corpus: the **billing-participle veto**. If it holds up it reduces
-how often the offer fires; it does not replace it.
+Not taken — and **CLOSED by the owner on 2026-09-16**: leave it as it is.
+
+The reasoning, recorded so nobody reopens it on the strength of "it is cheap to
+measure". It was worth considering while a bare adverb was APPLIED, because
+then a missing veto wrote a false recurrence silently. Since this decision the
+adverb is only ever offered as a chip, so the veto no longer has to be right —
+it would decide nothing except whether the chip appears. Getting it wrong costs
+a chip you add by hand; omitting it costs a chip you ignore. Against that, the
+rule is wrong in both directions (it loses `get paid monthly`, it misses
+`cancel membership renewed monthly`), and a rule that is wrong in a way nobody
+notices is the defect shape this repo has now hit three times: F8 itself, the
+stale `TODO(F3/F5/F6)` comments, and a green 738-record corpus that covered
+none of the phrases it was trusted for.
+
+If it is ever reconsidered, measure FIRST: count how often the chip fires across
+the 4325-phrase corpus. If the answer is a handful, the veto has nothing to win
+and the question closes with a number instead of an opinion.
 
 One convention outlived its file. `known-defects.test.ts` pinned a defect as a
 test that PASSES while asserting the wrong behaviour, so that a refactor could
 not quietly change its shape. Nothing is left to pin, so the file is deleted —
 recreate it when the next defect needs it.
+
+### D-branches — two branches built the same slice, and how that was resolved — **2026-09-16**
+
+**Read this before starting anything.** It is the reason §7 was wrong for six
+days, and the failure it describes cost a full day of duplicated work.
+
+`main` and `read-handover` both fork from `0bf13bf` (10 September, 15:09) and
+**neither contains the other**. That afternoon the work split in two and both
+halves kept going:
+
+```
+                    0bf13bf  10 Sep 15:09
+                       │
+        ┌──────────────┴──────────────┐
+  read-handover                     main
+  37 commits, to 10 Sep 21:31      to 15 Sep: D-write, keyboard,
+  drag reorder ("closes D4"),      detail dialog, labels, reminders,
+  Search, saved filters, toasts    comments, sub-tasks
+        │                             │
+        │                        list-reorder  (16 Sep)
+        │                        rebuilt reorder, filters,
+        ✗ never merged           Upcoming and toasts from scratch
+```
+
+The handover on `main` said D4 step 3 was the next thing to build. Written in
+good faith, and **false with respect to `read-handover`**, where D4 had been
+closed on the 10th. A session followed it for a day and rebuilt drag reorder
+with dnd-kit, saved-filter adoption, Upcoming and toasts — all of which already
+existed twenty metres away.
+
+It had happened before, in miniature: the same fix exists once per branch —
+`c3b0bcc` "Stop offering a saved filter as a place to put a task" and `d3857ee`
+"Stop a saved filter posing as a project you can move a task into".
+
+**Resolution: `list-reorder` is the trunk, and `read-handover`'s unique work is
+PORTED FORWARD.** Not because it is better — it is not, in places — but because
+`read-handover` forked BEFORE the detail dialog, reminders, comments and
+sub-tasks, so porting its pieces forward is additive while rebasing it backwards
+is not.
+
+Ported (see the commits):
+
+- **The saved-filter ownership marker.** Strictly better than what it replaced
+  here: ownership is a marker stamped in the filter's description, which
+  `SavedFilter.ToProject()` copies onto the pseudo-project — so it is free,
+  survives a rename, and never hijacks a filter the user merely named "Today".
+  It replaced a title match plus a `GET /filters/{id}` per view.
+- **Search**, with its measured §8. Both candidate backends were probed on the
+  10th and the design derived from what they do; that was not re-run.
+
+NOT ported, deliberately:
+
+- **`viewForRoute` as they wrote it** (`c20b8b9`). It imports `savedFilterView`
+  and `scheduledView`, views this branch does not have, so taking the file
+  would drag in a feature to land a refactor. A second opinion (Codex
+  gpt-5.6-sol, 2026-09-16) agreed and checked the rest: their dispatcher
+  handles no case this branch gets wrong — the route parsers are mutually
+  exclusive, so the order in which search is tested does not matter, and the
+  project-title fallback, the unresolved Inbox and the empty search behave
+  alike on both sides.
+
+  **The idea WAS taken, rewritten here** (`src/app/viewForRoute.ts`). The first
+  reading of the duplication was too generous: the sidebar counts genuinely
+  cannot drift, because they are built through the same `viewIdOf` and
+  `ownedSource` helpers as the open view — but `view` and `notBuilt` were two
+  `useMemo`s each enumerating the same route set. Adding a route to one and not
+  the other renders a screen that contradicts its own sidebar entry. They are
+  now one function returning both answers, with an invariant test: a route
+  reported as unbuilt never comes back with a view.
+- **`read-handover`'s `position.ts`.** It still carries §3's claim that the
+  SERVER renumbers a crowded view, which §6 item 23 measured as false on 2.5.0.
+  Nothing from it may come back without that correction.
+
+**`read-handover` is NOT deleted.** It still holds browsable saved filters, a
+scheduled view, and 37 commits of reasoning in its messages. Anything wanted
+from it is a port, judged one piece at a time.
+
+**The lesson, which is about this document and not about git:** a handover is
+only true of the branch it sits on. Before trusting §7, run
+`git branch -a` and `git log --oneline main..<each branch>`, and reconcile what
+you find with what this says.
+
+### D-toast — Undo toasts, and what stays where it is — **DECIDED 2026-09-16**
+
+D4 step 4, the last of the four interaction slices. The interesting half is
+what did NOT move into it.
+
+**The nine inline `role="status"` messages stay where they are.** D-detail put
+each beside the field it belongs to because a failed write must not take what
+you typed out of sight, and D-write put a completion's message on the ROW so a
+self-hosted instance does not feel like it is thinking. Moving either into a
+toast would undo a decision that was made by experiment. What was left over is
+what the toast region is for: a write that succeeded and took its row off the
+screen, and one that failed with no row left to say so on.
+
+So there are exactly two callers, and each replaced something worse:
+
+1. **A failed reorder.** It used to render a `<p>` under the list — the wrong
+   place twice over: the list has just snapped back to the old order, and the
+   reader may have scrolled away from the row entirely.
+2. **A sidebar pick in the task dialog.** Project, date and priority commit on
+   pick, with no Save and no Cancel (D-detail, settled by experiment). That is
+   the right shape and it is precisely why they need an Undo: there is no
+   moment at which the pick can be reconsidered, and two of them can carry the
+   task out of the view it was opened from.
+
+**The previous value comes from the server's copy, never from a reconstruction.**
+`undoableChange` reads it off the task as it was before the write. This is
+D-write's and D-vocab's rule one level up: an invented value presented as one
+the user had is worse than no offer.
+
+**The task handed to the Undo is the one this write RETURNED**, not the copy the
+closure captured. `updateTask` echoes reminders and assignees off whatever it is
+given (its contract, §6 item 13), so undoing with a stale copy would quietly
+restore the reminders as they were at the time the dialog opened.
+
+**Clearing a date is naming the column with Vikunja's null date**, not omitting
+it — under the bulk route an unnamed column is re-read from the stored row (§6
+item 16). So undoing a date ADDED to a task that had none writes
+`0001-01-01T00:00:00Z`.
+
+**The toast is refused rather than approximated** when the write names more than
+one sidebar field, or names a field with its own way back (`title`,
+`description`, `done`). No picker writes two at once, so that can only be a
+caller this was not written for, and describing it as one of them would put a
+message on screen that does not match what happened.
+
+**Its geometry is NOT measured.** The reconnaissance never captured Todoist's
+snackbar, so `docs/layout-specs.md` has no section for it. It is derived from
+the nearest measured thing — the confirmation modal of §5, 448 wide, r12 — and
+built from tokens. Say so before copying numbers out of it. New tokens:
+`--bg-elevated` / `--text-on-elevated` / `--hover-on-elevated` (not "inverse":
+in dark the page is already dark, so it lifts rather than flips) and
+`--bg-danger` / `--text-on-danger` on the same measured red the p1 and overdue
+roles use.
+
+**The unmount guard is the timers, not a flag.** §7 item 9 records what a
+"live" boolean did last time: it latched false after StrictMode's remount and
+switched the undo window off in `pnpm dev` while a production build stayed fine.
+`useToasts` clears its timeouts on unmount and consults nothing.
+
+Verified by driving the app against `pinguino`: picking P3 raised
+"Priority set to P3" with an Undo, the Undo put the priority back, the toast
+went, and the server showed the description, project and reminders untouched.
+
+### D-order — Drag reorder, and what §3 got wrong — **DECIDED 2026-09-16**
+
+D4 step 3. The owner chose the full scope: project lists, Inbox **and** Today.
+
+**The slice was larger than "add dnd-kit", because the app could not READ an
+order, let alone write one.** Every list was a flat `GET /tasks` sorted by due
+date, and §3 says a task fetched that way carries `position` 0 — meaningless.
+`Task.position`, `Task.bucket_id` and `Project.views` had all been typed since
+the foundation slice and read nowhere. So the manual order arranged in Vikunja
+or in Veyrn was invisible here.
+
+**Everything rested on a route nobody had called.** §3's route name, midpoint
+arithmetic and renumber rule were read off Vikunja's source on `main`, and this
+instance has already retired a route between versions (`/tasks/all` → 400). The
+slice therefore opened with probes, not code, and they are kept in the two
+integration files: §6 items 22-30.
+
+**What the probes changed:**
+
+1. **There is no server-side renumber** (item 23). §3 said a gap below
+   `MinPositionSpacing` makes the server rewrite the view. It does not — a
+   position written 0.001 from its neighbour was stored verbatim and 0 of 3
+   neighbours moved. The recalculation is the FRONTEND's, which is what §3's own
+   citation always was. That inverts the consequence: nothing protects a view
+   from its gaps converging, so **the client must renumber**, and a client that
+   merely re-read would get the same crowded numbers back and halve them again
+   until two tasks share a float and the order falls back to id. `useReorderTask`
+   spreads the view back out at 2^16, one write per task, then re-reads.
+2. **Discovery is free** (item 25): `GET /projects` carries `views[]` inline.
+3. **Today's existing saved filter is already ours** (item 26): `/filters/9`
+   asks `done = false && due_date < now/d+1d`, character for character what
+   `todayView()` builds, and its view returns the same 9 ids as the ad-hoc
+   listing (item 30). The adoption question §4 raised is settled by measurement.
+
+**Decisions worth not re-deriving:**
+
+- **`position: 0` and `position: undefined` are not the same thing.** 0 is real —
+  §3 gives it to the first task in an empty view — while undefined means "never
+  read through a view". The incremental poll is deliberately a flat `GET /tasks`
+  (its comment says why), so `carryViewPosition` folds its copies onto the held
+  ones: every field from the server, the position from us. A newcomer has the
+  field DELETED, not zeroed, and sorts last. Zeroing it would claim the top.
+- **The reorder API takes IDS, not indices.** The rendered list is not the cached
+  array: the cache also holds sub-tasks, shown under their parent and nowhere
+  else, and rows lingering after a completion. It is also more correct — a hidden
+  sub-task between two visible rows still occupies the position space, and the
+  midpoint must account for it. Verified live: moving a row one place in
+  "Personale" stored 16640, the midpoint of a hidden sub-task at 512 and the
+  task at 32768.
+- **The reorder mutation never invalidates.** A refetch landing before the server
+  has the new position renders the OLD order, which reads as the drag being
+  refused. It writes the authoritative array itself, and the poll is told to
+  stand still while a write is on the wire.
+- **`onMutate` cancels AFTER the optimistic write.** The usual recipe cancels
+  first, but `cancelQueries` awaits the in-flight fetch — awaiting the network
+  before the row moves is the one thing a drag may never do. A test caught it.
+- **dnd-kit's `attributes` and `listeners` go on the HANDLE, never the row.**
+  They carry their own `role="button"` and `tabIndex=0`, which would collide with
+  the row's deliberate `role="button"` and make every row tabbable again — the
+  exact defect D4 step 2 removed. Cost, measured by building both ways:
+  **+15.3 kB gzip** (115.35 → 130.62 kB).
+- **A move stays inside its section.** Once a list is position-ordered, sections
+  come from the DUE DATE while order comes from position, so a section's rows are
+  not contiguous in the position space. A drag from "Overdue" into today would
+  write a correct position and render the row straight back — a gesture that
+  visibly does nothing. Crossing means reschedule, which nobody asked for.
+- **open-todo does not create the Today filter.** That would put an object in the
+  user's Vikunja, visible in Veyrn and the web UI, because they opened a screen.
+  No matching filter means no handle, and no explanation of Vikunja's data model.
+
+**What a `/code-review` pass caught afterwards**, all six fixed in one commit
+and each pinned by a test that was verified to fail without its fix:
+
+- **Dropping a task at the BOTTOM could send it to the top.** A task the
+  incremental poll produced has no position and the comparator parks it at the
+  tail, so the last slot's neighbours were both read as "absent",
+  `positionBetween` took its empty-list branch and returned **0** — which sorts
+  first. The gesture said bottom and the server was told top, with
+  `needsRenumber: false` so nothing repaired it. Neighbours are now the nearest
+  ones that actually HAVE a position.
+- **A tie now reports `needsRenumber` unconditionally.** The 0.01 step places
+  the task just BELOW the neighbour it was dropped above, so the requested
+  order cannot be expressed until the view is spread out; leaving it to the gap
+  arithmetic made the answer depend on magnitude (true at 5, false at 131072 —
+  and 131072 is a number the renumber loop itself writes).
+- **A failed renumber no longer rolls back a move that succeeded.** The move is
+  written before the loop, so a failure inside it used to restore the pre-move
+  array and say "Not moved" about a move that had landed, leaving the view
+  half-renumbered with nothing to refetch it.
+- **The post-renumber re-read carries `filter_timezone`.** Without it Today's
+  `now/d+1d` resolved against the server's midnight (GMT here) and that array
+  was written into the cache as the truth.
+- **One move at a time.** Two overlapping ones are not merely racy: the first,
+  if it renumbers, rewrites every position from a snapshot that does not
+  contain the second. Alt+Arrow also ignores auto-repeat.
+- **`writeBack` carries the position across.** `updateTask` answers through
+  `/tasks/bulk`, not a view endpoint, so its copy carries the meaningless 0 —
+  renaming a task would float it to the top of a hand-arranged list.
+
+**The defect only driving the app found, and the one to remember:**
+`groupTasksForView` identified the view by `view.key === "today"`. The key became
+`today@v42` when it started carrying its view id, the comparison silently
+stopped matching, and **Today lost its "Overdue" heading while all 713 tests
+stayed green**. Grouping is now its own field on `ViewDef`. A key identifies a
+cache entry; it does not declare behaviour. Look for the same shape elsewhere.
+
+### D-detail — The task-detail dialog — **DECIDED 2026-09-15**
+
+D4 step 2 shipped a keyboard whose Enter had nowhere to go: `TaskRow.onOpen` had
+been declared since the foundation slice, plumbed through `ListView.onOpenTask`,
+and never supplied. That unterminated wire had already cost twice (the review's
+inert "Reopen" checkbox, and Enter having to mean COMPLETE). The dialog
+terminates it. Geometry is `docs/layout-specs.md` §4 at its measured numbers —
+864×750, r10, header 48, main 604 / sidebar 260.
+
+**The load-bearing decision: there are TWO commit models, and they are
+independent.** Both were measured on the reference product, not guessed.
+
+| Half | Fields | How it commits |
+|---|---|---|
+| Main column | name, description | opens on click, written **only by Save**; **Cancel is the only discard** |
+| Sidebar | project, date, priority, labels, reminders | **picking writes**. No Save, no Cancel |
+
+Settled by experiment before a line was written: open the title editor, type
+into it, change the priority, press Cancel. The title reverts; the priority
+stays, and survives a reload. So `EditableField` and `PickerField` share no
+state and neither closes the other.
+
+`Escape` does **not** discard in the main column — the dialog's own Escape
+closes the dialog, so a discarding Escape would throw away the text *and* the
+pane it was in. The dialog's key handler ignores Escape while a form control
+holds the focus.
+
+**A failed write never eats what you typed**, in either half: the editor stays
+open with the draft and the server's reason beneath it (the draft is the only
+copy that exists), and a failed pick keeps its picker open, because with no
+Save button to stay behind, closing would put the old value back on screen with
+nothing to explain it.
+
+**Where the task comes from.** The dialog reads it out of the open view's cached
+list, not a query of its own. One source of truth means the 20 s poll keeps an
+open dialog current for free and the two existing `queryKey[0] === "tasks"`
+invalidations keep working; a private detail key would be invisible to both, so
+the row behind the dialog and the dialog itself would disagree after every
+write. `useUpdateTask` writes the server's returned task into every cached view
+that holds it *before* invalidating, so both change in the same frame.
+The one deliberate exception is comments, under `["task", id, "comments"]` —
+**not** under `"tasks"`, or completing any task anywhere would refetch every
+open thread.
+
+**Decisions inside it worth not re-deriving:**
+
+1. **Descriptions and comments are HTML; this app shows them as one line of
+   text.** Saving that text back would silently drop any link, bold or list a
+   Veyrn user wrote. `isRichHtml` detects markup that cannot survive the round
+   trip and the editor says so **before** the first keystroke;
+   `toDescriptionHtml` escapes what is typed and wraps it one paragraph per
+   line, inventing no markup the user did not write.
+2. **An edited name is parsed the way the composer parses a new one**, and the
+   **sidebar is the feedback** — the owner chose it over chips beside the field.
+   The rows show what Save would set and say "(when you save)", because a colour
+   alone would make the channel invisible to a screen reader. It never names a
+   column whose value already matches (naming a column is what makes it written
+   — mapping §6 item 13 — so re-writing an unchanged value is a free chance to
+   clobber a concurrent edit), never saves a phrase that leaves no name behind,
+   and never creates a label. The phrase is re-read with a fresh clock at Save,
+   because a preview computed at the last keystroke is a day stale in a tab left
+   open overnight.
+3. **The date picker's shortcuts are PHRASES, not computed dates**, run through
+   `dueDateFromPhrase` — the same acceptor the composer uses, so the button and
+   the field under it cannot disagree about what "tomorrow" means. Two
+   consequences, both accepted: "This weekend" is not in the grammar, so that
+   shortcut sends "saturday"; and a half-understood phrase is **refused**
+   rather than half-applied. D-vocab all the way down.
+4. **Creating a label is a BUTTON, never a keystroke.** Enter in the filter
+   field does nothing on purpose: the label namespace is shared by every task in
+   the instance, so a typo committed by typing is not undoable by whoever made
+   it. The button names what it will create. And `PUT /labels` accepts a
+   duplicate title (§6 item 19), so `canCreateLabel` is the only thing standing
+   between an instance and two labels called `urgent`.
+5. **A sub-task is shown under its parent and nowhere else.** `ViewDef` gains
+   `includes` and `belongs` is *defined* in terms of it, with a test asserting
+   `belongs` implies `includes` for every view, so the fetched-list filter and
+   the poll's in-view predicate cannot drift. Vikunja's filter language cannot
+   express "has no parent", so this is client-side either way.
+   `rowContext.tasksById` is still built from the **unfiltered** list, or every
+   "1 / 3" badge would under-report its own children. Stated rather than
+   discovered later: a child whose parent is not in the view — done, or in
+   another project — is visible nowhere. That matches the reference product and
+   is the likeliest bug report.
+6. **Nothing is painted that cannot be honoured.** The first cut of the dialog
+   was read-only and deliberately drew no control it could not yet write;
+   editing arrived field by field with the write each one needs. A button that
+   does nothing is the defect this app keeps relearning.
+
+**Verified against `pinguino` in the browser, not only in jsdom**, at every
+step, and every scratch task, label and comment deleted afterwards. The
+server-side findings are `docs/data-model-mapping.md` §6 items 15-21.
+
+**That gap is CLOSED, 2026-09-16.** The reference behaviour was measured
+properly this time (`layout-specs.md` §4.1): cancelling an edit that HAS
+changes raises the §5 confirmation — *"Ignorare le modifiche non salvate? / Le
+modifiche non salvate andranno perse."* — and the editor stays open BEHIND it,
+which is why ours renders the question over the editor rather than closing
+first. An editor opened and left alone still closes without a word: asking
+there would teach the reader to click through the question without reading it.
+
+open-todo also guards the dialog's own CLOSE, which is **beyond the
+measurement** and labelled as such in the code: closing the pane loses the same
+text by a wider door, and whether Todoist's X guards too was not captured. Every
+exit routes through one `requestClose`, so the question is asked once rather
+than at each door, and the dirty flag is cleared on the editor's unmount — or a
+dialog whose editor had been saved would still believe there was something to
+lose.
 
 ---
 
@@ -621,14 +1028,14 @@ public HTTP API only, which carries no such obligation.
 ## 7. Immediate next steps
 
 1. ~~Settle D3, D4, D5~~ — done 2026-09-09.
-2. ~~Capture the dark-theme token set~~ — done 2026-09-09
-   (`research/todoist-tokens-dark.json`).
+2. ~~Capture the dark-theme token set~~ — done 2026-09-09 (kept outside this
+   repository; see §3).
 3. ~~Measure and record layout specs~~ — done 2026-09-09
    (`docs/layout-specs.md`, `docs/sketches/reference-20260909.html`). Still
    open from that pass: hover/focus states were not measured (`:hover` cannot
-   be triggered from `orca eval`); the "Prossime" (upcoming) and project-with-
-   sections views were not measured; **the D3 accent hue has not been picked
-   yet** — the sketch uses the measured accent as a placeholder.
+   be triggered from `orca eval`), and the "Prossime" (upcoming) and
+   project-with-sections views were not measured. (The accent hue, open when
+   this item was written, was picked the same day — item 5.)
 4. ~~Write the Vikunja↔Todoist data-model mapping table~~ — done 2026-09-09
    (`docs/data-model-mapping.md`). Position semantics verified from Vikunja's
    own source, not Veyrn (Veyrn never writes positions). Its §6 records what was
@@ -685,11 +1092,170 @@ public HTTP API only, which carries no such obligation.
    - One thing that run corrected, worth not rediscovering: Vikunja stores
      `due_date` to the SECOND, so a date carrying milliseconds comes back
      rounded and an exact comparison fails on noise.
-9. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
-   WebSocket events (D6). Start from `pkg/websocket/listener.go` and
-   `validEvents` in `connection.go`; the open question is how to resolve the
-   recipients of a project-scoped event. Before the OIDC part: add the SPA's origin to `cors.origins` on
-   `pinguino` and its URL to the Keycloak client's redirect URIs.
+9. ~~D4 slice 2 (keyboard navigation)~~ — done 2026-09-15 (D4 step 2 in §4).
+   One tab stop with a roving `tabindex`, the handler on the row rather than the
+   scroll container, and Todoist's own key map: Enter opens, `E` completes, `Z`
+   undoes, `J`/`K` alias the arrows. The map was corrected inside the same
+   session, in the commit that gave Enter a destination.
+   One defect from that slice is worth not rediscovering: the review's fix for
+   "setState after unmount" left `live` false forever after StrictMode's
+   mount/unmount/mount, so **the six-second undo window was dead in `pnpm dev`
+   and fine in a production build** — correct where nobody looks, broken where
+   the app is actually run. `renderHook` does not reproduce it and the tests
+   still cannot catch it; it was found by driving the app, which is written into
+   the test file so the next person does not trust the suite here.
+
+10. ~~The task-detail dialog~~ — done 2026-09-15 (D-detail in §4). Twelve
+    commits; `git log ffb2528..430baf4` carries the reasoning, the measurements
+    and the rejected alternatives, and is the thing to read rather than this
+    summary. Notes for whoever continues:
+    - **Two commit models, both measured.** Main column (name, description)
+      needs an explicit Save and Cancel is the only discard; the sidebar
+      (project, date, priority, labels, reminders) **commits on pick**. They are
+      independent — a pick made while the name editor is open survives that
+      editor's Cancel. See D-detail before touching either.
+    - **Every write still goes through `updateTask`**, which names its fields
+      via `/tasks/bulk`. The traps measured on the way, each pinned by
+      `src/api/integration.write.test.ts`: an **empty `fields` list wipes the
+      task** (§6 item 17 — priority, due date and description were zeroed while
+      the reminder landed intact, which is what makes it convincing); a saved
+      filter arrives in `GET /projects` with a **negative id** and must never be
+      offered as a destination (item 15, `isRealProject`); an **absolute
+      reminder reads back as `relative_period: 0` with no `relative_to`**, so
+      branch on `relative_to` and never on the period (item 18); `PUT /labels`
+      **accepts duplicate titles** (item 19); `PUT /tasks/{parent}/relations`
+      sets **both sides**, so the inverse must not be written too (item 20).
+    - `deleteTask` still has **no UI**. It exists for the write test's cleanup.
+      A delete affordance is its own slice: confirmation, entry point,
+      reversibility.
+
+11. ~~D4 step 3 (drag reorder)~~ — done 2026-09-16 (D-order in §4). Probes
+    first (§6 items 22-30), then view-scoped reading, then the poll made to
+    stop undoing the order, then the write, then dnd-kit, then Today on its
+    saved filter. Notes for whoever continues:
+    - **The renumber is ours, not the server's** (§6 item 23). §3 said
+      otherwise and was measured wrong. `useReorderTask` spreads a crowded
+      view back out at 2^16 per task; without it the gaps halve forever.
+    - **Every list now reads through a view endpoint** when one can be
+      resolved, and only that listing carries positions. The incremental poll
+      is still flat on purpose, so `carryViewPosition` is what stops an edit
+      anywhere from throwing a row to the top of a hand-arranged list.
+    - **A key identifies a cache entry; it does not declare behaviour.**
+      `groupTasksForView` compared `view.key === "today"`, the key became
+      `today@v42`, and Today lost its Overdue heading with the whole suite
+      green. Worth grepping for the same shape.
+    - Upcoming is untouched. It has a saved filter (-9, `/filters/8`) and
+      would take the same treatment, but its day grouping makes a cross-day
+      drag a reschedule, which is its own decision.
+
+12. ~~D4 step 4 (general undo / toasts)~~ — done 2026-09-16 (D-toast in §4).
+    A toast region bottom-left, with two callers: a failed reorder and a
+    sidebar pick's Undo. **D4 is now complete.** Notes for whoever continues:
+    - The nine inline `role="status"` messages are NOT candidates for it, and
+      neither is the completion row linger. Read D-toast before "consolidating"
+      them.
+    - The geometry is unmeasured — see D-toast.
+
+13. **Open, ranked.** Nothing here is started.
+    1. ~~**The Italian language pack is incomplete**~~ — the three TODOs were
+       **stale**, and had been for some time. Measured 2026-09-16: F5, F6 and
+       F3 were all already closed in Italian, and so was F7. The comments
+       pointed at `known-defects.test.ts`, deleted back in D-adverb. Corrected
+       in place, because the note had been believed and repeated long after it
+       stopped being true.
+       What the measurement DID find, in the same shape the old F6 note
+       described, is fixed in the same commit: `ogni giorno da lunedì` — the
+       bare preposition, and the way anyone actually says it — produced a
+       repeat, a due date nobody asked for, and a title collapsed to `"da"`.
+       And behind it, F10: the start-date hint was the one place in the grammar
+       whose month alternation carried no word boundary, so `dic` matched
+       inside `de-dic-are`.
+       **The lesson worth keeping is about the corpus, not the grammar.** All
+       738 golden records passed unchanged through both fixes: the corpus has
+       never contained a phrase of this shape, which is exactly why the defect
+       survived. A green corpus is evidence about what it covers and nothing
+       else.
+    2. ~~**Three sidebar entries go to the wrong screen**~~ — fixed
+       2026-09-16. **Upcoming is built**, on its own saved filter and
+       reorderable by day; **Search is built**, ported from `read-handover`
+       with its measured §8 (see below); `#/labels` and any unknown route now
+       render an explicit "not built yet" screen under their OWN name instead
+       of silently showing Today under Today's heading.
+
+    3. ~~**Undo is offered for three writes, not all of them**~~ — extended
+       2026-09-16 to label attach/detach and to reminders. Three writes still
+       have none, and the item's old claim that "each is reversible" was
+       **wrong** for all three:
+       - **Creating a label** puts it in a namespace shared by every task on
+         the instance, so undoing means deleting something another task may
+         already carry. D-detail already made creation a button rather than a
+         keystroke for that reason; an Undo would be the keystroke again.
+       - **A sub-task** and **a comment** are creations, so undoing is a
+         DELETE. `deleteTask` exists with no affordance (item 10) and there is
+         no delete-comment route in the client at all; removing only the
+         relation would leave an orphan task invisible from that screen.
+         These belong to the delete slice, not to this one.
+    4. ~~**The participle veto left open by D-adverb**~~ — **closed by the
+       owner 2026-09-16: leave it as it is.** Since the adverb is offered
+       rather than applied, the veto would decide only whether a chip appears
+       on an uncommon line, while being wrong in both directions. Full
+       reasoning in D-adverb (§4), including what to measure first if anyone
+       reconsiders.
+    5. ~~**F7**~~ — measured closed 2026-09-16: `corri ogni 1,5 km` matches no
+       recurrence and raises no warning. The later rule about what may follow a
+       complete schedule closed it; nobody had re-measured. Mapping §5 updated.
+    6. ~~**A delete affordance**~~ — built 2026-09-16. `deleteTask` had existed
+       since D-write with no UI; §7 said the slice was "confirmation, entry
+       point, reversibility", and all three had answers waiting:
+       - **Entry point**: the `⋯` of `layout-specs.md` §4's header, measured
+         from the start and never drawn because nothing could honour it.
+       - **Confirmation**: `ConfirmDialog`, already at §5's measured geometry.
+       - **Reversibility**: none. Measured (§6 item 31) — the task 404s
+         afterwards and there is no restore route — so it asks BEFORE and
+         offers nothing after. An Undo would re-create a DIFFERENT task: new
+         id, no comments, no relations, no position.
+       It is also the only non-optimistic write in the app: a failed optimistic
+       delete would have to put back the copy it happened to hold, and for the
+       one irreversible action that is the wrong risk.
+    7. **Hover states are now MEASURED** (2026-09-16, `layout-specs.md` §2.3b).
+       The old blocker — "`:hover` cannot be triggered from `orca eval`" — was
+       solved by Orca's CLI having a real pointer `hover`; the Todoist session
+       of §8 is still alive. Two findings: hovering a row changes exactly five
+       things, all `opacity 0 → 1` on the controls it reveals, and **the row
+       takes no background at all** — open-todo's is a deliberate D2 deviation,
+       now recorded as one. The sidebar's hover fill is `#f2efed` r5 on a
+       256×34 wrapper, which `--hover-fill` already approximates within a hair.
+       **Focus is still not measured**, and the reason has CHANGED: a scripted
+       `.focus()` does not satisfy Chrome's `:focus-visible` heuristic and Tab
+       could not be walked past the skip-link through the CLI. Todoist declares
+       `outline: #666 none 3px` at rest, so the ring is almost certainly
+       switched on under `:focus-visible` alone — measure with a real keyboard
+       before copying a number.
+       Still never measured: a project view with sections (item 3 above).
+       Upcoming is BUILT but unmeasured — its day heading is derived from
+       `todayHeading`, and says so in the code.
+    8. ~~**The unsaved-changes confirmation**~~ — built 2026-09-16, on both the
+       editor's Cancel (measured) and the dialog's Close (ours). See D-detail's
+       closing note and `layout-specs.md` §4.1.
+
+14. ~~The Upcoming view~~ — done 2026-09-16, with the three dead sidebar
+    routes. Notes for whoever continues:
+    - It reuses everything: the saved-filter adoption of D-order (query checked,
+      never adopted by title), view-scoped reading, positions, and ListView's
+      refusal to move a row across a section. That refusal is what makes
+      Upcoming safe — its sections are DAYS, so crossing one is a reschedule.
+    - **Rescheduling by drag is NOT built** and is its own decision: the
+      reference product moves the task's date when you drop it in another day.
+    - The two filters partition the dated tasks, and `views.test.ts` asserts it
+      across the midnight boundary in both directions. Breaking that would make
+      a task vanish between two screens, or give it two manual orders.
+
+15. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
+    WebSocket events (D6). Start from `pkg/websocket/listener.go` and
+    `validEvents` in `connection.go`; the open question is how to resolve the
+    recipients of a project-scoped event. Before the OIDC part: add the SPA's
+    origin to `cors.origins` on `pinguino` and its URL to the Keycloak client's
+    redirect URIs.
 
 ---
 

@@ -81,6 +81,7 @@ interface Extras {
   onSaveTitle?: (raw: string) => Promise<void>;
   onAddComment?: (html: string) => Promise<void>;
   onAddSubtask?: (title: string) => Promise<void>;
+  onDelete?: () => void;
 }
 
 function open(over: Partial<Task> = {}, extra: Extras = {}) {
@@ -113,6 +114,7 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
       onAddSubtask={onAddSubtask}
       {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
       {...(extra.onNext ? { onNext: extra.onNext } : {})}
+      {...(extra.onDelete ? { onDelete: extra.onDelete } : {})}
     />,
   );
   return {
@@ -287,7 +289,12 @@ describe("editing the name and the description", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("throws the draft away on Cancel and writes nothing", () => {
+  it("asks before Cancel throws a changed draft away", () => {
+    /*
+     * Measured on the reference product 2026-09-16: cancelling an edit that
+     * has changes raises "Ignorare le modifiche non salvate? / Le modifiche
+     * non salvate andranno perse.", and the editor stays open BEHIND it.
+     */
     const onSave = vi.fn(async () => {});
     open({}, { onSave });
 
@@ -297,7 +304,49 @@ describe("editing the name and the description", () => {
     });
     fireEvent.click(screen.getByText("Cancel"));
 
+    expect(screen.getByText("Discard unsaved changes?")).toBeInTheDocument();
+    // Still editing, and the draft is still there to go back to.
+    expect(screen.getByLabelText("Edit the task name")).toHaveValue("nonsense");
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("keeps the draft when the question is declined", () => {
+    open();
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "nonsense" },
+    });
+    fireEvent.click(screen.getByText("Cancel"));
+    fireEvent.click(screen.getByText("Keep editing"));
+
+    expect(screen.queryByText("Discard unsaved changes?")).toBeNull();
+    expect(screen.getByLabelText("Edit the task name")).toHaveValue("nonsense");
+  });
+
+  it("throws the draft away once the question is answered, and writes nothing", () => {
+    const onSave = vi.fn(async () => {});
+    open({}, { onSave });
+
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "nonsense" },
+    });
+    fireEvent.click(screen.getByText("Cancel"));
+    fireEvent.click(screen.getByText("Discard"));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Water the plants")).toBeInTheDocument();
+  });
+
+  it("does not ask when there is nothing to lose", () => {
+    // An editor opened and left alone closes without a word. Asking there
+    // would teach the reader to click through the question without reading it,
+    // which is the one thing a confirmation must not do.
+    open();
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.click(screen.getByText("Cancel"));
+
+    expect(screen.queryByText("Discard unsaved changes?")).toBeNull();
     expect(screen.getByText("Water the plants")).toBeInTheDocument();
   });
 
@@ -732,6 +781,7 @@ describe("the name being typed, previewed in the sidebar", () => {
     expect(screen.getByLabelText("Date: change")).toHaveTextContent("Tomorrow");
 
     fireEvent.click(screen.getByText("Cancel"));
+    fireEvent.click(screen.getByText("Discard"));
 
     expect(screen.getByLabelText("Date: change")).toHaveTextContent("No date");
   });
@@ -875,5 +925,104 @@ describe("sub-tasks", () => {
   it("offers the box even on a task that has none yet", () => {
     open();
     expect(screen.getByLabelText("Add a sub-task")).toBeInTheDocument();
+  });
+});
+
+describe("the header's ⋯ menu", () => {
+  it("is not drawn at all when there is nothing it could do", () => {
+    // The rule this dialog was built on: nothing is painted that cannot be
+    // honoured. The "⋯" was measured in layout-specs §4 from the start and
+    // deliberately left out until Delete gave it something to hold.
+    open();
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
+  });
+
+  it("opens on click and offers Delete", () => {
+    const onDelete = vi.fn();
+    open({}, { onDelete });
+    expect(screen.queryByRole("menuitem", { name: "Delete task" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: "Delete task" })).toBeVisible();
+  });
+
+  it("asks rather than acting, and closes itself when it does", () => {
+    // A 32px button sitting next to Close that deleted on one click would be
+    // the worst possible neighbour, which is why it is a menu for one item.
+    const onDelete = vi.fn();
+    open({}, { onDelete });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(onDelete).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete task" }));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menuitem", { name: "Delete task" })).toBeNull();
+  });
+
+  it("does not close the dialog by itself", () => {
+    // The confirmation has to come up over the task it is about; closing here
+    // would ask "delete this?" with the task already off screen.
+    const onDelete = vi.fn();
+    const { onClose } = open({}, { onDelete });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete task" }));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("closing the dialog over unsaved work", () => {
+  /*
+   * Beyond the measurement, and marked as such: the reference product was
+   * measured guarding the EDITOR's Cancel (2026-09-16); whether its X guards
+   * too was not captured. Closing the pane loses the same text by a wider
+   * door, so it asks the same question.
+   */
+  it("asks before the close button throws a draft away", () => {
+    const { onClose } = open();
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "half a thought" },
+    });
+
+    fireEvent.click(screen.getByLabelText("Close"));
+
+    expect(screen.getByText("Discard unsaved changes?")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes once the question is answered", () => {
+    const { onClose } = open();
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "half a thought" },
+    });
+    fireEvent.click(screen.getByLabelText("Close"));
+    fireEvent.click(screen.getByText("Discard"));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes straight out when nothing is unsaved", () => {
+    const { onClose } = open();
+    fireEvent.click(screen.getByLabelText("Close"));
+    expect(screen.queryByText("Discard unsaved changes?")).toBeNull();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("forgets the draft once the editor is closed by Save", () => {
+    // The dirty flag is cleared on the editor's unmount. Without that, a
+    // dialog whose editor had been saved and closed would still believe there
+    // was something to lose and ask on the way out.
+    const { onClose } = open();
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "Water them well" },
+    });
+    fireEvent.click(screen.getByText("Cancel"));
+    fireEvent.click(screen.getByText("Discard"));
+
+    fireEvent.click(screen.getByLabelText("Close"));
+    expect(screen.queryByText("Discard unsaved changes?")).toBeNull();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -9,6 +9,43 @@ import type { Task } from "../api/types";
 export type BelongsPredicate = (task: Task) => boolean;
 
 /**
+ * How an incoming copy is folded onto the one already in the list. The default
+ * is "take the server's", which is what every field but one wants.
+ */
+export type AdoptFn = (existing: Task | undefined, incoming: Task) => Task;
+
+const takeIncoming: AdoptFn = (_existing, incoming) => incoming;
+
+/**
+ * Carries a view's position across an incremental fetch.
+ *
+ * The incremental fetch is a flat `GET /tasks` on purpose (see useLiveSource),
+ * and mapping §3 is explicit that a task read that way has no position: the
+ * server sends 0. Adopting that 0 would move every task anyone edits to the
+ * top of a manually ordered list, which is the loudest possible way for a
+ * background poll to ruin something the user arranged by hand.
+ *
+ * A task with no existing copy gets `position` DELETED rather than set to 0.
+ * The two are not interchangeable - 0 is the real position §3 gives the first
+ * task in an empty view - and `compareByPositionThenId` sorts an absent one
+ * last, which is where a task whose place we do not know belongs until the
+ * next full fetch reads it through the view.
+ *
+ * A non-zero incoming position is believed, because a full fetch DOES go
+ * through the view endpoint and is how a reorder made on another device
+ * arrives.
+ */
+export function carryViewPosition(existing: Task | undefined, incoming: Task): Task {
+  if (incoming.position) return incoming;
+  if (existing?.position !== undefined) {
+    return { ...incoming, position: existing.position };
+  }
+  if (incoming.position === undefined) return incoming;
+  const { position: _dropped, ...rest } = incoming;
+  return rest as Task;
+}
+
+/**
  * Folds an incremental fetch into the current list.
  *
  * An incremental fetch answers "what changed", not "what is in the view", so
@@ -20,6 +57,7 @@ export function mergeUpserts(
   current: Task[],
   incoming: Task[],
   belongs: BelongsPredicate,
+  adopt: AdoptFn = takeIncoming,
 ): Task[] {
   if (incoming.length === 0) return current;
 
@@ -31,8 +69,10 @@ export function mergeUpserts(
     if (belongs(task)) {
       // Always take the server's copy. Skipping when `updated` matches would
       // be an optimisation that can drop a real edit, and an incremental fetch
-      // only returns tasks the server already said had changed.
-      byId.set(task.id, task);
+      // only returns tasks the server already said had changed. `adopt` is the
+      // one exception, and it exists for exactly one field: see
+      // carryViewPosition.
+      byId.set(task.id, adopt(existing, task));
       changed = true;
     } else if (existing) {
       byId.delete(task.id);

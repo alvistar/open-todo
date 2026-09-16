@@ -1,15 +1,25 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { http } from "../api/client";
-import { listTasks } from "../api/endpoints";
+import { listTasks, listViewTasks } from "../api/endpoints";
 import { updatedSince, updatedWithinSeconds } from "../api/filter";
 import type { Task } from "../api/types";
-import { compareByDueDateThenId, type ViewDef } from "../model/views";
+import type { ViewDef } from "../model/views";
 import { queryKeys } from "../queries/keys";
 import { createPollingSource } from "./PollingSource";
-import { mergeUpserts } from "./reconcile";
+import { carryViewPosition, mergeUpserts } from "./reconcile";
 
 export interface UseLiveSourceOptions {
+  /**
+   * Asked before every event is applied. False means "leave the list alone" —
+   * a reorder is on the wire, and a poll landing mid-write would show the
+   * pre-move order for as long as it took the next tick to correct it, which
+   * reads as the drag having been refused.
+   *
+   * Read through a ref inside the subscription, so changing it does not tear
+   * down and restart the poller on every gesture.
+   */
+  apply?: () => boolean;
   view: ViewDef | null;
   timeZone: string;
   enabled?: boolean;
@@ -27,11 +37,14 @@ export function useLiveSource({
   timeZone,
   enabled = true,
   onError,
+  apply,
 }: UseLiveSourceOptions): void {
   const queryClient = useQueryClient();
   // Read through a ref so changing the callback does not restart polling.
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
 
   const viewKey = view?.key ?? null;
 
@@ -64,18 +77,37 @@ export function useLiveSource({
           ...(signal ? { signal } : {}),
         }),
 
-      fetchAll: (signal) =>
-        listTasks(http, {
+      // The full fetch is the only one that can read positions, so a view
+      // that has an order reads it here - and this is what repairs the cache
+      // after a reorder made on another device, or after our own optimistic
+      // guess turned out not to be what the server stored.
+      fetchAll: (signal) => {
+        const source = view.positionSource;
+        if (source) {
+          return listViewTasks(http, source.projectId, source.viewId, {
+            filter: view.filter,
+            includeNulls: view.includeNulls,
+            timezone: timeZone,
+            ...(signal ? { signal } : {}),
+          });
+        }
+        return listTasks(http, {
           filter: view.filter,
           sortBy: view.sortBy,
           orderBy: view.orderBy,
           includeNulls: view.includeNulls,
           timezone: timeZone,
           ...(signal ? { signal } : {}),
-        }),
+        });
+      },
     });
 
     const unsubscribe = source.subscribe((event) => {
+      // Dropped, not queued: the next tick fetches again in at most one
+      // interval, and a queued event would land after the write it was
+      // supposed to lose to.
+      if (applyRef.current?.() === false) return;
+
       if (event.type === "reset") {
         /*
          * The poller only follows the OPEN view, but the sidebar's Inbox and
@@ -96,15 +128,21 @@ export function useLiveSource({
           case "reset":
             return event.tasks;
           case "upsert": {
-            const merged = mergeUpserts(current, event.tasks, (task) =>
-              view.belongs(task, new Date(), timeZone),
+            const merged = mergeUpserts(
+              current,
+              event.tasks,
+              (task) => view.belongs(task, new Date(), timeZone),
+              // The incremental fetch is flat, so its copies carry no usable
+              // position (mapping §3). Without this, editing a task anywhere
+              // would move it to the top of a hand-arranged list.
+              carryViewPosition,
             );
             // mergeUpserts appends newcomers; re-sort so a task created or
             // rescheduled elsewhere does not sit at the bottom of the list
-            // until the next full fetch.
-            return merged === current
-              ? current
-              : [...merged].sort(compareByDueDateThenId);
+            // until the next full fetch. The comparator is the view's own -
+            // re-sorting a manually ordered list by due date was exactly how
+            // this poll used to undo a reorder within one tick.
+            return merged === current ? current : [...merged].sort(view.compare);
           }
           case "delete": {
             const removed = new Set(event.ids);

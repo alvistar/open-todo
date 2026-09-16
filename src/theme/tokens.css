@@ -56,6 +56,19 @@
   --schedule-tomorrow: #ad6200;
   --schedule-next-week: #692ec2;
 
+  /*
+   * Elevated surface: the toast (D4 step 4), which sits over the list and must
+   * not read as part of it. Not "inverse" — in dark the page is already dark,
+   * so this lifts rather than flips.
+   */
+  --bg-elevated: #202020;
+  --text-on-elevated: #fff;
+  --hover-on-elevated: rgba(255, 255, 255, 0.14);
+
+  /* Failure, on the same measured red the p1 and overdue roles use. */
+  --bg-danger: #d1453b;
+  --text-on-danger: #fff;
+
   /* Effects */
   --hover-fill: rgba(0, 0, 0, 0.04);
   --overlay: rgba(0, 0, 0, 0.4);
@@ -101,6 +114,13 @@
     --schedule-tomorrow: #ff9a14;
     --schedule-next-week: #a970ff;
 
+    --bg-elevated: #3d3d3d;
+    --text-on-elevated: #fff;
+    --hover-on-elevated: rgba(255, 255, 255, 0.12);
+
+    --bg-danger: #ff7066;
+    --text-on-danger: #2a0b08;
+
     --hover-fill: rgba(255, 255, 255, 0.06);
 
     color-scheme: dark;
@@ -136,6 +156,13 @@
   --schedule-today: #25b84c;
   --schedule-tomorrow: #ff9a14;
   --schedule-next-week: #a970ff;
+
+  --bg-elevated: #3d3d3d;
+  --text-on-elevated: #fff;
+  --hover-on-elevated: rgba(255, 255, 255, 0.12);
+
+  --bg-danger: #ff7066;
+  --text-on-danger: #2a0b08;
 
   --hover-fill: rgba(255, 255, 255, 0.06);
 

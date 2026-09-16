@@ -1,19 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Project, Task } from "../api/types";
-import { projectIdFromRoute, useRoute } from "../app/route";
+import {
+  projectIdFromRoute,
+  routeTitle,
+  searchQueryFromRoute,
+  searchRoute,
+  useRoute,
+} from "../app/route";
+import { viewForRoute } from "../app/viewForRoute";
 import { logOut } from "../auth/authStore";
 import { useLiveSource } from "../live/useLiveSource";
+import { formatDueLabel, parseVikunjaDate } from "../model/dates";
 import { dueDateFromPhrase } from "../model/duePhrase";
 import { groupTasksForView } from "../model/grouping";
 import { isRealProject, resolveInboxProjectId, sidebarProjects } from "../model/inbox";
 import { applyPending } from "../model/pending";
+import { listViewId } from "../model/projectViews";
 import { type Decision, withDecisions } from "../model/quickadd/decisions";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
+import { describeReminder } from "../model/reminders";
+import { type OwnedSlot, ownedFilterProject } from "../model/savedFilter";
 import { type RowContext, toTaskRow } from "../model/taskRow";
 import { titleEdit } from "../model/titleEdit";
-import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
+import {
+  undoableChange,
+  undoableLabelChange,
+  undoableReminderChange,
+} from "../model/undoableChange";
+import { inboxView, todayView } from "../model/views";
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
+import { useDeleteTask } from "../queries/useDeleteTask";
+import { useReorderTask } from "../queries/useReorderTask";
 import {
   useAddSubtask,
   useCreateComment,
@@ -29,11 +47,15 @@ import {
   useViewTasks,
 } from "../queries/useVikunja";
 import { readThemePreference, resolveTheme, setTheme } from "../theme/theme";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { TaskDetail } from "../ui/detail/TaskDetail";
 import { ListView } from "../ui/ListView";
 import { AddTaskAffordance, QuickAdd } from "../ui/QuickAdd";
+import { SearchBox } from "../ui/SearchBox";
 import { Shell } from "../ui/Shell";
 import { Sidebar } from "../ui/Sidebar";
+import { ToastRegion } from "../ui/ToastRegion";
+import { useToasts } from "../ui/useToasts";
 import { ViewTitle, ViewToolbar } from "../ui/ViewHeader";
 import styles from "./AppScreen.module.css";
 
@@ -68,35 +90,104 @@ export function AppScreen() {
   const inboxProjectId = resolveInboxProjectId(userQuery.data, projectsQuery.data);
   const projects = sidebarProjects(projectsQuery.data, inboxProjectId);
 
-  const view: ViewDef | null = useMemo(() => {
-    const projectId = projectIdFromRoute(route);
-    if (projectId !== null) {
-      const project = projectsQuery.data?.find((p) => p.id === projectId);
-      return projectView(projectId, project?.title ?? "Project");
-    }
-    if (route === "inbox") {
-      return inboxProjectId === null ? null : inboxView(inboxProjectId);
-    }
-    return todayView();
-  }, [route, inboxProjectId, projectsQuery.data]);
+  /*
+   * The list view whose order a project shows (§3). `GET /projects` carries
+   * its views inline (§6 item 25), so this is a lookup, not a request - but it
+   * is only available once the projects query has answered, and a view built
+   * without it keys and orders differently. That is why the key carries the
+   * view id: the two spellings must not share a cache entry, or the flat
+   * listing's due-date order would render for as long as the id took to
+   * resolve and then rearrange itself under the reader.
+   */
+  const viewIdOf = useCallback(
+    (projectId: number): number | undefined =>
+      listViewId(projectsQuery.data?.find((p) => p.id === projectId)) ?? undefined,
+    [projectsQuery.data],
+  );
+
+  /*
+   * Today and Upcoming are queries, and a query has nowhere to keep a manual
+   * order (mapping §4). Vikunja's answer is the saved filter: it arrives under
+   * a negative id and owns real views, which accept position writes (§6 items
+   * 15 and 24).
+   *
+   * Which filter is OURS comes from the marker this app stamps into its
+   * description, never from its title. A filter the user happened to call
+   * "Today" is theirs, and adopting it would silently change what that screen
+   * shows. It also costs no request: the marker rides along on GET /projects.
+   */
+  const ownedSource = useCallback(
+    (slot: OwnedSlot) => {
+      const project = ownedFilterProject(projectsQuery.data, slot);
+      if (!project) return undefined;
+      const viewId = listViewId(project);
+      return viewId === null ? undefined : { projectId: project.id, viewId };
+    },
+    [projectsQuery.data],
+  );
+  const todaySource = useMemo(() => ownedSource("today"), [ownedSource]);
+  const upcomingSource = useMemo(() => ownedSource("upcoming"), [ownedSource]);
+
+  /** The committed query, or null when this route is not a search. */
+  const searchQuery = searchQueryFromRoute(route);
+
+  /*
+   * One decision, not two. `view` and `notBuilt` classify the same route, and
+   * while they were computed separately each had to enumerate the route set -
+   * so a new route added to only one of them would render a screen that
+   * disagreed with its own sidebar entry.
+   */
+  const { view, notBuilt } = useMemo(
+    () =>
+      viewForRoute({
+        route,
+        projects: projectsQuery.data,
+        inboxProjectId,
+        viewIdOf,
+        todaySource,
+        upcomingSource,
+      }),
+    [route, inboxProjectId, projectsQuery.data, viewIdOf, todaySource, upcomingSource],
+  );
 
   // The sidebar shows Inbox and Today counts regardless of the open view.
   // Both queries key off ViewDef.key, so when one of them *is* the open view
   // TanStack serves a single request rather than two.
   const inboxCountView = useMemo(
-    () => (inboxProjectId === null ? null : inboxView(inboxProjectId)),
-    [inboxProjectId],
+    () =>
+      inboxProjectId === null
+        ? null
+        : inboxView(inboxProjectId, viewIdOf(inboxProjectId)),
+    [inboxProjectId, viewIdOf],
   );
-  const todayCountView = useMemo(() => todayView(), []);
+  const todayCountView = useMemo(() => todayView(todaySource), [todaySource]);
   const inboxTasksQuery = useViewTasks(inboxCountView, timeZone);
   const todayTasksQuery = useViewTasks(todayCountView, timeZone);
 
   const tasksQuery = useViewTasks(view, timeZone);
 
+  const toasts = useToasts();
+  const reordering = useReorderTask(view, timeZone, {
+    // Not under the list: it has just snapped back, and the reader may have
+    // scrolled away from the row entirely.
+    onFailure: (message) => toasts.show({ message, kind: "error" }),
+  });
+
   // Live refresh for the open view (D6): polls while visible, wakes on focus.
-  useLiveSource({ view, timeZone, enabled: !tasksQuery.isPending });
+  useLiveSource({
+    view,
+    timeZone,
+    enabled: !tasksQuery.isPending,
+    // A poll tick landing mid-move would put the row back where it was
+    // dragged from, which reads as the move having been refused.
+    apply: () => !reordering.isMoving(),
+  });
 
   const completing = useCompleteTask({ timeZone, defaultDueTime });
+  const deleting = useDeleteTask();
+  /* The task the confirmation is about, which is not simply the open one: the
+     dialog closes first, so the confirmation has to hold its own copy. */
+  const [confirmDelete, setConfirmDelete] = useState<Task | null>(null);
   const editing = useUpdateTask();
   const reminding = useUpdateReminders();
   const labelling = useTaskLabel();
@@ -336,12 +427,27 @@ export function AppScreen() {
       />
       <ListView
         header={
-          <ViewTitle
-            title={view?.title ?? "open-todo"}
-            {...(view?.subtitleFor && !tasksQuery.isPending
-              ? { subtitle: view.subtitleFor(visible.length) }
-              : {})}
-          />
+          searchQuery !== null ? (
+            <>
+              <SearchBox
+                query={searchQuery}
+                onSearch={(next) => navigate(searchRoute(next))}
+              />
+              <ViewTitle
+                title="Search"
+                {...(view && !tasksQuery.isPending
+                  ? { subtitle: view.subtitleFor?.(visible.length) ?? "" }
+                  : {})}
+              />
+            </>
+          ) : (
+            <ViewTitle
+              title={notBuilt ? routeTitle(notBuilt) : (view?.title ?? "open-todo")}
+              {...(view?.subtitleFor && !tasksQuery.isPending
+                ? { subtitle: view.subtitleFor(visible.length) }
+                : {})}
+            />
+          )
         }
         sections={sections}
         onToggleDone={(row) => {
@@ -351,8 +457,13 @@ export function AppScreen() {
         }}
         onUndo={(row) => completing.undo(row.id)}
         onOpenTask={(row) => setOpenTaskId(row.id)}
+        reorderable={reordering.reorderable}
+        onReorder={reordering.reorder}
         footer={
-          composerOpen ? (
+          // No composer on a screen that is not built: there is no list for a
+          // new task to join, and creating one would be the only thing the
+          // screen could do.
+          notBuilt ? null : composerOpen ? (
             <QuickAdd
               context={quickAddContext}
               onSubmit={submitQuickAdd}
@@ -364,14 +475,44 @@ export function AppScreen() {
           )
         }
         emptyMessage={
-          error
-            ? `Could not load tasks: ${error.message}`
-            : tasksQuery.isPending
-              ? "Loading…"
-              : "Nothing due. Enjoy the quiet."
+          notBuilt
+            ? "This screen is not built yet."
+            : error
+              ? `Could not load tasks: ${error.message}`
+              : tasksQuery.isPending
+                ? "Loading…"
+                : "Nothing due. Enjoy the quiet."
         }
       />
       {error ? <p className={styles.error}>{error.message}</p> : null}
+      <ToastRegion {...toasts} />
+      {confirmDelete ? (
+        <ConfirmDialog
+          title="Delete this task?"
+          /*
+           * "cannot be undone" is measured, not softened: §6 item 31 - the
+           * task answers 404 afterwards and there is no restore route. This is
+           * the only write in the app with nothing behind it, which is why it
+           * is the only one that asks first.
+           */
+          body={`"${confirmDelete.title}" will be deleted from Vikunja. This cannot be undone.`}
+          confirmLabel="Delete"
+          cancelLabel="Keep"
+          onConfirm={() => {
+            const task = confirmDelete;
+            setConfirmDelete(null);
+            // Closed before the write, not after: the dialog reads its task
+            // out of the view's list, and that task is about to stop existing.
+            setOpenTaskId(null);
+            deleting.mutate(task, {
+              onError: (cause) =>
+                toasts.show({ message: `Not deleted: ${cause.message}`, kind: "error" }),
+              onSuccess: () => toasts.show({ message: `Deleted "${task.title}"` }),
+            });
+          }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      ) : null}
       {openTask ? (
         <TaskDetail
           task={openTask}
@@ -386,15 +527,93 @@ export function AppScreen() {
           defaultDueTime={defaultDueTime}
           onClose={() => setOpenTaskId(null)}
           onSave={async (values) => {
-            await editing.mutateAsync({ task: openTask, values });
+            /*
+             * Captured BEFORE the write and from the server's own copy: the
+             * previous value is never reconstructed, which is the rule D-write
+             * and D-vocab both keep.
+             */
+            const change = undoableChange(openTask, values, {
+              projectName: (id) =>
+                projectsQuery.data?.find((p) => p.id === id)?.title ?? "another project",
+              describeDue: (iso) => {
+                const when = parseVikunjaDate(iso);
+                return when
+                  ? formatDueLabel(when, new Date(), timeZone, defaultDueTime)
+                  : "no date";
+              },
+            });
+            const fresh = await editing.mutateAsync({ task: openTask, values });
+            if (!change) return;
+            toasts.show({
+              message: change.message,
+              action: {
+                label: "Undo",
+                /*
+                 * The task handed back is the one the SERVER returned from
+                 * this write, not the stale copy the closure captured.
+                 * `updateTask` echoes reminders and assignees off whatever it
+                 * is given (its contract), so an older copy would quietly
+                 * restore the reminders as they were then.
+                 */
+                run: async () => {
+                  await editing.mutateAsync({ task: fresh, values: change.previous });
+                },
+              },
+            });
           }}
           onSaveReminders={async (reminders) => {
-            await reminding.mutateAsync({ task: openTask, reminders });
+            const change = undoableReminderChange(
+              openTask.reminders ?? [],
+              reminders,
+              (reminder) =>
+                describeReminder(reminder, new Date(), timeZone, defaultDueTime),
+            );
+            const fresh = await reminding.mutateAsync({ task: openTask, reminders });
+            if (!change) return;
+            toasts.show({
+              message: change.message,
+              action: {
+                label: "Undo",
+                run: async () => {
+                  // The server's latest copy, for the same reason the sidebar
+                  // undo uses it: updateReminders names a column and echoes
+                  // the rest off whatever task it is handed.
+                  await reminding.mutateAsync({
+                    task: fresh,
+                    reminders: change.previous,
+                  });
+                },
+              },
+            });
           }}
           allLabels={labelsQuery.data ?? []}
+          onDelete={() => setConfirmDelete(openTask)}
           onChangeLabel={async (change) => {
-            await labelling.mutateAsync({ task: openTask, change });
+            const undo = undoableLabelChange(
+              change,
+              (labelId) => labelsQuery.data?.find((l) => l.id === labelId)?.title,
+            );
+            const fresh = await labelling.mutateAsync({ task: openTask, change });
+            if (!undo) return;
+            toasts.show({
+              message: undo.message,
+              action: {
+                label: "Undo",
+                run: async () => {
+                  await labelling.mutateAsync({ task: fresh, change: undo.previous });
+                },
+              },
+            });
           }}
+          /*
+           * No Undo, deliberately. Undoing a CREATION means deleting — here a
+           * whole task, which `deleteTask` could do and no affordance in this
+           * app offers, because deletion carries its own questions about
+           * confirmation and reversibility (§7). Removing only the relation
+           * would leave an orphan task the user cannot see from here, which is
+           * worse than no offer. Same for the comment below, which has no
+           * delete route in the client at all.
+           */
           onAddSubtask={async (title) => {
             await subtasking.mutateAsync({ parent: openTask, title });
           }}

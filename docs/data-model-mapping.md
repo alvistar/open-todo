@@ -61,9 +61,12 @@ Vikunja positions are **`float64`, stored per `(task, project_view)`** in
 - Insert between neighbours: `pos = before + (after − before) / 2`.
   No `before`: `after / 2`. No `after`: `before + 2^16`. Empty list: `0`.
 - Equal neighbours (conflict): `after + 0.01`.
-- `MinPositionSpacing = 0.01`; a write that would fall below it makes the
-  **server renumber the whole view**, so the stored value may differ from what
-  was sent. Re-read positions after a move rather than trusting the local value.
+- `MinPositionSpacing = 0.01`. **Read from `main` as a server-side renumber;
+  measured on `pinguino` v2.5.0 as nothing of the sort** — see §6 item 23. The
+  server stores a crowded value verbatim and moves no neighbour. The
+  recalculation is the FRONTEND's, which is what `calculateItemPosition.ts`
+  above always was. So nothing stops positions converging, and **the client
+  must renumber the view itself** once a gap falls below the spacing.
 - Upsert is atomic on `(task_id, project_view_id)`.
 
 Consequences for open-todo:
@@ -86,12 +89,20 @@ Consequences for open-todo:
 |---|---|---|
 | Inbox | default project, list view | Sections from its kanban view (§1). |
 | Today | Saved filter `done = false && due_date < now/d+1d` with **one list view** | Grouping into "Scadute" / today is client-side (`due_date < now/d`). Persisted manual order via the filter view's positions. `now/d` date-math verified (§6 item 4). |
-| Upcoming | Saved filter `done = false && due_date > now/d` grouped by day client-side | Drag between days = due-date change, not a position write. |
+| Upcoming | Saved filter `done = false && due_date >= now/d+1d` with one list view, grouped by day client-side | **Built 2026-09-16.** The boundary is Today's, written the other way round, so the two partition the dated tasks — no task in both, none between them. The instance's own filter (-9, `/filters/8`) already asks exactly this and is adopted after the same query check Today gets. Drag between days = due-date change, not a position write, so a cross-section move is refused. |
 
-**Status in the foundation slice:** Today is issued as an *ad-hoc*
-`GET /tasks?filter=…`, not as a SavedFilter. That is enough for a read-only
-view, but the saved filter and its view must exist before D4 step 3 — the
-per-view `position` that makes a manually ordered Today persist lives on it.
+**Status after D4 step 3 (2026-09-16):** Today reads through the saved
+filter's list view when the instance has a filter titled `Today` whose query
+matches ours, and is ordered by hand there. `pinguino` already had one, written
+by someone other than us, and its query turned out to be identical (§6 item
+26) — so the query is CHECKED rather than assumed: a filter produces the task
+list, and adopting one written elsewhere would silently change what the screen
+shows. With no matching filter, Today falls back to the ad-hoc
+`GET /tasks?filter=…` and due-date order, and simply shows no drag handle.
+
+Open-todo does **not** create the filter. Doing so would put an object in the
+user's Vikunja that Veyrn and the web UI both see, on the strength of them
+having opened a screen.
 | Project list / board | The project's `list` / `kanban` view | Board columns = buckets. |
 | Custom filter (`p1 & #Work`, `today \| overdue`) | `SavedFilter.filters.filter` in Vikunja syntax (`priority = 4 && project = 12`) | **No automatic translation** of Todoist query strings; open-todo's filter editor speaks Vikunja syntax, with a picker UI on top. |
 | Labels view (`@label`) | `GET /tasks?filter=labels in [id]` | |
@@ -187,15 +198,18 @@ not a day, `every april 3rd` carries an ordinal — the repeat is dropped too, a
 the every-word goes back into the title. A yearly task with no due date repeats
 from nothing.
 
-**Known limitation of the list rule (2026-09-14).** A list item is a weekday or
-a day-of-month number, so `ogni 5,6` is refused like `every mon, wed`. Italian
-writes decimals with a comma, so `corri ogni 1,5 km` takes the same refusal and
-shows a warning about a repeat the user never wrote. Nothing is lost — the title
-is untouched and no date is set — and the alternatives are worse: a space after
-the comma does not separate the two cases, and gating on a following unit noun
-is guesswork. Zero occurrences in the 4325-record corpus. Pinned as F7 in
-`known-defects.test.ts`. A day-of-month is 1 to 31, so
-`check every 0 and 1 in the output` is left alone.
+**The list rule and Italian decimals — F7, CLOSED by measurement 2026-09-16.**
+A list item is a weekday or a day-of-month number, so `ogni 5,6` is refused like
+`every mon, wed`. Italian writes decimals with a comma, and F7 recorded that
+`corri ogni 1,5 km` therefore took the same refusal and warned about a repeat
+nobody wrote. **It no longer does**: measured, it matches no recurrence at all
+and raises no warning, while `ogni 5,6 alle 15` is still correctly refused. What
+closed it was the later rule about what may follow a COMPLETE schedule — `km` is
+an ordinary word, and `alle 15` is a clock time. Neither this note nor the
+HANDOVER had been re-measured since, and both still described the old
+behaviour; `known-defects.test.ts`, which they pointed at, has not existed since
+D-adverb. A day-of-month is 1 to 31, so `check every 0 and 1 in the output` is
+left alone.
 
 **Counter-examples are part of the grammar (2026-09-14).** Each pack carries two
 lists, and widening a pattern means adding to them in the same commit.
@@ -313,6 +327,16 @@ owner's `vja` config is client-side only.
 | 19 | Label writes, and the read-back they force | **Verified against `pinguino` 2026-09-15.** `PUT /tasks/{id}/labels` and `DELETE /tasks/{id}/labels/{labelId}` answer with the RELATION, not the task, so there is no updated copy to put in the cache — the dialog reads its task from there, so a label change is a write followed by `GET /tasks/{id}`. Both calls leave description, due date, priority, reminders and assignees untouched, as a sub-resource should. Also measured: **`pinguino` had zero labels**, and `PUT /labels` does not reject a duplicate title, so nothing on the server stops an instance growing two labels called the same thing — `canCreateLabel` (`src/model/labels.ts`) is the only guard there is. |
 | 20 | Writing a sub-task relation | **Verified against `pinguino` 2026-09-15.** `PUT /tasks/{parent}/relations` with `{other_task_id, relation_kind: "subtask"}` sets **both sides**: the parent gains a `subtask` relation and the child a `parenttask` one, so the inverse must NOT be written as well. The relation call answers with the relation, not the task, so the parent is re-read afterwards. Writing a relation is not a task write: description, priority and reminders are untouched. `src/api/integration.write.test.ts` pins the mirroring, because every list view now depends on `parenttask` appearing without anyone writing it. |
 | 21 | Comments | **Verified against `pinguino` 2026-09-15.** `PUT /tasks/{id}/comments` takes `{comment}` and `GET /tasks/{id}/comments` returns them oldest first; the body field is `comment` and carries **HTML**, like a description (§2), and the `author` is expanded on both. `expand=comment_count` does report the count on a listing, and it is absent without it (§6 item 2). |
+| 22 | The ordering routes exist, and the position round-trips | **Verified against `pinguino` 2026-09-16** by `src/api/integration.write.test.ts`. `POST /tasks/{id}/position` with `{project_view_id, position}` is accepted on v2.5.0 and answers 2xx; a task written to the midpoint of its two neighbours came back at exactly that value (wrote `24576`, stored `24576`) and the view's order changed accordingly. `GET /projects/{id}/views/{v}/tasks` answers a **bare `Task[]`** for a list view — not the bucket-wrapped shape the kanban view returns — with every task carrying a numeric `position`, already ascending. It honours `filter`, `expand` and `page`/`per_page`, so `fetchAllPages` and the existing view filters work over it unchanged. |
+| 23 | **There is no server-side renumber.** §3 was wrong about who does it | **Verified against `pinguino` 2026-09-16.** §3 said a write leaving a gap below `MinPositionSpacing` (0.01) makes the *server* renumber the whole view, so the stored value may differ from the one sent. It does not. A position written `0.001` above its neighbour was stored **exactly** as sent and **0 of 3** other tasks in the view moved. The recalculation lives in Vikunja's **frontend** — which is where §3's own citation, `frontend/src/helpers/calculateItemPosition.ts`, always pointed. Consequence, and it is the opposite of what §3 implied: nothing protects a view from positions converging, so **open-todo must renumber the view itself** when a gap gets too small. A client that only re-reads after a crowded write would read back the same crowded numbers and halve them again, until two tasks share a float and the order falls back to id. |
+| 24 | A saved filter's view accepts a position write | **Verified against `pinguino` 2026-09-16**, and it is the single fact that lets Today carry a manual order (§4). A scratch saved filter created with `PUT /filters` appeared in `GET /projects` as id **-11**, confirming the id formula `project_id = -(filter_id + 1)` (filter 10 → -11; on this instance `Today` is -10 = filter 9, `Upcoming` is -9 = filter 8). Its views are real views (`65:list 66:gantt 67:table 68:kanban`), its list view returns the matching tasks, and `POST /tasks/{id}/position` against that view id was accepted and stored. So a task can hold a position in a view it only *matches*, not one it belongs to. |
+| 25 | `GET /projects` carries its views inline | **Verified against `pinguino` 2026-09-16.** All 5 projects — saved filters included — arrive with a populated `views[]` (`Inbox` → `1:list 2:gantt 3:table 4:kanban`). Discovering a list-view id therefore costs **no extra request**; `GET /projects/{id}/views` exists and agrees, and is only needed as a fallback. |
+| 26 | The existing `Today` saved filter is already ours | **Verified against `pinguino` 2026-09-16.** `/filters/9` (`Today`, project -10) carries the query `done = false && due_date < now/d+1d`, which is character-for-character what `todayView().filter` builds from `and(notDone(), dueBeforeTomorrow())`. `Upcoming` (`/filters/8`, project -9) is `done = false && due_date >= now/d+1d`. So adopting the existing filter for a position-ordered Today changes nothing about what the screen shows. **Both markers were written by open-todo itself** on the `read-handover` branch: `GET /projects` returns them with `description: "open-todo:today:v1"` / `"open-todo:upcoming:v1"`, because `SavedFilter.ToProject()` copies the filter's description onto the pseudo-project. That marker — not the title, and not a query comparison — is how ownership is decided since 2026-09-16. |
+| 27 | The bulk route refuses a position | **Verified against `pinguino` 2026-09-16.** `POST /tasks/bulk` with `fields: ["position"]` answers **400**. Positions live in `task_positions`, not on the task row, so there is exactly one write path and no second one to consolidate it with later. |
+| 28 | A new task is created at the TOP of a list view | **Measured against `pinguino` 2026-09-16.** Three tasks created in order into a fresh project came back from its list view as `three=16384, two=32768, one=65536` — ascending position, newest first. Worth stating because open-todo's incremental poll does the opposite: a task it has never seen through a view carries no position and sorts **last** until the next full fetch (~100 s) puts it where the server has it. |
+| 29 | A saved filter's query is readable one at a time, or not at all — and open-todo no longer needs to | **Verified against `pinguino` 2026-09-16.** `GET /filters` answers **405 Method Not Allowed**; `GET /filters/{id}` returns the filter with `filters.filter` carrying the query string. Since `GET /projects` gives saved filters a **null** `filter` (§6 item 15), reading the query costs one request per filter — which is worth paying, because the query is what produces the task list, so adopting a filter unread would be adopting a screen whose contents nobody checked. |
+| 30 | The saved-filter view shows exactly what the ad-hoc Today shows | **Verified against `pinguino` 2026-09-16.** `GET /projects/-10/views/42/tasks` and the ad-hoc `GET /tasks?filter=done = false && due_date < now/d+1d` returned the **same 9 task ids**, and the view's tasks carry real positions. So moving Today onto the saved filter changes where its ORDER lives and nothing about its contents — measured, not argued. Still unresolved, and no worse than before: `filter_timezone` against the filter view gave identical results for `Europe/Rome` and `Pacific/Auckland`, which is the same inconclusive answer §6 item 7 got, because the data does not straddle the boundary. Re-run near local midnight. |
+| 31 | A delete is permanent | **Verified against `pinguino` 2026-09-16.** `DELETE /tasks/{id}` answers **200**, the task then answers **404**, and there is no restore route — `PUT /tasks/{id}` answers 405. Vikunja's trash covers projects, not tasks, through this API. So the delete affordance asks BEFORE and offers nothing after: an Undo would have to re-create the task, which produces a DIFFERENT one — new id, and none of its comments, relations or position. That is the plausible invented value D-write and D-vocab both refuse. It is the only write in the app with nothing behind it, and the only one that asks first. |
 | — | Default project for sigil-less quick-add | **Verified.** `GET /user` → `settings.default_project_id = 1` ("Inbox"). |
 | 7 | `filter_timezone` and `filter_include_nulls` | **Verified on `pinguino` 2026-09-09: `filter_timezone` is honoured.** The same Today filter returned 13 tasks with `Europe/Rome` and 15 with `Pacific/Auckland`, so the server really does evaluate `now/d` in the supplied zone. |
 | 8 | Do subtask relations carry `done`? | **Verified on `pinguino` 2026-09-09: yes.** All 18 subtask relations returned a boolean `done`, so the "0 / 3" badge is correct even though completed children are excluded by the view's `done = false` filter. Item 2's "children are themselves in the listing" does not hold under that filter, but it does not need to: the relation object carries the flag. Also of note, `related_tasks` was present on 49 of 49 open tasks. |
@@ -354,3 +378,91 @@ including `task.created`, `task.updated`, `task.deleted`,
 listener per task event resolving the users with access to the project and
 publishing through the hub; the delicate part is the authorisation check.
 Benefits Veyrn as well. Not on the critical path of any slice.
+
+---
+
+## 8. Search — probed against `pinguino` (v2.5.0, 2026-09-10)
+
+Two candidate backends exist. They differ in ways that decide the design, so
+both were measured against real data rather than chosen from the docs.
+
+### 8.1 `GET /tasks?s=<term>`
+
+| Property | Result | Probe |
+|---|---|---|
+| Fields searched | title **and** description | `s=Valentina` (a word only ever in descriptions) returned 11 |
+| Case | **insensitive** | `s=MAIUSCOLO` and `s=maiuscolo` both found the probe |
+| Accents | **sensitive** | `s=citta` missed a task titled `città`; `s=martedi` and `s=martedì` return disjoint sets |
+| Word boundaries | none — plain substring | `s=mini` matched `minimo` and `amministratore` |
+| Multiple words | **literal phrase only** | `s=Mac mini` → 9, `s=mini Mac` → **0**, `s=notaio fattura` → 0 though both words exist apart |
+| Projects | spans all of them | probes in projects 1 and 2 both came back |
+| Completed tasks | included | `s=mini` → 13 = 4 open + 9 done, split by adding `filter=done = false` |
+| Combines with `filter`, `sort_by`, paging | yes | 4 + 9 = 13; `page=2` continued cleanly |
+| Empty term | returns **everything** | `s=` → a full page |
+
+**SQL wildcards leak into the term.** `s=Mac%mini` returns the same 9 results as
+`s=Mac mini`, while the literal `s=Macmini` returns 0; `s=M_c` returns 34. The
+term is interpolated into a `LIKE` pattern without escaping, so a user searching
+`50%` or `snake_case` silently gets the wrong set.
+
+**A backslash escapes them**, verified with a positive control — a probe task
+actually titled `zqprobe sconto 50% e snake_case`:
+
+```
+s=50%    -> 8 results   (the % ran as a wildcard)
+s=50\%   -> 1 result    (the probe, and only the probe)
+```
+
+### 8.2 `GET /tasks?filter=title like '%term%'`
+
+Multi-word works properly here: one `(title like … || description like …)` group
+per word, joined with `&&`, ANDs the words in any order — `notaio` (11) and
+`fattura` (7) intersect to 1. Escaping works the same way, and `'` inside a term
+**must** be escaped as `\'` or the expression is rejected with `code 4024`.
+
+**But `like` is case-SENSITIVE**: `title like '%ZQPROBE%'` returns 0 where the
+lowercase form returns 2. That disqualifies it as the backend for a search box.
+It also explains a result that looked like an expression-length limit: a
+three-word AND returned nothing only because one word appeared capitalised in
+the descriptions.
+
+### 8.3 Decision
+
+**`s=` for the server query, refined on the client.**
+
+- Send `s=` with the query's **longest term**, backslash-escaped (`\`, `%`, `_`).
+  Longest is the most selective, so it narrows hardest.
+- Require **every** term to appear in the returned task's title or description,
+  case-folded, on the client — the server's own term included. Re-checking it
+  costs nothing and keeps one place deciding what a match is. Client-side
+  matching can only narrow a set, never extend it, so this is safe: it turns
+  8.1's literal-phrase limitation into a real order-independent AND.
+- **Refuse to send a term shorter than two characters.** The floor belongs on
+  the term that reaches the wire, not on the query's total length: measuring
+  the query let `a b` through as `s=a`, which is exactly the whole-instance
+  walk the rule exists to prevent. A query is searchable when at least one of
+  its terms clears the floor; shorter ones still narrow the results.
+- Results are ordered by due date then id, with undated tasks included
+  (`filter_include_nulls=true`). Vikunja offers no relevance ranking over `s=`,
+  and matches span projects, so there is no position space to order by — due
+  date is the only ordering that means anything here.
+
+**Accent-insensitivity is not achievable this way and is not implemented.** The
+client can only filter what the server already returned, and the server never
+returns `città` for `citta`. Searching for an accented word requires typing the
+accent. This is a database collation property, not something the app can fix.
+
+**Completed tasks are searched** and shown in their own section. The rest of the
+app drops a task the moment it is done, so a search that silently hid them would
+be the §4-style lie the handover's lesson 9 warns about — the whole point of
+searching is often to check whether something was already done.
+
+---
+
+**Ported to this branch on 2026-09-16** together with `src/model/search.ts`,
+`SearchBox` and the search route. The probes and the decision are
+`read-handover`'s work of 2026-09-10 and were not re-run; what WAS re-verified
+here is the property the design exists for — driven against `pinguino`,
+`notaio fattura` and `fattura notaio` both return 2, and `Mac mini` and
+`mini Mac` both return 3, where the raw backend answers 0 for either reversed
+order.

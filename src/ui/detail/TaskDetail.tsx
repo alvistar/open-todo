@@ -7,6 +7,7 @@ import { priorityFromVikunja, priorityLabel } from "../../model/priority";
 import { describeReminder } from "../../model/reminders";
 import { isRichHtml, stripHtml, toDescriptionHtml } from "../../model/taskRow";
 import type { TitleEdit } from "../../model/titleEdit";
+import { ConfirmDialog } from "../ConfirmDialog";
 import { Icon } from "../icons/Icon";
 import { PriorityCheckbox } from "../PriorityCheckbox";
 import { Comments } from "./Comments";
@@ -57,6 +58,11 @@ export interface TaskDetailProps {
   /** One label on or off. A sub-resource call, so one pick is one write. */
   onChangeLabel: (change: LabelChange) => Promise<void>;
   /**
+   * Deleting the task. Absent means the "⋯" menu is not drawn at all, rather
+   * than drawn with a dead item — the rule this dialog was built on.
+   */
+  onDelete?: () => void;
+  /**
    * Reads an edited NAME the way the composer reads a new one. A callback, for
    * the same reason `readDuePhrase` is one: the clock must be read now, not
    * when the dialog opened.
@@ -88,6 +94,7 @@ export function TaskDetail({
   onSaveReminders,
   allLabels,
   onChangeLabel,
+  onDelete,
   readTitleEdit,
   onSaveTitle,
   comments,
@@ -104,6 +111,32 @@ export function TaskDetail({
 }: TaskDetailProps) {
   /** At most one editor is open, so the dialog holds which. */
   const [editing, setEditing] = useState<"title" | "description" | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  /*
+   * Every way out of this dialog goes through one function, so the question is
+   * asked once rather than at each door. Read through a ref by the key
+   * handler, which must not be rebuilt on every render.
+   */
+  const requestCloseRef = useRef<() => void>(() => {});
+  /*
+   * Whether the open editor holds work nobody has saved. Closing the whole
+   * pane over it loses the same text Cancel would, by a wider door — so the
+   * dialog asks the question its Cancel asks.
+   *
+   * Beyond the measurement, and said plainly: the reference product was
+   * measured guarding the EDITOR's own Cancel (2026-09-16). Whether its X
+   * guards too was not captured, and guessing loudly here is safer than
+   * guessing quietly.
+   */
+  const [dirty, setDirty] = useState(false);
+  const [confirmingClose, setConfirmingClose] = useState(false);
+
+  /** Close, unless there is unsaved work to ask about first. */
+  const requestClose = () => {
+    if (dirty) setConfirmingClose(true);
+    else onClose();
+  };
+  requestCloseRef.current = requestClose;
   /*
    * The name being typed, mirrored here ONLY so the sidebar can show what the
    * phrase would set. The editor still owns the draft - this is a copy that
@@ -149,7 +182,7 @@ export function TaskDetail({
          */
         if (typing) return;
         event.preventDefault();
-        onCloseRef.current();
+        requestCloseRef.current();
         return;
       }
       /*
@@ -212,6 +245,19 @@ export function TaskDetail({
         aria-modal="true"
         aria-labelledby="task-detail-title"
       >
+        {confirmingClose ? (
+          <ConfirmDialog
+            title="Discard unsaved changes?"
+            body="Unsaved changes will be lost."
+            confirmLabel="Discard"
+            cancelLabel="Keep editing"
+            onConfirm={() => {
+              setConfirmingClose(false);
+              onClose();
+            }}
+            onCancel={() => setConfirmingClose(false)}
+          />
+        ) : null}
         <div className={styles.header}>
           <span className={styles.crumb}>
             <Icon name="project" size={16} />
@@ -238,12 +284,50 @@ export function TaskDetail({
                 <Icon name="chevronRight" size={16} />
               </button>
             </span>
+            {onDelete ? (
+              /*
+               * The "⋯" of layout-specs §4's header, which was measured from
+               * the start and never drawn because there was nothing it could
+               * honour. Delete is the first thing there is.
+               *
+               * It opens a menu rather than acting: a 32px button between
+               * prev/next and Close that deleted a task on one click would be
+               * the worst possible neighbour for the close button.
+               */
+              <span className={styles.overflow}>
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  aria-label="More actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  onClick={() => setMenuOpen((was) => !was)}
+                >
+                  <Icon name="more" size={16} />
+                </button>
+                {menuOpen ? (
+                  <div className={styles.menu} role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.menuItem}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onDelete();
+                      }}
+                    >
+                      Delete task
+                    </button>
+                  </div>
+                ) : null}
+              </span>
+            ) : null}
             <button
               ref={closeRef}
               type="button"
               className={styles.iconButton}
               aria-label="Close"
-              onClick={onClose}
+              onClick={() => requestClose()}
             >
               <Icon name="close" size={16} />
             </button>
@@ -272,6 +356,7 @@ export function TaskDetail({
                     }}
                     onClose={closeEditor}
                     onDraft={setTitleDraft}
+                    onDirty={setDirty}
                     onSave={onSaveTitle}
                     {...(pending && pending.warnings.length > 0
                       ? { notice: pending.warnings.join(" ") }
@@ -287,6 +372,7 @@ export function TaskDetail({
                     multiline
                     editing={editing === "description"}
                     onEdit={() => setEditing("description")}
+                    onDirty={setDirty}
                     onClose={closeEditor}
                     onSave={(next) => onSave({ description: toDescriptionHtml(next) })}
                     {...(isRichHtml(task.description)

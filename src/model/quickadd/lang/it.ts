@@ -206,6 +206,22 @@ export const it: LanguagePack = {
     // da / dal / dalla / dalle, plus the elided "dall'11" with either apostrophe.
     "a\\s+partire\\s+da(?:ll['\u2019]|l|ll[ae])?",
     "a\\s+cominciare\\s+da(?:ll['\u2019]|l|ll[ae])?",
+    /*
+     * The bare preposition, which the note above declined to ship and which
+     * "ogni giorno da lunedì" needs - the commonest way to say it in Italian,
+     * and measured doing the exact damage TODO(F6) describes: a daily repeat,
+     * a due date nobody asked for, and a title collapsed to "da".
+     *
+     * It is safe now because the rule ALREADY requires a date after the
+     * starting word (START_DATE_HINT). "ogni giorno da fare" has no date after
+     * "da", so it is not rejected and keeps working - which is precisely what
+     * the note was protecting.
+     *
+     * "dalle" is deliberately NOT here, unlike in the two phrases above:
+     * "ogni giorno dalle 9" is a daily task with a time, and the hint admits a
+     * bare digit, so including it would refuse a form that works today.
+     */
+    "da(?:ll['\u2019]|l|lla)?",
   ],
   monthOnTheNth: [],
   weekdayUnit: ["giorn[oi]\\s+ferial[ei]", "giorn[oi]\\s+lavorativ[oi]"],

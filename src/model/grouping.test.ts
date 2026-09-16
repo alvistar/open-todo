@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "../api/types";
-import { groupTasksForView, groupToday, todayHeading } from "./grouping";
-import { inboxView, todayView } from "./views";
+import {
+  groupTasksForView,
+  groupToday,
+  groupUpcoming,
+  todayHeading,
+  upcomingHeading,
+} from "./grouping";
+import { inboxView, todayView, upcomingView } from "./views";
 
 const TZ = "Europe/Rome";
 const NOW = new Date("2026-09-09T08:00:00Z");
@@ -92,5 +98,94 @@ describe("locale consistency", () => {
     expect(heading).toContain("Today");
     expect(heading).toContain("Wednesday");
     expect(heading).not.toContain("mercoledì");
+  });
+});
+
+describe("grouping does not depend on what a view is CALLED", () => {
+  it("still cuts Today into sections once it is read through a saved filter", () => {
+    /*
+     * The regression this pins, found by driving the app and not by any test
+     * here: Today's key became `today@v42` when it started carrying its view
+     * id, and `groupTasksForView` was comparing that key against the literal
+     * "today". The Overdue heading silently disappeared and the whole suite
+     * stayed green. A key identifies a cache entry; the grouping is its own
+     * field now.
+     */
+    const ordered = todayView({ projectId: -10, viewId: 42 });
+    expect(ordered.key).not.toBe("today");
+
+    const groups = groupTasksForView(
+      ordered,
+      [task(1, "2026-09-01T10:00:00Z"), task(2, "2026-09-09T10:00:00Z")],
+      {
+        now: NOW,
+        timeZone: TZ,
+      },
+    );
+    expect(groups.map((g) => g.key)).toEqual(["overdue", "today"]);
+  });
+});
+
+describe("groupUpcoming", () => {
+  const TOMORROW = "2026-09-10T09:00:00Z";
+  const ALSO_TOMORROW = "2026-09-10T18:00:00Z";
+  const LATER = "2026-09-12T09:00:00Z";
+
+  it("makes one section per day, in order", () => {
+    const groups = groupUpcoming(
+      [task(3, LATER), task(1, TOMORROW), task(2, ALSO_TOMORROW)],
+      NOW,
+      TZ,
+    );
+    expect(groups.map((g) => g.key)).toEqual(["day:2026-09-10", "day:2026-09-12"]);
+    expect(groups[0]?.tasks.map((t) => t.id)).toEqual([1, 2]);
+    expect(groups[1]?.tasks.map((t) => t.id)).toEqual([3]);
+  });
+
+  it("sorts the sections even when the tasks arrive out of order", () => {
+    // The server sorts by due date, but the poll merges and a manual order
+    // does not: the sections are chronological whatever orders the rows.
+    const groups = groupUpcoming([task(1, LATER), task(2, TOMORROW)], NOW, TZ);
+    expect(groups.map((g) => g.key)).toEqual(["day:2026-09-10", "day:2026-09-12"]);
+  });
+
+  it("cuts days in the USER's zone, not in UTC", () => {
+    /*
+     * 23:30Z on the 10th is already the 11th in Rome, and 00:30Z on the 11th
+     * is still the 11th. A key built from the UTC date would put them in
+     * different sections and label one of them with the wrong day.
+     */
+    const groups = groupUpcoming(
+      [task(1, "2026-09-10T23:30:00Z"), task(2, "2026-09-11T00:30:00Z")],
+      NOW,
+      TZ,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.key).toBe("day:2026-09-11");
+  });
+
+  it("drops a task with no due date rather than inventing a section", () => {
+    // It cannot arrive through the filter, but the incremental poll is not
+    // scoped by the filter and hands this whatever changed.
+    expect(groupUpcoming([task(1)], NOW, TZ)).toEqual([]);
+  });
+
+  it("is empty for an empty view, with no placeholder day", () => {
+    expect(groupUpcoming([], NOW, TZ)).toEqual([]);
+  });
+
+  it("heads a section with the day and the weekday", () => {
+    expect(upcomingHeading(new Date("2026-09-10T09:00:00Z"), TZ, "en-GB")).toBe(
+      "10 Sept · Thursday",
+    );
+  });
+
+  it("is reached through the view, by its grouping and not its key", () => {
+    const ordered = upcomingView({ projectId: -9, viewId: 41 });
+    const groups = groupTasksForView(ordered, [task(1, TOMORROW)], {
+      now: NOW,
+      timeZone: TZ,
+    });
+    expect(groups.map((g) => g.key)).toEqual(["day:2026-09-10"]);
   });
 });

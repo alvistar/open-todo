@@ -44,6 +44,22 @@ export interface Project {
   views?: ProjectView[] | null;
 }
 
+/**
+ * A saved filter, as `GET /filters/{id}` returns it.
+ *
+ * It arrives in `GET /projects` too, but only as a project shell under a
+ * negative id with `filter` null (§6 item 15) — the query itself is readable
+ * only here, one filter at a time: `GET /filters` answers 405.
+ */
+export interface SavedFilter {
+  id: number;
+  title: string;
+  filters?: {
+    filter?: string;
+    filter_include_nulls?: boolean;
+  } | null;
+}
+
 export interface Label {
   id: number;
   title: string;

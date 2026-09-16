@@ -8,6 +8,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
+- **You can delete a task.** The "⋯" in a task's header — which had been drawn
+  in the design from the beginning and left out until now — offers it, and it
+  asks first, naming the task. It asks because it cannot be taken back:
+  Vikunja has no way to restore a deleted task, so "this cannot be undone" is
+  measured rather than cautious wording.
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
+### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
+- **"ogni giorno da lunedì" no longer invents a date and eats the task name.**
+  Typing a repeat with a start date in the ordinary Italian way — the bare
+  "da", rather than "a partire da" — set a daily repeat, scheduled a Monday
+  nobody had asked for, and left a task called "da". It is now refused with the
+  same explanation the longer form already gave, and the name is kept.
+  - Ordinary sentences are untouched: "ogni giorno da fare", "comprare ogni
+    giorno da Luigi" and "ogni giorno dalle 9" all keep their repeats.
+- **A month abbreviation is no longer read out of the middle of a word.**
+  "dic" sits inside "dedicare", so "ogni settimana da dedicare al report" could
+  be read as a repeat starting in December and refused.
+
+### Removed
+- **The Todoist token captures are gone from this repository's history**, and
+  were removed before it was ever published. Two files of CSS custom properties
+  read off the running product: useful reference while deriving a palette, but
+  not something to host in public. `research/measure-dom.js` stays — it is the
+  script that measures a page, and it is ours. What the app uses is
+  `src/theme/tokens.css` and `DESIGN.md`, which are its own.
+
+### Changed
+- **One place decides which screen a link means.** Nothing looks different: the
+  work is that the address bar's answer — which list to show, or that nothing
+  is built for this route yet — is now worked out once instead of twice. It was
+  two pieces of code reading the same route and having to agree; a screen added
+  to one and not the other would highlight a sidebar entry while showing the
+  "not built yet" placeholder underneath it.
+
+- **Inbox and project lists now show the order you arranged in Vikunja**,
+  instead of sorting by due date. Vikunja stores a manual order per list, and
+  open-todo was never reading it — every list was re-sorted by date on arrival
+  and again on every background refresh. It now reads the list through
+  Vikunja's own list view, which is the only way that order is visible, and
+  keeps it across refreshes. Editing a task somewhere else no longer moves it
+  to the top of a list you had arranged by hand.
+  - A task that appears between full refreshes — created on your phone, say —
+    waits at the bottom until the next refresh places it, rather than guessing
+    at a position and jumping once it learns the real one.
+
+### Added
+- **Adding or removing a label, and changing a task's reminders, now offer an
+  Undo too** — the same one-click way back as the date, project and priority
+  pickers. Reminders are put back as the whole set they were, since that is how
+  Vikunja stores them.
+  - Creating a NEW label still has no Undo, on purpose: the label belongs to
+    every task on your instance, so taking it back could remove one another
+    task already uses.
+- **Picking a date, a project or a priority in a task now offers an Undo.**
+  Those pickers write the moment you choose (there is no Save button, on
+  purpose), and two of them can carry the task out of the list you were looking
+  at — so a short message appears at the bottom left saying what happened, with
+  one click to put it back. The value it restores is the one the server had,
+  never one the app reconstructed.
+- **Messages that have nowhere to sit now have somewhere.** A reorder that
+  fails used to write a line under the list, which is the wrong place: the list
+  has just snapped back, and you may have scrolled away from the row. It says
+  so at the bottom left instead, and stays longer than a confirmation does,
+  because a failure has to be read.
+  - The messages that belong to a field stay with that field. A failed rename
+    still keeps your text on screen with the reason under it, and a completed
+    task still offers its Undo on its own row.
+
+- **You can drag a task up or down a list, and it stays there.** Pick a row up
+  by the handle that appears at its left on hover, or focus the row and press
+  **Alt+↑ / Alt+↓**: the row moves immediately, and the new order is written to
+  Vikunja, so it is the same order in Vikunja's own interface and in Veyrn. If
+  the write fails the row goes back where it was and says why.
+  - On a touch screen the handle is visible at rest rather than on hover, since
+    there is no hover to reveal it with.
+  - **Today can be arranged by hand too**, if your Vikunja has a saved filter
+    called "Today" asking the same question open-todo does. Vikunja keeps an
+    order per list, and a filter is the only kind of list a query can have; the
+    filter's own query is read and compared first, so a filter someone else
+    wrote is never adopted silently. Without one, Today keeps its due-date
+    order and shows no handle. open-todo does not create the filter for you.
+  - A row moves within its own section. Dragging from "Overdue" into today
+    would be a change of DATE, not of order, so it is refused rather than
+    quietly doing nothing.
+  - Upcoming is unchanged.
+  - A move waits for the previous one to be saved, so holding the keys does not
+    queue moves against a list that has not settled yet.
+
 - **You can open a task.** Enter on a focused row, or a click, opens the detail
   at the geometry measured in `docs/layout-specs.md` §4: the project it belongs
   to, its description, its sub-tasks, and its date, priority, labels and
@@ -94,6 +206,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision follows the line to the save, so what the composer shows is what
   gets created.
 
+### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
+- **You can delete a task.** The "⋯" in a task's header — which had been drawn
+  in the design from the beginning and left out until now — offers it, and it
+  asks first, naming the task. It asks because it cannot be taken back:
+  Vikunja has no way to restore a deleted task, so "this cannot be undone" is
+  measured rather than cautious wording.
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
+### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
+- **"ogni giorno da lunedì" no longer invents a date and eats the task name.**
+  Typing a repeat with a start date in the ordinary Italian way — the bare
+  "da", rather than "a partire da" — set a daily repeat, scheduled a Monday
+  nobody had asked for, and left a task called "da". It is now refused with the
+  same explanation the longer form already gave, and the name is kept.
+  - Ordinary sentences are untouched: "ogni giorno da fare", "comprare ogni
+    giorno da Luigi" and "ogni giorno dalle 9" all keep their repeats.
+- **A month abbreviation is no longer read out of the middle of a word.**
+  "dic" sits inside "dedicare", so "ogni settimana da dedicare al report" could
+  be read as a repeat starting in December and refused.
+
 ### Changed
 - **A bare repeat adverb is now offered rather than applied.** `report
   mensilmente` and `standup daily` used to become repeating tasks on sight. So
@@ -106,7 +261,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they say what they are. Rationale and the rules that were tried and rejected:
   `D-adverb` in `docs/HANDOVER.md`.
 
+### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
+- **You can delete a task.** The "⋯" in a task's header — which had been drawn
+  in the design from the beginning and left out until now — offers it, and it
+  asks first, naming the task. It asks because it cannot be taken back:
+  Vikunja has no way to restore a deleted task, so "this cannot be undone" is
+  measured rather than cautious wording.
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
 ### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
 - The lint run is clean again. `quickadd-corpus-diff` had three spellings of
   one path and used the tidiest one nowhere; the composer's auto-growing box
   keeps the dependency that makes it grow, now with the reason written down.
@@ -217,6 +403,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `#project` no longer matches inside another word: `close issue#3` stays a
   plain title instead of resolving a project. `#` was the only sigil without
   the lookbehind that `@label` and `p1` already used.
+
+### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
+- **You can delete a task.** The "⋯" in a task's header — which had been drawn
+  in the design from the beginning and left out until now — offers it, and it
+  asks first, naming the task. It asks because it cannot be taken back:
+  Vikunja has no way to restore a deleted task, so "this cannot be undone" is
+  measured rather than cautious wording.
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
+### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
+- **"ogni giorno da lunedì" no longer invents a date and eats the task name.**
+  Typing a repeat with a start date in the ordinary Italian way — the bare
+  "da", rather than "a partire da" — set a daily repeat, scheduled a Monday
+  nobody had asked for, and left a task called "da". It is now refused with the
+  same explanation the longer form already gave, and the name is kept.
+  - Ordinary sentences are untouched: "ogni giorno da fare", "comprare ogni
+    giorno da Luigi" and "ogni giorno dalle 9" all keep their repeats.
+- **A month abbreviation is no longer read out of the middle of a word.**
+  "dic" sits inside "dedicare", so "ogni settimana da dedicare al report" could
+  be read as a repeat starting in December and refused.
 
 ### Changed
 - **The quick-add parser now has a concept of "a language".** Italian and
@@ -342,9 +571,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CLAUDE.md` and a "read this first" section in the handover, so a session
   started cold from this repo knows what is decided, what is open, and how the
   owner wants decisions presented.
-- `research/todoist-tokens-light.json` and `research/todoist-tokens-dark.json` —
-  CSS custom properties captured from the live Todoist web app, as reference
-  material for deriving an original palette.
+- CSS custom properties captured from the live Todoist web app, as reference
+  material for deriving an original palette. (Removed from this repository's
+  history on 2026-09-16, before publication — see the `[Unreleased]` note.)
 - `docs/layout-specs.md` — numeric layout specification measured from the live
   product, plus `research/measure-dom.js` to reproduce it.
 - `docs/data-model-mapping.md` — the Todoist to Vikunja mapping, the priority
@@ -363,7 +592,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than approximated, and it is not re-read as a one-off date either.
 - Discarding a composer with text in it asks for confirmation.
 
-### Fixed (quick-add review)
+### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
+- **You can delete a task.** The "⋯" in a task's header — which had been drawn
+  in the design from the beginning and left out until now — offers it, and it
+  asks first, naming the task. It asks because it cannot be taken back:
+  Vikunja has no way to restore a deleted task, so "this cannot be undone" is
+  measured rather than cautious wording.
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
+### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+ (quick-add review)
 - `every 2 months` and every other English "every N months" phrase was
   rejected as unsupported: the weekday list's bare `mon` matched the start of
   `month` in an unanchored reject pattern, killing a whole accepted grammar row
@@ -420,7 +680,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one 20s interval, sorted into its place by due date, while a deletion cleared
   within ~40s on the next full fetch.
 
+### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
+- **You can delete a task.** The "⋯" in a task's header — which had been drawn
+  in the design from the beginning and left out until now — offers it, and it
+  asks first, naming the task. It asks because it cannot be taken back:
+  Vikunja has no way to restore a deleted task, so "this cannot be undone" is
+  measured rather than cautious wording.
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
 ### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
 - The page walk ended on the `x-pagination-total-pages` header, which a
   cross-origin browser cannot read unless the instance sends
   `Access-Control-Expose-Headers` — measured, and the deployment model is

@@ -21,6 +21,15 @@ export interface TaskRowProps {
    * the focus. The list supplies it because the list is what knows the order.
    */
   onKeyDown?: (event: React.KeyboardEvent) => void;
+  /**
+   * The drag affordance, supplied by the list because the list owns the drag
+   * context. Absent on a view with no order to keep — nothing is painted that
+   * cannot be honoured.
+   */
+  dragHandle?: React.ReactNode;
+  /** dnd-kit's transform while this row is being moved. */
+  dragStyle?: CSSProperties;
+  dragging?: boolean;
 }
 
 export function TaskRow({
@@ -31,6 +40,9 @@ export function TaskRow({
   rowRef,
   tabIndex = 0,
   onKeyDown,
+  dragHandle,
+  dragStyle,
+  dragging = false,
 }: TaskRowProps) {
   const dueStyle = task.due
     ? ({ "--schedule-color": scheduleColorVar(task.due.kind) } as CSSProperties)
@@ -42,7 +54,10 @@ export function TaskRow({
           row's own checkbox button; the row is a composite click target. */}
       <div
         ref={rowRef}
-        className={`${styles.row} ${task.done ? styles.done : ""}`}
+        className={`${styles.row} ${task.done ? styles.done : ""} ${
+          dragging ? styles.dragging : ""
+        }`}
+        {...(dragStyle ? { style: dragStyle } : {})}
         role="button"
         // Without this the row's accessible name is every scrap of text it
         // contains, including the checkbox's own label.
@@ -51,6 +66,7 @@ export function TaskRow({
         onKeyDown={onKeyDown}
         {...(onOpen ? { onClick: () => onOpen(task) } : {})}
       >
+        {dragHandle}
         <span className={styles.check}>
           <PriorityCheckbox
             priority={task.priority}

@@ -21,6 +21,7 @@
  * It cleans up after itself: every task it creates is deleted at the end.
  */
 import { afterAll, describe, expect, it } from "vitest";
+import { positionForMove } from "../model/position";
 import {
   addLabel,
   addSubtask,
@@ -33,12 +34,14 @@ import {
   getUser,
   listComments,
   listProjects,
+  listViewTasks,
   removeLabel,
+  setTaskPosition,
   updateReminders,
   updateTask,
 } from "./endpoints";
 import { createHttp } from "./http";
-import { type Task, VIKUNJA_NULL_DATE } from "./types";
+import { type Project, type ProjectView, type Task, VIKUNJA_NULL_DATE } from "./types";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -55,6 +58,16 @@ const http = createHttp({
 const created: number[] = [];
 /** And every label, which lives on the INSTANCE rather than on a task. */
 const createdLabels: number[] = [];
+/**
+ * And every project and saved filter, which the position probes need.
+ *
+ * They exist because the renumber probe deliberately drives a whole view past
+ * MinPositionSpacing: run in the owner's default project it would permanently
+ * rewrite the order of their real Inbox, which is not a thing a test may do to
+ * recover a measurement.
+ */
+const createdProjects: number[] = [];
+const createdFilters: number[] = [];
 
 async function scratchProjectId(): Promise<number> {
   const user = await getUser(http);
@@ -128,6 +141,22 @@ afterAll(async () => {
       await deleteLabel(http, id);
     } catch {
       console.warn(`  could not delete scratch label ${id}`);
+    }
+  }
+  for (const id of createdFilters) {
+    try {
+      await http.request(`/filters/${id}`, { method: "DELETE" });
+    } catch {
+      console.warn(`  could not delete scratch saved filter ${id}`);
+    }
+  }
+  // Projects last: deleting one takes its tasks with it, so an earlier task
+  // deletion that failed is not made worse by this running first.
+  for (const id of createdProjects) {
+    try {
+      await http.request(`/projects/${id}`, { method: "DELETE" });
+    } catch {
+      console.warn(`  could not delete scratch project ${id}`);
     }
   }
 });
@@ -372,5 +401,290 @@ describe.skipIf(!enabled)("live Vikunja instance (writes)", () => {
     expect(storedParent.description).toContain("Kept, not wiped.");
     expect(storedParent.priority).toBe(3);
     expect(storedParent.reminders?.length).toBe(1);
+  });
+
+  /*
+   * ---------------------------------------------------------------------
+   * D4 step 3: does an order survive a round trip?
+   *
+   * Mapping §3 is read from Vikunja's source on `main`: the route name, the
+   * midpoint arithmetic, MinPositionSpacing and the server-side renumber. None
+   * of it has ever been called, and `/tasks/all` already vanished between
+   * versions on this very instance. Everything in the ordering slice rests on
+   * the first of these passing.
+   * ---------------------------------------------------------------------
+   */
+
+  /** A project of our own, with its own views and its own order to scramble. */
+  async function scratchProject(name: string): Promise<{
+    project: Project;
+    listViewId: number;
+  }> {
+    const project = await http.request<Project>("/projects", {
+      method: "PUT",
+      body: { title: `open-todo position probe: ${name}` },
+    });
+    createdProjects.push(project.id);
+
+    const views =
+      project.views && project.views.length > 0
+        ? project.views
+        : await http.request<ProjectView[]>(`/projects/${project.id}/views`);
+    const list = views.find((v) => v.view_kind === "list");
+    if (!list) throw new Error("A fresh project came with no list view.");
+    return { project, listViewId: list.id };
+  }
+
+  const viewTasks = (projectId: number, viewId: number) =>
+    http.request<Task[]>(`/projects/${projectId}/views/${viewId}/tasks`);
+
+  it("a fresh project's list view gives every task a position", {
+    timeout: 30_000,
+  }, async () => {
+    const { project, listViewId } = await scratchProject("read");
+    for (const title of ["one", "two", "three"]) {
+      const task = await createTask(http, project.id, {
+        title: `open-todo position probe: ${title}`,
+      });
+      created.push(task.id);
+    }
+
+    const tasks = await viewTasks(project.id, listViewId);
+    expect(tasks.length).toBe(3);
+    for (const task of tasks) expect(typeof task.position).toBe("number");
+    console.log(
+      `  created order/positions: ${tasks.map((t) => `${t.title.slice(-5)}=${t.position}`).join(" ")}`,
+    );
+  });
+
+  it("POST /tasks/{id}/position moves a task and the value round-trips", {
+    timeout: 30_000,
+  }, async () => {
+    // THE GATE. If this fails, the drag slice has no store to write to and the
+    // plan says stop rather than build the gesture on top of nothing.
+    const { project, listViewId } = await scratchProject("move");
+    for (const title of ["a", "b", "c"]) {
+      const task = await createTask(http, project.id, {
+        title: `open-todo position probe: ${title}`,
+      });
+      created.push(task.id);
+    }
+
+    const before = await viewTasks(project.id, listViewId);
+    expect(before.length).toBe(3);
+    const [first, second, third] = before as [Task, Task, Task];
+
+    // Move the LAST one between the first two: midpoint, exactly as §3 says.
+    const target = (Number(first.position) + Number(second.position)) / 2;
+    await http.request(`/tasks/${third.id}/position`, {
+      method: "POST",
+      body: { project_view_id: listViewId, position: target },
+    });
+
+    const after = await viewTasks(project.id, listViewId);
+    expect(after.map((t) => t.id)).toEqual([first.id, third.id, second.id]);
+    const moved = after.find((t) => t.id === third.id);
+    expect(moved?.position).toBeCloseTo(target, 6);
+    console.log(`  wrote ${target}, stored ${moved?.position}`);
+  });
+
+  it("reports whether a sub-spacing write makes the server renumber the view", {
+    timeout: 30_000,
+  }, async () => {
+    /*
+     * §3 says a gap under MinPositionSpacing (0.01) makes the server renumber
+     * the WHOLE view, so the stored value may differ from the one sent. If that
+     * is true the reorder hook must re-read after such a write; if it is not,
+     * the conditional re-read is dead code. Reported rather than asserted -
+     * either answer is a finding, and only one of them is a bug.
+     */
+    const { project, listViewId } = await scratchProject("renumber");
+    for (const title of ["p", "q", "r", "s"]) {
+      const task = await createTask(http, project.id, {
+        title: `open-todo position probe: ${title}`,
+      });
+      created.push(task.id);
+    }
+
+    const before = await viewTasks(project.id, listViewId);
+    const [first, , , last] = before as [Task, Task, Task, Task];
+    const crowded = Number(first.position) + 0.001;
+
+    await http.request(`/tasks/${last.id}/position`, {
+      method: "POST",
+      body: { project_view_id: listViewId, position: crowded },
+    });
+
+    const after = await viewTasks(project.id, listViewId);
+    const byId = new Map(after.map((t) => [t.id, t.position]));
+    const others = before.filter((t) => t.id !== last.id);
+    const changed = others.filter((t) => byId.get(t.id) !== t.position);
+    const stored = byId.get(last.id);
+
+    console.log(`  wrote ${crowded}, stored ${stored}`);
+    console.log(`  ${changed.length} of ${others.length} other tasks were renumbered`);
+    if (changed.length === 0 && stored === crowded) {
+      console.log("  -> NO RENUMBER on 2.5.0: the conditional re-read is unnecessary.");
+    } else {
+      console.log(
+        "  -> RENUMBER CONFIRMED: positions must be re-read after a crowded write.",
+      );
+    }
+    // Whatever it stored, the order the user asked for must hold.
+    expect(after[1]?.id).toBe(last.id);
+  });
+
+  it("reports whether a saved filter's view accepts a position write (§4)", {
+    timeout: 30_000,
+  }, async () => {
+    // Today can only carry a manual order if this works. Nothing else can tell
+    // us: §6 item 5 verified saved filters only as far as READING them.
+    const { project } = await scratchProject("filter host");
+    const task = await createTask(http, project.id, {
+      title: "open-todo position probe: filtered",
+      priority: 5,
+    });
+    created.push(task.id);
+
+    const saved = await http.request<{ id: number }>("/filters", {
+      method: "PUT",
+      body: {
+        title: "open-todo position probe filter",
+        filters: { filter: "done = false && priority = 5" },
+      },
+    });
+    createdFilters.push(saved.id);
+
+    const projects = await listProjects(http);
+    const asProject = projects.find((p) =>
+      p.title.includes("open-todo position probe filter"),
+    );
+    console.log(`  saved filter ${saved.id} appears as project id ${asProject?.id}`);
+    console.log(`  formula -(filter_id + 1) predicts ${-saved.id - 1}`);
+
+    if (!asProject) {
+      console.log(
+        "  -> the saved filter is NOT in GET /projects; Today cannot be built on it.",
+      );
+      return;
+    }
+
+    let views: ProjectView[] = [];
+    try {
+      views = await http.request<ProjectView[]>(`/projects/${asProject.id}/views`);
+      console.log(`  its views: ${views.map((v) => `${v.id}:${v.view_kind}`).join(" ")}`);
+    } catch (error) {
+      console.log(
+        `  -> views REJECTED (status ${(error as { status?: number }).status})`,
+      );
+      return;
+    }
+
+    const list = views.find((v) => v.view_kind === "list");
+    if (!list) {
+      console.log("  -> the saved filter has no list view.");
+      return;
+    }
+
+    try {
+      const tasks = await http.request<Task[]>(
+        `/projects/${asProject.id}/views/${list.id}/tasks`,
+      );
+      console.log(`  its list view returns ${tasks.length} task(s)`);
+      await http.request(`/tasks/${task.id}/position`, {
+        method: "POST",
+        body: { project_view_id: list.id, position: 42 },
+      });
+      const after = await http.request<Task[]>(
+        `/projects/${asProject.id}/views/${list.id}/tasks`,
+      );
+      const stored = after.find((t) => t.id === task.id)?.position;
+      console.log(`  POSITION WRITE ON A SAVED FILTER ACCEPTED, stored ${stored}`);
+      console.log("  -> Today can carry a manual order.");
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      const message = (error as { message?: string }).message;
+      console.log(
+        `  -> position write on the filter view REJECTED (${status}): ${message}`,
+      );
+      console.log("  -> Today stays due-date ordered and gets no drag handle.");
+    }
+  });
+
+  it("confirms the bulk route does not write a position (negative control)", {
+    timeout: 30_000,
+  }, async () => {
+    // Positions live in their own table, so `fields: ["position"]` should be
+    // inert. If it is NOT, it is a fallback worth knowing about.
+    const { project, listViewId } = await scratchProject("bulk");
+    for (const title of ["x", "y"]) {
+      const task = await createTask(http, project.id, {
+        title: `open-todo position probe: ${title}`,
+      });
+      created.push(task.id);
+    }
+    const before = await viewTasks(project.id, listViewId);
+    const [, second] = before as [Task, Task];
+
+    try {
+      await http.request("/tasks/bulk", {
+        method: "POST",
+        body: {
+          task_ids: [second.id],
+          fields: ["position"],
+          values: { position: 0.5, reminders: [], assignees: [] },
+        },
+      });
+      const after = await viewTasks(project.id, listViewId);
+      const stored = after.find((t) => t.id === second.id)?.position;
+      console.log(
+        `  bulk fields:["position"] accepted; stored ${stored} (was ${second.position})`,
+      );
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      console.log(`  bulk fields:["position"] rejected (status ${status}) - as expected`);
+    }
+  });
+
+  it("the app's own move arithmetic lands where it says it will", {
+    timeout: 30_000,
+  }, async () => {
+    /*
+     * The probes above measure the ROUTE. This one runs the code the app
+     * actually runs - positionForMove, then setTaskPosition, then a read back
+     * through listViewTasks - so the arithmetic is checked against a real
+     * server instead of against the reading of §3 it was written from.
+     *
+     * It walks a task from the bottom to the top one step at a time, which is
+     * the case where taking neighbours BEFORE lifting the task out would look
+     * right and be wrong.
+     */
+    const { project, listViewId } = await scratchProject("arithmetic");
+    for (const title of ["a", "b", "c", "d"]) {
+      const task = await createTask(http, project.id, {
+        title: `open-todo position probe: ${title}`,
+      });
+      created.push(task.id);
+    }
+
+    let tasks = await listViewTasks(http, project.id, listViewId, {});
+    expect(tasks.length).toBe(4);
+    const walker = tasks[3];
+    expect(walker).toBeDefined();
+    if (!walker) return;
+
+    for (let target = 2; target >= 0; target -= 1) {
+      const from = tasks.findIndex((t) => t.id === walker.id);
+      const move = positionForMove(tasks, from, target);
+      expect(move).not.toBeNull();
+      if (!move) return;
+      await setTaskPosition(http, move.taskId, listViewId, move.position);
+
+      tasks = await listViewTasks(http, project.id, listViewId, {});
+      expect(tasks.findIndex((t) => t.id === walker.id)).toBe(target);
+      // And the server stored what we computed, which is the half of §3 that
+      // turned out not to hold the way it was written (§6 item 23).
+      expect(tasks[target]?.position).toBeCloseTo(move.position, 6);
+    }
   });
 });

@@ -3,14 +3,21 @@
 A genuinely good UI for [Vikunja](https://vikunja.io), built by measuring what
 Todoist's shipped interface does and reimplementing it natively.
 
-**Status:** foundation slice plus quick-add. A static React + Vite SPA that
-talks to a self-hosted Vikunja directly from the browser: server setup, login,
-and Inbox, Today and project lists at the measured layout, kept fresh by
-polling. Tasks can be **created** through a quick-add composer that reads dates,
-times, projects, labels, priority and recurrence out of plain English and
-Italian — `dentista domenica ore 15 #Personale p3`. Editing and completing an
-existing task are not built yet, nor are keyboard navigation, drag reorder or
-undo; those are the next slices.
+**Status:** usable, and not finished. A static React + Vite SPA that talks to a
+self-hosted Vikunja straight from the browser, with no server of its own.
+
+What works: Inbox, Today, Upcoming, per-project lists and cross-project search;
+creating a task through a quick-add composer that reads dates, times, projects,
+labels, priority and recurrence out of plain English and Italian
+(`dentista domenica ore 15 #Personale p3`); completing, editing, rescheduling,
+moving, deleting; sub-tasks, comments and reminders; drag or Alt+Arrow to
+reorder, persisted in Vikunja so the order is the same in its own web UI; undo
+on the writes that can be taken back, and a confirmation on the one that
+cannot; full keyboard navigation; light and dark.
+
+What is not built: labels as a browsable screen, project sections from kanban
+buckets, and touch drag. Live updates are a 20-second poll, because Vikunja
+does not emit task events over its WebSocket yet.
 
 Start here: [`docs/HANDOVER.md`](docs/HANDOVER.md) — purpose, findings from the
 Todoist reconnaissance pass, decisions taken and still open, and legal
@@ -112,7 +119,7 @@ Two more things worth knowing before you deploy it:
 | `src/ui` | Components at the geometry in `docs/layout-specs.md` |
 | `DESIGN.md` | The design system: tokens (generated), layout rules, components, do's and don'ts |
 | `docs/` | The specification: layout measurements, data-model mapping, handover |
-| `research/` | Reference material captured from Todoist; not shipped |
+| `research/` | `measure-dom.js`, the script that measures a running page. The Todoist token captures it produced are deliberately not in this repository. |
 
 ## Licence
 

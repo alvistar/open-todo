@@ -7,6 +7,7 @@ import {
   listLabels,
   listProjects,
   listTasks,
+  listViewTasks,
 } from "../api/endpoints";
 import type { Task } from "../api/types";
 import type { ViewDef } from "../model/views";
@@ -50,16 +51,26 @@ export function useViewTasks(view: ViewDef | null, timeZone: string) {
     enabled: view !== null,
     queryFn: ({ signal }): Promise<Task[]> => {
       if (!view) return Promise.resolve([]);
-      return listTasks(http, {
+      const common = {
         filter: view.filter,
-        sortBy: view.sortBy,
-        orderBy: view.orderBy,
         includeNulls: view.includeNulls,
         timezone: timeZone,
         // The row's "n comments" badge. Absent without this - measured,
         // mapping §6 item 2.
         expand: "comment_count",
+        ...(view.search === undefined ? {} : { search: view.search }),
         ...(signal ? { signal } : {}),
+      };
+      // A view that knows its Vikunja view is read through it, because that
+      // is the only listing that carries positions (§3). The flat listing is
+      // what every view used before and what a view with no resolved id still
+      // gets: same tasks, due-date order, no manual arrangement to lose.
+      const source = view.positionSource;
+      if (source) return listViewTasks(http, source.projectId, source.viewId, common);
+      return listTasks(http, {
+        ...common,
+        sortBy: view.sortBy,
+        orderBy: view.orderBy,
       });
     },
   });

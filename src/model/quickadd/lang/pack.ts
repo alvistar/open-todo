@@ -178,10 +178,11 @@ export interface LanguagePack {
    * Word-form ordinals, which are as calendar-shaped as the digit ones and are
    * therefore REJECTED.
    *
-   * TODO(F5): Italian ships none, so "ogni secondo martedì" matches neither the
-   * reject list nor the accept list, falls through to the date layer, and is
-   * silently scheduled as a one-off next Tuesday. Fixing it is a §5.1 amendment;
-   * see known-defects.test.ts. Do not "complete" this list as a tidy-up.
+   * F5 is CLOSED (Italian ships its own; measured 2026-09-16: "ogni secondo
+   * martedì" is rejected with a warning and keeps its title). The note that
+   * used to sit here said Italian shipped none and pointed at
+   * known-defects.test.ts, which has not existed since D-adverb — it was
+   * believed, and repeated, long after it stopped being true.
    */
   ordinalWords: string[];
 
@@ -203,10 +204,13 @@ export interface LanguagePack {
   /**
    * "every workday at 9 STARTING monday".
    *
-   * TODO(F6): Italian ships none, so "ogni giorno a partire da lunedì" escapes
-   * the reject list, matches the accept rule, AND lets the date layer take
-   * "lunedì" - a repeat, a due date nobody asked for, and a task named after the
-   * preposition. See known-defects.test.ts.
+   * F6 is CLOSED for the explicit forms and, since 2026-09-16, for the BARE
+   * preposition too — "ogni giorno da lunedì", which is how anyone actually
+   * says it, did exactly what the old note described: a repeat, a due date
+   * nobody asked for, and a task named after the preposition. It is safe only
+   * because the reject rule requires a DATE after the starting word, so "ogni
+   * giorno da fare" is untouched. Read that rule before adding a bare
+   * preposition to another pack.
    */
   startingWords: string[];
 
@@ -235,8 +239,12 @@ export interface LanguagePack {
   /**
    * "daily", "weekly"…
    *
-   * TODO(F3): Italian ships none, so "quotidiano" and friends do nothing. Unlike
-   * F5 and F6 this one fails safe - the phrase is simply not recognised.
+   * F3 is CLOSED: Italian ships "quotidianamente", "giornalmente",
+   * "settimanalmente", "mensilmente", "annualmente". The ADJECTIVES
+   * ("quotidiano", "mensile") are deliberately absent and should stay absent —
+   * "report quotidiano" describes the report, not the task's schedule, which
+   * is D-adverb's whole point one part of speech further out. Since D-adverb a
+   * bare adverb is OFFERED rather than applied anyway.
    */
   adverbs: UnitWords;
 

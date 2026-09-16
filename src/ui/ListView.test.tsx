@@ -172,3 +172,165 @@ describe("the composer shares this container", () => {
     expect(onToggleDone).not.toHaveBeenCalled();
   });
 });
+
+/*
+ * D4 step 3, the keyboard half. The gesture arrives with dnd-kit, but the
+ * binding lands first: it is the one path that works in jsdom, so it is what
+ * pins the contract the drop handler will share.
+ */
+describe("Alt+Arrow moves a row", () => {
+  const flat = (...tasks: TaskRowModel[]): TaskSection[] => [{ key: "a", tasks }];
+
+  it("asks to move the focused row down", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).toHaveBeenCalledWith(2, 3);
+  });
+
+  it("asks to move it up", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[2] as HTMLElement, { key: "ArrowUp", altKey: true });
+    expect(onReorder).toHaveBeenCalledWith(3, 2);
+  });
+
+  it("does nothing at the ends", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView sections={flat(row(1), row(2))} reorderable onReorder={onReorder} />,
+    );
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowUp", altKey: true });
+    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("stays silent on a list with no order to write to", () => {
+    // Nothing is painted that cannot be honoured: a view without a position
+    // space gets no handle, and its keyboard equivalent must agree.
+    const onReorder = vi.fn();
+    render(<ListView sections={flat(row(1), row(2))} onReorder={onReorder} />);
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("leaves the plain arrows moving the focus and nothing else", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowDown" });
+    expect(onReorder).not.toHaveBeenCalled();
+    expect(rowsOf()[1]).toHaveFocus();
+  });
+
+  it("does not move a row when Alt arrives with another modifier", () => {
+    // Alt+Cmd+Arrow is a window-manager gesture on more than one desktop; a
+    // list that reorders underneath one would be reordering by accident.
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, {
+      key: "ArrowDown",
+      altKey: true,
+      metaKey: true,
+    });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+});
+
+describe("the drag handle", () => {
+  const flat = (...tasks: TaskRowModel[]): TaskSection[] => [{ key: "a", tasks }];
+
+  it("is there, once per row, when the list has an order to keep", () => {
+    render(<ListView sections={flat(row(1), row(2))} reorderable onReorder={vi.fn()} />);
+    expect(screen.getAllByRole("button", { name: /^Move Task/ })).toHaveLength(2);
+  });
+
+  it("is absent when there is nothing to write an order to", () => {
+    // The rule this list keeps relearning: nothing is painted that cannot be
+    // honoured. A handle on Today would move a row and lose it on refresh.
+    render(<ListView sections={flat(row(1), row(2))} />);
+    expect(screen.queryByRole("button", { name: /^Move Task/ })).toBeNull();
+  });
+
+  it("stays out of the tab order, so the list is still one stop", () => {
+    // dnd-kit's own attributes would make it tabIndex 0, which is the defect
+    // D4 step 2 was built to remove - a hundred Tab presses to cross a list.
+    render(<ListView sections={flat(row(1), row(2))} reorderable onReorder={vi.fn()} />);
+    for (const handle of screen.getAllByRole("button", { name: /^Move Task/ })) {
+      expect(handle.tabIndex).toBe(-1);
+    }
+    expect(rowsOf().map((el) => el.tabIndex)).toEqual([0, -1]);
+  });
+
+  it("does not open the task when it is clicked", () => {
+    const onOpenTask = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1))}
+        reorderable
+        onReorder={vi.fn()}
+        onOpenTask={onOpenTask}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Move Task 1" }));
+    expect(onOpenTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("a move stays inside its section", () => {
+  it("refuses to step across a section boundary", () => {
+    /*
+     * `sections()` puts rows 1-2 in section "a" and the rest in "b". In Today
+     * those are Overdue and today, cut by due date while the order comes from
+     * position — so the row would land correctly in the position space and
+     * render back where it started, its date being unchanged. Crossing means
+     * reschedule, which is not what a drag asked for.
+     */
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={sections(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("still moves within one", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={sections(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).toHaveBeenCalledWith(1, 2);
+  });
+});
