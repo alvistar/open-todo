@@ -4,8 +4,6 @@ export const queryKeys = {
   user: ["user"] as const,
   projects: ["projects"] as const,
   labels: ["labels"] as const,
-  /** One saved filter's query. Immutable in practice; fetched once. */
-  savedFilter: (filterId: number) => ["savedFilter", filterId] as const,
   /** One entry per view; ViewDef.key identifies it. */
   viewTasks: (viewKey: string) => ["tasks", viewKey] as const,
   /*

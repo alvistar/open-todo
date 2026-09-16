@@ -12,11 +12,7 @@ import { listViewId } from "../model/projectViews";
 import { type Decision, withDecisions } from "../model/quickadd/decisions";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
 import { describeReminder } from "../model/reminders";
-import {
-  asksTheSameAs,
-  filterIdFromProjectId,
-  findSavedFilter,
-} from "../model/savedFilters";
+import { type OwnedSlot, ownedFilterProject } from "../model/savedFilter";
 import { type RowContext, toTaskRow } from "../model/taskRow";
 import { titleEdit } from "../model/titleEdit";
 import {
@@ -45,7 +41,6 @@ import {
 import {
   useLabels,
   useProjects,
-  useSavedFilter,
   useTaskComments,
   useUser,
   useViewTasks,
@@ -109,38 +104,27 @@ export function AppScreen() {
   );
 
   /*
-   * Today is a query, and a query has nowhere to keep a manual order (mapping
-   * §4). Vikunja's answer is the saved filter: it exists as a project under a
-   * negative id and owns real views, which accept position writes (§6 items 15
-   * and 24). So Today is ordered only if the instance has a filter called
-   * Today ASKING THE SAME QUESTION - checked rather than assumed, because a
-   * filter produces the task list, so adopting one written by someone else
-   * would quietly change what this screen shows.
+   * Today and Upcoming are queries, and a query has nowhere to keep a manual
+   * order (mapping §4). Vikunja's answer is the saved filter: it arrives under
+   * a negative id and owns real views, which accept position writes (§6 items
+   * 15 and 24).
+   *
+   * Which filter is OURS comes from the marker this app stamps into its
+   * description, never from its title. A filter the user happened to call
+   * "Today" is theirs, and adopting it would silently change what that screen
+   * shows. It also costs no request: the marker rides along on GET /projects.
    */
-  const todayFilterProject = findSavedFilter(projectsQuery.data, "Today");
-  const todayFilterQuery = useSavedFilter(
-    todayFilterProject ? filterIdFromProjectId(todayFilterProject.id) : null,
+  const ownedSource = useCallback(
+    (slot: OwnedSlot) => {
+      const project = ownedFilterProject(projectsQuery.data, slot);
+      if (!project) return undefined;
+      const viewId = listViewId(project);
+      return viewId === null ? undefined : { projectId: project.id, viewId };
+    },
+    [projectsQuery.data],
   );
-  const todaySource = useMemo(() => {
-    if (!todayFilterProject) return undefined;
-    if (!asksTheSameAs(todayFilterQuery.data, todayView().filter)) return undefined;
-    const viewId = listViewId(todayFilterProject);
-    return viewId === null ? undefined : { projectId: todayFilterProject.id, viewId };
-  }, [todayFilterProject, todayFilterQuery.data]);
-
-  // Upcoming is the same arrangement, against its own filter. Both hooks are
-  // unconditional because hooks must be, and both cost nothing when the
-  // instance has no such filter.
-  const upcomingFilterProject = findSavedFilter(projectsQuery.data, "Upcoming");
-  const upcomingFilterQuery = useSavedFilter(
-    upcomingFilterProject ? filterIdFromProjectId(upcomingFilterProject.id) : null,
-  );
-  const upcomingSource = useMemo(() => {
-    if (!upcomingFilterProject) return undefined;
-    if (!asksTheSameAs(upcomingFilterQuery.data, upcomingView().filter)) return undefined;
-    const viewId = listViewId(upcomingFilterProject);
-    return viewId === null ? undefined : { projectId: upcomingFilterProject.id, viewId };
-  }, [upcomingFilterProject, upcomingFilterQuery.data]);
+  const todaySource = useMemo(() => ownedSource("today"), [ownedSource]);
+  const upcomingSource = useMemo(() => ownedSource("upcoming"), [ownedSource]);
 
   const view: ViewDef | null = useMemo(() => {
     const projectId = projectIdFromRoute(route);
