@@ -1042,12 +1042,24 @@ public HTTP API only, which carries no such obligation.
     - The geometry is unmeasured — see D-toast.
 
 13. **Open, ranked.** Nothing here is started.
-    1. **The Italian language pack is incomplete** — `TODO(F3)`, `TODO(F5)` and
-       `TODO(F6)` in `src/model/quickadd/lang/pack.ts`. Those defects are closed
-       in **English only**, so `ogni secondo martedì` is silently scheduled as a
-       plain Tuesday and `ogni giorno a partire da lunedì` invents a due date.
-       The comments say **"Do not 'complete' this list as a tidy-up"**: this
-       needs the interview and the corpus gates, not a guess.
+    1. ~~**The Italian language pack is incomplete**~~ — the three TODOs were
+       **stale**, and had been for some time. Measured 2026-09-16: F5, F6 and
+       F3 were all already closed in Italian, and so was F7. The comments
+       pointed at `known-defects.test.ts`, deleted back in D-adverb. Corrected
+       in place, because the note had been believed and repeated long after it
+       stopped being true.
+       What the measurement DID find, in the same shape the old F6 note
+       described, is fixed in the same commit: `ogni giorno da lunedì` — the
+       bare preposition, and the way anyone actually says it — produced a
+       repeat, a due date nobody asked for, and a title collapsed to `"da"`.
+       And behind it, F10: the start-date hint was the one place in the grammar
+       whose month alternation carried no word boundary, so `dic` matched
+       inside `de-dic-are`.
+       **The lesson worth keeping is about the corpus, not the grammar.** All
+       738 golden records passed unchanged through both fixes: the corpus has
+       never contained a phrase of this shape, which is exactly why the defect
+       survived. A green corpus is evidence about what it covers and nothing
+       else.
     2. **Undo is offered for three writes, not all of them.** A completion has
        the row linger, and the sidebar picks have a toast; a label change, a
        reminder change, an added sub-task and a comment have none. Each is
@@ -1056,9 +1068,9 @@ public HTTP API only, which carries no such obligation.
        `disdire il servizio pagato mensilmente` from `controllare il saldo
        mensilmente`. The decision was to offer, not apply; the veto stays open,
        and it is cheap to measure against the 4325-phrase corpus.
-    4. **F7**, an accepted limitation: Italian decimal commas (`corri ogni
-       1,5 km`) take the list rule's refusal and warn about a repeat nobody
-       wrote. Recorded in `docs/data-model-mapping.md` §5.
+    4. ~~**F7**~~ — measured closed 2026-09-16: `corri ogni 1,5 km` matches no
+       recurrence and raises no warning. The later rule about what may follow a
+       complete schedule closed it; nobody had re-measured. Mapping §5 updated.
     5. **A delete affordance** (item 10 above).
     6. **Never measured**, from the original recon: hover and focus states, the
        Upcoming view, and a project view with sections (item 3 above).

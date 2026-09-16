@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **"ogni giorno da lunedì" no longer invents a date and eats the task name.**
+  Typing a repeat with a start date in the ordinary Italian way — the bare
+  "da", rather than "a partire da" — set a daily repeat, scheduled a Monday
+  nobody had asked for, and left a task called "da". It is now refused with the
+  same explanation the longer form already gave, and the name is kept.
+  - Ordinary sentences are untouched: "ogni giorno da fare", "comprare ogni
+    giorno da Luigi" and "ogni giorno dalle 9" all keep their repeats.
+- **A month abbreviation is no longer read out of the middle of a word.**
+  "dic" sits inside "dedicare", so "ogni settimana da dedicare al report" could
+  be read as a repeat starting in December and refused.
+
 ### Changed
 - **Inbox and project lists now show the order you arranged in Vikunja**,
   instead of sorting by due date. Vikunja stores a manual order per list, and
@@ -141,6 +153,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision follows the line to the save, so what the composer shows is what
   gets created.
 
+### Fixed
+- **"ogni giorno da lunedì" no longer invents a date and eats the task name.**
+  Typing a repeat with a start date in the ordinary Italian way — the bare
+  "da", rather than "a partire da" — set a daily repeat, scheduled a Monday
+  nobody had asked for, and left a task called "da". It is now refused with the
+  same explanation the longer form already gave, and the name is kept.
+  - Ordinary sentences are untouched: "ogni giorno da fare", "comprare ogni
+    giorno da Luigi" and "ogni giorno dalle 9" all keep their repeats.
+- **A month abbreviation is no longer read out of the middle of a word.**
+  "dic" sits inside "dedicare", so "ogni settimana da dedicare al report" could
+  be read as a repeat starting in December and refused.
+
 ### Changed
 - **A bare repeat adverb is now offered rather than applied.** `report
   mensilmente` and `standup daily` used to become repeating tasks on sight. So
@@ -264,6 +288,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `#project` no longer matches inside another word: `close issue#3` stays a
   plain title instead of resolving a project. `#` was the only sigil without
   the lookbehind that `@label` and `p1` already used.
+
+### Fixed
+- **"ogni giorno da lunedì" no longer invents a date and eats the task name.**
+  Typing a repeat with a start date in the ordinary Italian way — the bare
+  "da", rather than "a partire da" — set a daily repeat, scheduled a Monday
+  nobody had asked for, and left a task called "da". It is now refused with the
+  same explanation the longer form already gave, and the name is kept.
+  - Ordinary sentences are untouched: "ogni giorno da fare", "comprare ogni
+    giorno da Luigi" and "ogni giorno dalle 9" all keep their repeats.
+- **A month abbreviation is no longer read out of the middle of a word.**
+  "dic" sits inside "dedicare", so "ogni settimana da dedicare al report" could
+  be read as a repeat starting in December and refused.
 
 ### Changed
 - **The quick-add parser now has a concept of "a language".** Italian and

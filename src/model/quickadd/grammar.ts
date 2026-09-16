@@ -341,12 +341,30 @@ export function compileRecurrenceGrammar(
    * scans the rest of the line rather than only the next token, because
    * "starting ON monday" and "dal 15 settembre" both put words in between.
    */
-  const START_DATE_HINT = alternatives([
-    "\\d",
+  /*
+   * The WORD half of the hint carries boundaries on BOTH sides.
+   *
+   * Without them a month abbreviation matches inside an ordinary word: "dic"
+   * sits in "de-dic-are", so "ogni settimana da dedicare al report" was read as
+   * a repeat starting in December and refused. Same class as the note above
+   * about "mon" matching the start of "month", and the date rule already
+   * word-bounds this alternation (MONTH_NAME) - the hint was the one place
+   * that did not.
+   *
+   * A consumed `\P{L}` rather than a lookbehind: this runs inside a lookahead,
+   * so consuming one character costs nothing, and `(?<!...)` would throw on
+   * construction in a Safari older than 16.4 - which for a self-hosted app is
+   * a white page, not a degraded date.
+   */
+  const START_DATE_WORDS = alternatives([
     WD,
     ...union(packs, (p) => p.relativeDay),
     ...union(packs, (p) => p.nextPeriod),
     monthAnyOf(packs),
+  ]);
+  const START_DATE_HINT = alternatives([
+    "\\d",
+    `(?:^|\\P{L})(?:${START_DATE_WORDS})(?!\\p{L})`,
   ]);
 
   /*

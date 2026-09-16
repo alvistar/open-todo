@@ -357,10 +357,19 @@ describe("the composed recurrence patterns are byte-identical", () => {
        * month.
        */
       `\\b${EVERY}!?\\s+\\w+.*?\\b(?:starting|a\\s+partire\\s+da(?:ll['\u2019]|l|ll[ae])?` +
-        `|a\\s+cominciare\\s+da(?:ll['\u2019]|l|ll[ae])?)\\b` +
-        `(?=.*?(?:\\d|${WD}|today|tomorrow|tonight|oggi|domani|dopodomani|stasera` +
+        `|a\\s+cominciare\\s+da(?:ll['\u2019]|l|ll[ae])?` +
+        // The bare preposition, which "ogni giorno da lunedì" needs. Safe only
+        // because of the lookahead below: "ogni giorno da fare" names no date
+        // after "da" and is therefore not rejected. "dalle" is left out, or
+        // "ogni giorno dalle 9" would be refused by the bare-digit hint.
+        `|da(?:ll['\u2019]|l|lla)?)\\b` +
+        // The word half is bounded on BOTH sides (F10): "dic" sits inside
+        // "de-dic-are", so "ogni settimana da dedicare al report" was read as
+        // a repeat starting in December. A consumed \P{L} rather than a
+        // lookbehind, which older Safari throws on.
+        `(?=.*?(?:\\d|(?:^|\\P{L})(?:${WD}|today|tomorrow|tonight|oggi|domani|dopodomani|stasera` +
         `|next\\s+(?:week|month)|(?:la\\s+|il\\s+|lo\\s+)?(?:settimana|mese)\\s+prossim[ao]` +
-        `|prossim[ao]\\s+(?:settimana|mese)|${MONTH_ANY}))` +
+        `|prossim[ao]\\s+(?:settimana|mese)|${MONTH_ANY})(?!\\p{L})))` +
         `\\S*(?:\\s+(?![@#*]|p[1-4]\\b)\\S+)*`,
       `\\b${EVERY}!?\\s+(?:month|mese)\\s+on\\s+the\\s+\\d+(?:st|nd|rd|th)?`,
     ]);

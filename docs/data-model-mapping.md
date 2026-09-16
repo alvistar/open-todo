@@ -198,15 +198,18 @@ not a day, `every april 3rd` carries an ordinal — the repeat is dropped too, a
 the every-word goes back into the title. A yearly task with no due date repeats
 from nothing.
 
-**Known limitation of the list rule (2026-09-14).** A list item is a weekday or
-a day-of-month number, so `ogni 5,6` is refused like `every mon, wed`. Italian
-writes decimals with a comma, so `corri ogni 1,5 km` takes the same refusal and
-shows a warning about a repeat the user never wrote. Nothing is lost — the title
-is untouched and no date is set — and the alternatives are worse: a space after
-the comma does not separate the two cases, and gating on a following unit noun
-is guesswork. Zero occurrences in the 4325-record corpus. Pinned as F7 in
-`known-defects.test.ts`. A day-of-month is 1 to 31, so
-`check every 0 and 1 in the output` is left alone.
+**The list rule and Italian decimals — F7, CLOSED by measurement 2026-09-16.**
+A list item is a weekday or a day-of-month number, so `ogni 5,6` is refused like
+`every mon, wed`. Italian writes decimals with a comma, and F7 recorded that
+`corri ogni 1,5 km` therefore took the same refusal and warned about a repeat
+nobody wrote. **It no longer does**: measured, it matches no recurrence at all
+and raises no warning, while `ogni 5,6 alle 15` is still correctly refused. What
+closed it was the later rule about what may follow a COMPLETE schedule — `km` is
+an ordinary word, and `alle 15` is a clock time. Neither this note nor the
+HANDOVER had been re-measured since, and both still described the old
+behaviour; `known-defects.test.ts`, which they pointed at, has not existed since
+D-adverb. A day-of-month is 1 to 31, so `check every 0 and 1 in the output` is
+left alone.
 
 **Counter-examples are part of the grammar (2026-09-14).** Each pack carries two
 lists, and widening a pattern means adding to them in the same commit.
