@@ -101,11 +101,16 @@ permanent maintenance. **Do not revisit this without a new reason.**
 
 ## 3. What is already in this repo
 
-- `research/todoist-tokens-light.json` — 713 resolved CSS custom properties
-  captured from the live app in **light theme** (`theme_todoist`, the default).
-- `research/todoist-tokens-dark.json` — the same 713 properties resolved under
-  **dark theme** (`theme_dark`), captured 2026-09-09. 336 values differ from
-  light; the key sets are identical, so the two files diff cleanly by key.
+- **The Todoist token captures are NOT in this repository.** 713 resolved CSS
+  custom properties in light theme (`theme_todoist`) and the same 713 under
+  dark (`theme_dark`), captured 2026-09-09; 336 values differ between them and
+  the key sets are identical, so the two diff cleanly by key. They were purged
+  from the public history on 2026-09-16, before the repo was published: a
+  verbatim dump of a commercial product's design tokens is not ours to host,
+  and neither is a pointer to wherever a copy of it sits. `research/measure-dom.js`
+  — which IS ours — reproduces the capture from a running page; do that rather
+  than go looking for the files. What the app actually uses is
+  `src/theme/tokens.css` and `DESIGN.md`, derived from them and original.
 
 How Todoist themes: a class on `<html>` (`theme_todoist`, `theme_dark`,
 `theme_tangerine`, …) selects override rules already present in the loaded
@@ -205,7 +210,7 @@ this order:
    container's footer and a handler up there would see every keystroke typed
    into a task name (`u` would undo while you were spelling "usare").
    **The key map was corrected the same day, in the commit that gave Enter a
-   destination** (`90fe290`): it is now Todoist's own, read off the product's
+   destination** (`6d83331`): it is now Todoist's own, read off the product's
    shortcut panel rather than invented — Enter **opens**, `E` completes, `Z`
    undoes, `J`/`K` alias the arrows. The first cut shipped Enter=complete and
    `u`=undo only because `TaskRow.onOpen` had no destination yet; D-detail gave
@@ -312,7 +317,7 @@ curl -sS -o /dev/null -D - -X OPTIONS \
   -H "Origin: https://open-todo.example" \
   -H "Access-Control-Request-Method: GET" \
   -H "Access-Control-Request-Headers: authorization" \
-  https://vikunja.internal.thealvistar.com/api/v1/tasks/all | grep -i access-control
+  https://<your-vikunja-host>/api/v1/tasks/all | grep -i access-control
 ```
 
 Framework rationale (unchanged): the React ecosystem (`dnd-kit`, TanStack)
@@ -372,7 +377,7 @@ construction while the matchers were hand-written and became a claim nobody was
 checking the moment chrono arrived. chrono's vocabulary is far wider and cannot
 be configured per word, and `parse.ts` removes whatever the date layer matched
 from the title — so the user lost a word *and* gained a due date. Measured on
-`2ab17ce`, reference 10 September 2026, Europe/Rome:
+`dc78ff1`, reference 10 September 2026, Europe/Rome:
 
 | typed | title became | due |
 |---|---|---|
@@ -622,12 +627,12 @@ recreate it when the next defect needs it.
 **Read this before starting anything.** It is the reason §7 was wrong for six
 days, and the failure it describes cost a full day of duplicated work.
 
-`main` and `read-handover` both fork from `fdd598c` (10 September, 15:09) and
+`main` and `read-handover` both fork from `0bf13bf` (10 September, 15:09) and
 **neither contains the other**. That afternoon the work split in two and both
 halves kept going:
 
 ```
-                    fdd598c  10 Sep 15:09
+                    0bf13bf  10 Sep 15:09
                        │
         ┌──────────────┴──────────────┐
   read-handover                     main
@@ -647,7 +652,7 @@ with dnd-kit, saved-filter adoption, Upcoming and toasts — all of which alread
 existed twenty metres away.
 
 It had happened before, in miniature: the same fix exists once per branch —
-`cf5a45c` "Stop offering a saved filter as a place to put a task" and `365e7e4`
+`c3b0bcc` "Stop offering a saved filter as a place to put a task" and `d3857ee`
 "Stop a saved filter posing as a project you can move a task into".
 
 **Resolution: `list-reorder` is the trunk, and `read-handover`'s unique work is
@@ -668,7 +673,7 @@ Ported (see the commits):
 
 NOT ported, deliberately:
 
-- **`viewForRoute` as they wrote it** (`944d1ac`). It imports `savedFilterView`
+- **`viewForRoute` as they wrote it** (`c20b8b9`). It imports `savedFilterView`
   and `scheduledView`, views this branch does not have, so taking the file
   would drag in a feature to land a refactor. A second opinion (Codex
   gpt-5.6-sol, 2026-09-16) agreed and checked the rest: their dispatcher
@@ -1023,8 +1028,8 @@ public HTTP API only, which carries no such obligation.
 ## 7. Immediate next steps
 
 1. ~~Settle D3, D4, D5~~ — done 2026-09-09.
-2. ~~Capture the dark-theme token set~~ — done 2026-09-09
-   (`research/todoist-tokens-dark.json`).
+2. ~~Capture the dark-theme token set~~ — done 2026-09-09 (kept outside this
+   repository; see §3).
 3. ~~Measure and record layout specs~~ — done 2026-09-09
    (`docs/layout-specs.md`, `docs/sketches/reference-20260909.html`). Still
    open from that pass: hover/focus states were not measured (`:hover` cannot
@@ -1101,7 +1106,7 @@ public HTTP API only, which carries no such obligation.
    the test file so the next person does not trust the suite here.
 
 10. ~~The task-detail dialog~~ — done 2026-09-15 (D-detail in §4). Twelve
-    commits; `git log 5c18a4f..ad9be97` carries the reasoning, the measurements
+    commits; `git log ffb2528..430baf4` carries the reasoning, the measurements
     and the rejected alternatives, and is the thing to read rather than this
     summary. Notes for whoever continues:
     - **Two commit models, both measured.** Main column (name, description)

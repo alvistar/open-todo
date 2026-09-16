@@ -8,3 +8,10 @@ coverage/
 # Written and removed by scripts/quickadd-corpus-diff.mjs.
 src/model/quickadd/.datePhrase.baseline.tmp.ts
 .gstack/
+
+# Todoist's own CSS custom properties, captured with research/measure-dom.js.
+# Purged from history before this repo was published: a verbatim dump of a
+# commercial product's design tokens is not ours to host. Ignored here so a
+# local capture cannot be committed by accident. What the app actually uses is
+# src/theme/tokens.css and DESIGN.md, which are its own.
+research/todoist-tokens-*.json

@@ -50,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "dic" sits inside "dedicare", so "ogni settimana da dedicare al report" could
   be read as a repeat starting in December and refused.
 
+### Removed
+- **The Todoist token captures are gone from this repository's history**, and
+  were removed before it was ever published. Two files of CSS custom properties
+  read off the running product: useful reference while deriving a palette, but
+  not something to host in public. `research/measure-dom.js` stays — it is the
+  script that measures a page, and it is ours. What the app uses is
+  `src/theme/tokens.css` and `DESIGN.md`, which are its own.
+
 ### Changed
 - **One place decides which screen a link means.** Nothing looks different: the
   work is that the address bar's answer — which list to show, or that nothing
@@ -563,9 +571,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CLAUDE.md` and a "read this first" section in the handover, so a session
   started cold from this repo knows what is decided, what is open, and how the
   owner wants decisions presented.
-- `research/todoist-tokens-light.json` and `research/todoist-tokens-dark.json` —
-  CSS custom properties captured from the live Todoist web app, as reference
-  material for deriving an original palette.
+- CSS custom properties captured from the live Todoist web app, as reference
+  material for deriving an original palette. (Removed from this repository's
+  history on 2026-09-16, before publication — see the `[Unreleased]` note.)
 - `docs/layout-specs.md` — numeric layout specification measured from the live
   product, plus `research/measure-dom.js` to reproduce it.
 - `docs/data-model-mapping.md` — the Todoist to Vikunja mapping, the priority
