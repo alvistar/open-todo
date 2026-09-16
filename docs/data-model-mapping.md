@@ -378,3 +378,91 @@ including `task.created`, `task.updated`, `task.deleted`,
 listener per task event resolving the users with access to the project and
 publishing through the hub; the delicate part is the authorisation check.
 Benefits Veyrn as well. Not on the critical path of any slice.
+
+---
+
+## 8. Search — probed against `pinguino` (v2.5.0, 2026-09-10)
+
+Two candidate backends exist. They differ in ways that decide the design, so
+both were measured against real data rather than chosen from the docs.
+
+### 8.1 `GET /tasks?s=<term>`
+
+| Property | Result | Probe |
+|---|---|---|
+| Fields searched | title **and** description | `s=Valentina` (a word only ever in descriptions) returned 11 |
+| Case | **insensitive** | `s=MAIUSCOLO` and `s=maiuscolo` both found the probe |
+| Accents | **sensitive** | `s=citta` missed a task titled `città`; `s=martedi` and `s=martedì` return disjoint sets |
+| Word boundaries | none — plain substring | `s=mini` matched `minimo` and `amministratore` |
+| Multiple words | **literal phrase only** | `s=Mac mini` → 9, `s=mini Mac` → **0**, `s=notaio fattura` → 0 though both words exist apart |
+| Projects | spans all of them | probes in projects 1 and 2 both came back |
+| Completed tasks | included | `s=mini` → 13 = 4 open + 9 done, split by adding `filter=done = false` |
+| Combines with `filter`, `sort_by`, paging | yes | 4 + 9 = 13; `page=2` continued cleanly |
+| Empty term | returns **everything** | `s=` → a full page |
+
+**SQL wildcards leak into the term.** `s=Mac%mini` returns the same 9 results as
+`s=Mac mini`, while the literal `s=Macmini` returns 0; `s=M_c` returns 34. The
+term is interpolated into a `LIKE` pattern without escaping, so a user searching
+`50%` or `snake_case` silently gets the wrong set.
+
+**A backslash escapes them**, verified with a positive control — a probe task
+actually titled `zqprobe sconto 50% e snake_case`:
+
+```
+s=50%    -> 8 results   (the % ran as a wildcard)
+s=50\%   -> 1 result    (the probe, and only the probe)
+```
+
+### 8.2 `GET /tasks?filter=title like '%term%'`
+
+Multi-word works properly here: one `(title like … || description like …)` group
+per word, joined with `&&`, ANDs the words in any order — `notaio` (11) and
+`fattura` (7) intersect to 1. Escaping works the same way, and `'` inside a term
+**must** be escaped as `\'` or the expression is rejected with `code 4024`.
+
+**But `like` is case-SENSITIVE**: `title like '%ZQPROBE%'` returns 0 where the
+lowercase form returns 2. That disqualifies it as the backend for a search box.
+It also explains a result that looked like an expression-length limit: a
+three-word AND returned nothing only because one word appeared capitalised in
+the descriptions.
+
+### 8.3 Decision
+
+**`s=` for the server query, refined on the client.**
+
+- Send `s=` with the query's **longest term**, backslash-escaped (`\`, `%`, `_`).
+  Longest is the most selective, so it narrows hardest.
+- Require **every** term to appear in the returned task's title or description,
+  case-folded, on the client — the server's own term included. Re-checking it
+  costs nothing and keeps one place deciding what a match is. Client-side
+  matching can only narrow a set, never extend it, so this is safe: it turns
+  8.1's literal-phrase limitation into a real order-independent AND.
+- **Refuse to send a term shorter than two characters.** The floor belongs on
+  the term that reaches the wire, not on the query's total length: measuring
+  the query let `a b` through as `s=a`, which is exactly the whole-instance
+  walk the rule exists to prevent. A query is searchable when at least one of
+  its terms clears the floor; shorter ones still narrow the results.
+- Results are ordered by due date then id, with undated tasks included
+  (`filter_include_nulls=true`). Vikunja offers no relevance ranking over `s=`,
+  and matches span projects, so there is no position space to order by — due
+  date is the only ordering that means anything here.
+
+**Accent-insensitivity is not achievable this way and is not implemented.** The
+client can only filter what the server already returned, and the server never
+returns `città` for `citta`. Searching for an accented word requires typing the
+accent. This is a database collation property, not something the app can fix.
+
+**Completed tasks are searched** and shown in their own section. The rest of the
+app drops a task the moment it is done, so a search that silently hid them would
+be the §4-style lie the handover's lesson 9 warns about — the whole point of
+searching is often to check whether something was already done.
+
+---
+
+**Ported to this branch on 2026-09-16** together with `src/model/search.ts`,
+`SearchBox` and the search route. The probes and the decision are
+`read-handover`'s work of 2026-09-10 and were not re-run; what WAS re-verified
+here is the property the design exists for — driven against `pinguino`,
+`notaio fattura` and `fattura notaio` both return 2, and `Mac mini` and
+`mini Mac` both return 3, where the raw backend answers 0 for either reversed
+order.

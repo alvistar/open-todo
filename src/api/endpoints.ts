@@ -365,6 +365,12 @@ export interface ListTasksParams {
   /** IANA zone, so `now/d` date math lands on the viewer's midnight. */
   timezone?: string;
   expand?: string;
+  /**
+   * Vikunja's own search, across every project. Interpolated into a LIKE
+   * pattern WITHOUT escaping, so `50%` silently matches the wrong tasks —
+   * escape it with `escapeSearchTerm` before setting it (mapping §8.1).
+   */
+  search?: string;
   signal?: AbortSignal;
 }
 
@@ -380,6 +386,7 @@ export function listTasks(http: Http, params: ListTasksParams = {}): Promise<Tas
   if (params.includeNulls) query.filter_include_nulls = "true";
   if (params.timezone) query.filter_timezone = params.timezone;
   if (params.expand) query.expand = params.expand;
+  if (params.search) query.s = params.search;
 
   return fetchAllPages<Task>(http, "/tasks", {
     query,

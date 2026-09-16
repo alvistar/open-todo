@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Project, Task } from "../api/types";
-import { projectIdFromRoute, routeTitle, useRoute } from "../app/route";
+import {
+  projectIdFromRoute,
+  routeTitle,
+  searchQueryFromRoute,
+  searchRoute,
+  useRoute,
+} from "../app/route";
 import { logOut } from "../auth/authStore";
 import { useLiveSource } from "../live/useLiveSource";
 import { formatDueLabel, parseVikunjaDate } from "../model/dates";
@@ -23,6 +29,7 @@ import {
 import {
   inboxView,
   projectView,
+  searchView,
   todayView,
   upcomingView,
   type ViewDef,
@@ -50,6 +57,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { TaskDetail } from "../ui/detail/TaskDetail";
 import { ListView } from "../ui/ListView";
 import { AddTaskAffordance, QuickAdd } from "../ui/QuickAdd";
+import { SearchBox } from "../ui/SearchBox";
 import { Shell } from "../ui/Shell";
 import { Sidebar } from "../ui/Sidebar";
 import { ToastRegion } from "../ui/ToastRegion";
@@ -126,6 +134,9 @@ export function AppScreen() {
   const todaySource = useMemo(() => ownedSource("today"), [ownedSource]);
   const upcomingSource = useMemo(() => ownedSource("upcoming"), [ownedSource]);
 
+  /** The committed query, or null when this route is not a search. */
+  const searchQuery = searchQueryFromRoute(route);
+
   const view: ViewDef | null = useMemo(() => {
     const projectId = projectIdFromRoute(route);
     if (projectId !== null) {
@@ -137,6 +148,7 @@ export function AppScreen() {
         ? null
         : inboxView(inboxProjectId, viewIdOf(inboxProjectId));
     }
+    if (searchQuery !== null) return searchView(searchQuery);
     if (route === "upcoming") return upcomingView(upcomingSource);
     if (route === "today") return todayView(todaySource);
     /*
@@ -156,6 +168,7 @@ export function AppScreen() {
   const notBuilt = useMemo(() => {
     if (projectIdFromRoute(route) !== null) return null;
     if (route === "inbox" || route === "today" || route === "upcoming") return null;
+    if (searchQueryFromRoute(route) !== null) return null;
     return route;
   }, [route]);
 
@@ -436,12 +449,27 @@ export function AppScreen() {
       />
       <ListView
         header={
-          <ViewTitle
-            title={notBuilt ? routeTitle(notBuilt) : (view?.title ?? "open-todo")}
-            {...(view?.subtitleFor && !tasksQuery.isPending
-              ? { subtitle: view.subtitleFor(visible.length) }
-              : {})}
-          />
+          searchQuery !== null ? (
+            <>
+              <SearchBox
+                query={searchQuery}
+                onSearch={(next) => navigate(searchRoute(next))}
+              />
+              <ViewTitle
+                title="Search"
+                {...(view && !tasksQuery.isPending
+                  ? { subtitle: view.subtitleFor?.(visible.length) ?? "" }
+                  : {})}
+              />
+            </>
+          ) : (
+            <ViewTitle
+              title={notBuilt ? routeTitle(notBuilt) : (view?.title ?? "open-todo")}
+              {...(view?.subtitleFor && !tasksQuery.isPending
+                ? { subtitle: view.subtitleFor(visible.length) }
+                : {})}
+            />
+          )
         }
         sections={sections}
         onToggleDone={(row) => {

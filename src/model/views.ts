@@ -7,6 +7,7 @@ import {
 } from "../api/filter";
 import type { Task } from "../api/types";
 import { dayDifference, parseVikunjaDate } from "./dates";
+import { matchesEveryTerm, parseSearchQuery, serverSearchTerm } from "./search";
 
 /**
  * A view is the pair (server query, client predicate). The predicate exists so
@@ -44,6 +45,11 @@ export interface ViewDef {
   subtitleFor?: (count: number) => string;
   /** Vikunja filter expression. */
   filter: string;
+  /**
+   * Vikunja's cross-project search term (mapping §8). Escaped by
+   * `serverSearchTerm`; absent on every view that is not a search.
+   */
+  search?: string;
   sortBy: string[];
   orderBy: ("asc" | "desc")[];
   includeNulls: boolean;
@@ -236,5 +242,45 @@ export function upcomingView(source?: PositionSource): ViewDef {
     ...(source === undefined
       ? { compare: compareByDueDateThenId }
       : { positionSource: source, compare: compareByPositionThenId }),
+  };
+}
+
+/**
+ * A search across every project (mapping §8).
+ *
+ * Two halves, because one backend cannot do the job alone. The SERVER is asked
+ * for the query's longest term through `s=`, which is the most selective; the
+ * CLIENT then requires every term, which turns `s=`'s literal-phrase matching
+ * into a real order-independent AND ("mini Mac" finds nothing on the server
+ * and everything here). Narrowing only — the client cannot invent a task the
+ * query never returned.
+ *
+ * Sub-tasks are INCLUDED here, unlike in every other view. A list shows a
+ * child under its parent and nowhere else, which is right for a list; a search
+ * that cannot find a task by its own name is simply broken.
+ *
+ * It has no position space — matches span projects, and positions are per
+ * `(task, project_view)` — so it is never reorderable, and due date is the only
+ * ordering that means anything (§8.3).
+ */
+export function searchView(query: string): ViewDef {
+  const terms = parseSearchQuery(query);
+  const term = serverSearchTerm(terms);
+  const matches = (task: Task) => terms.length > 0 && matchesEveryTerm(task, terms);
+  return {
+    key: `search:${query}`,
+    title: "Search",
+    subtitleFor: (n) => `${n} ${n === 1 ? "result" : "results"}`,
+    filter: notDone(),
+    ...(term === null ? {} : { search: term }),
+    sortBy: ["due_date", "id"],
+    orderBy: ["asc", "asc"],
+    // Undated tasks are results too; without this a due-date sort drops them.
+    includeNulls: true,
+    includes: matches,
+    belongs: (task) => matches(task) && !task.done,
+    showProject: true,
+    grouping: "none",
+    compare: compareByDueDateThenId,
   };
 }

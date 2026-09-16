@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
 - **Editing a task no longer throws your text away without asking.** Cancel on a
   name or description you have changed now asks first, and so does closing the
   task while an edit is open — the editor stays behind the question, so
@@ -186,6 +192,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gets created.
 
 ### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
 - **Editing a task no longer throws your text away without asking.** Cancel on a
   name or description you have changed now asks first, and so does closing the
   task while an edit is open — the editor stays behind the question, so
@@ -235,6 +247,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `D-adverb` in `docs/HANDOVER.md`.
 
 ### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
 - **Editing a task no longer throws your text away without asking.** Cancel on a
   name or description you have changed now asks first, and so does closing the
   task while an edit is open — the editor stays behind the question, so
@@ -372,6 +390,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the lookbehind that `@label` and `p1` already used.
 
 ### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
 - **Editing a task no longer throws your text away without asking.** Cancel on a
   name or description you have changed now asks first, and so does closing the
   task while an edit is open — the editor stays behind the question, so
@@ -554,6 +578,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Discarding a composer with text in it asks for confirmation.
 
 ### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
 - **Editing a task no longer throws your text away without asking.** Cancel on a
   name or description you have changed now asks first, and so does closing the
   task while an edit is open — the editor stays behind the question, so
@@ -636,6 +666,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   within ~40s on the next full fetch.
 
 ### Added
+- **Search works.** It looks in titles and descriptions across every project,
+  and the words can be in any order — "notaio fattura" and "fattura notaio"
+  find the same tasks, which Vikunja's own search does not do. The query lives
+  in the address, so a search can be linked and survives a reload.
+  - Two characters minimum, and accents still matter: "citta" does not find
+    "città", because the server never returns it for the app to keep.
 - **Editing a task no longer throws your text away without asking.** Cancel on a
   name or description you have changed now asks first, and so does closing the
   task while an edit is open — the editor stays behind the question, so

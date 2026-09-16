@@ -58,6 +58,7 @@ export function useViewTasks(view: ViewDef | null, timeZone: string) {
         // The row's "n comments" badge. Absent without this - measured,
         // mapping §6 item 2.
         expand: "comment_count",
+        ...(view.search === undefined ? {} : { search: view.search }),
         ...(signal ? { signal } : {}),
       };
       // A view that knows its Vikunja view is read through it, because that

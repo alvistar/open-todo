@@ -36,6 +36,31 @@ export function projectIdFromRoute(route: Route): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
+/** The route for a search, with the query encoded into it. */
+export function searchRoute(query: string): Route {
+  return `search/${encodeURIComponent(query)}`;
+}
+
+/**
+ * The query out of a search route, or null when the route is not a search.
+ *
+ * The query lives in the URL rather than in component state so a search is
+ * linkable and survives a reload, like every other view here. An empty string
+ * is a real answer — `#/search` is the open, empty box — which is why "not a
+ * search" has to be null rather than "".
+ */
+export function searchQueryFromRoute(route: Route): string | null {
+  if (route !== "search" && !route.startsWith("search/")) return null;
+  const raw = route.slice("search/".length);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    // A hand-typed URL can carry a truncated escape. Showing it back beats a
+    // blank screen from an uncaught URIError.
+    return raw;
+  }
+}
+
 /**
  * What to call a route on screen.
  *

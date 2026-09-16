@@ -1088,7 +1088,8 @@ public HTTP API only, which carries no such obligation.
        else.
     2. ~~**Three sidebar entries go to the wrong screen**~~ — fixed
        2026-09-16. **Upcoming is built**, on its own saved filter and
-       reorderable by day; `#/search`, `#/labels` and any unknown route now
+       reorderable by day; **Search is built**, ported from `read-handover`
+       with its measured §8 (see below); `#/labels` and any unknown route now
        render an explicit "not built yet" screen under their OWN name instead
        of silently showing Today under Today's heading.
 
