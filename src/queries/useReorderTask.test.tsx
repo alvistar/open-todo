@@ -43,7 +43,7 @@ function setup(tasks: Task[]) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  const rendered = renderHook(() => useReorderTask(view), { wrapper });
+  const rendered = renderHook(() => useReorderTask(view, "Europe/Rome"), { wrapper });
   const read = () => client.getQueryData<Task[]>(queryKeys.viewTasks(view.key)) ?? [];
   return { ...rendered, client, read };
 }
@@ -159,12 +159,87 @@ describe("a view with no order to write to", () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
-    const { result } = renderHook(() => useReorderTask(flat), { wrapper });
+    const { result } = renderHook(() => useReorderTask(flat, "Europe/Rome"), { wrapper });
 
     expect(result.current.reorderable).toBe(false);
     act(() => {
       result.current.reorder(1, 2);
     });
     expect(setTaskPosition).not.toHaveBeenCalled();
+  });
+});
+
+describe("what a review found", () => {
+  const three = [task(1, 10), task(2, 20), task(3, 30)];
+
+  it("keeps the move when only the renumber fails, and does not claim otherwise", async () => {
+    /*
+     * The move is written BEFORE the renumber loop, so a failure inside the
+     * loop used to reject the whole mutation: the UI rolled back to the
+     * pre-move order and said "Not moved" about a move that had landed, and
+     * the view was left half-renumbered with nothing to refetch it — this hook
+     * never invalidates.
+     */
+    const crowded = [task(1, 10), task(2, 10.001), task(3, 30)];
+    listViewTasks.mockResolvedValue([task(1, 65536), task(3, 131072), task(2, 196608)]);
+    let call = 0;
+    setTaskPosition.mockImplementation(async () => {
+      call += 1;
+      if (call === 3) throw new Error("server said no");
+      return {};
+    });
+
+    const { result, read } = setup(crowded);
+    act(() => {
+      result.current.reorder(3, 2);
+    });
+
+    await waitFor(() => expect(read().map((t) => t.id)).toEqual([1, 3, 2]));
+    expect(result.current.error).toBeNull();
+  });
+
+  it("passes the timezone on the re-read, or Today comes back wrong", async () => {
+    // Today's filter is `due_date < now/d+1d`, resolved against
+    // filter_timezone. Without it the authoritative array is computed against
+    // the server's midnight - GMT on this instance - and written to the cache.
+    const crowded = [task(1, 10), task(2, 10.001), task(3, 30)];
+    listViewTasks.mockResolvedValue(crowded);
+    const { result } = setup(crowded);
+    act(() => {
+      result.current.reorder(3, 2);
+    });
+    await waitFor(() => expect(listViewTasks).toHaveBeenCalled());
+    expect(listViewTasks.mock.calls[0]?.[3]).toMatchObject({ timezone: "Europe/Rome" });
+  });
+
+  it("refuses a second move while one is on the wire", async () => {
+    /*
+     * Two overlapping moves are not merely racy. If the first takes the
+     * renumber path it rewrites every position from a snapshot that does not
+     * contain the second, silently undoing it; and whichever settles first
+     * clears the in-flight flag, reopening the poll gate while the other write
+     * is still out.
+     */
+    let release: (() => void) | undefined;
+    setTaskPosition.mockImplementation(
+      () =>
+        new Promise<void>((r) => {
+          release = r;
+        }),
+    );
+    const { result } = setup(three);
+
+    act(() => {
+      result.current.reorder(1, 2);
+    });
+    await waitFor(() => expect(setTaskPosition).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.reorder(3, 1);
+    });
+    await Promise.resolve();
+
+    expect(setTaskPosition).toHaveBeenCalledTimes(1);
+    act(() => release?.());
   });
 });

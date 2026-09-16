@@ -75,10 +75,46 @@ export function positionBetween(
   return before + (after - before) / 2;
 }
 
-/** A gap too small to keep halving. */
+/**
+ * A gap too small to keep halving.
+ *
+ * `<=`, not `<`: the exact boundary is not representable, so a strict
+ * comparison decides it on float noise. Erring towards "crowded" costs one
+ * renumber of a view that was nearly due one anyway.
+ *
+ * This is NOT what detects the degenerate case, and must not be relied on for
+ * it. Above ~10^5 a double's own spacing is a measurable fraction of 0.01, so
+ * neighbours nominally 0.02 apart are really 0.0200000000186 apart and this
+ * answers false — correctly, since the halves genuinely still exceed the
+ * spacing. The tie, which is the case that cannot be expressed at all, is
+ * reported by `positionForMove` directly rather than through here.
+ */
 function crowds(position: number, neighbour: number | undefined): boolean {
   if (neighbour === undefined) return false;
-  return Math.abs(position - neighbour) < MIN_POSITION_SPACING;
+  return Math.abs(position - neighbour) <= MIN_POSITION_SPACING;
+}
+
+/**
+ * The nearest neighbour in `direction` that actually HAS a position.
+ *
+ * A task with no position is not a neighbour for this purpose: it has never
+ * been read through a view, so it occupies no place in the view's space at all
+ * (`compareByPositionThenId` parks it at the tail until a full fetch). Reading
+ * it as "no neighbour" rather than skipping it is how dropping a task at the
+ * bottom of a list with such a task in it computed `positionBetween(undefined,
+ * undefined)` — the empty-list branch — and wrote 0, which sorts FIRST. The
+ * gesture said bottom and the server was told top.
+ */
+function nearestPositioned(
+  list: readonly Positioned[],
+  from: number,
+  direction: -1 | 1,
+): number | undefined {
+  for (let i = from; i >= 0 && i < list.length; i += direction) {
+    const position = list[i]?.position;
+    if (position !== undefined) return position;
+  }
+  return undefined;
 }
 
 /**
@@ -109,13 +145,21 @@ export function positionForMove(
   if (moved.position === undefined) return null;
 
   const remaining = list.filter((_, index) => index !== fromIndex);
-  const before = remaining[toIndex - 1]?.position;
-  const after = remaining[toIndex]?.position;
+  const before = nearestPositioned(remaining, toIndex - 1, -1);
+  const after = nearestPositioned(remaining, toIndex, 1);
 
   const position = positionBetween(before, after);
   return {
     taskId: moved.id,
     position,
-    needsRenumber: crowds(position, before) || crowds(position, after),
+    // Equal neighbours are reported unconditionally, not left to the gap
+    // arithmetic. A tie means the view has already run out of room, and the
+    // 0.01 step places the task just BELOW the neighbour it was dropped above
+    // - the right order cannot be expressed until the view is spread out
+    // again, so the repair is not optional.
+    needsRenumber:
+      (before !== undefined && before === after) ||
+      crowds(position, before) ||
+      crowds(position, after),
   };
 }

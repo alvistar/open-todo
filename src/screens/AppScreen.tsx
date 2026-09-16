@@ -141,7 +141,7 @@ export function AppScreen() {
 
   const tasksQuery = useViewTasks(view, timeZone);
 
-  const reordering = useReorderTask(view);
+  const reordering = useReorderTask(view, timeZone);
 
   // Live refresh for the open view (D6): polls while visible, wakes on focus.
   useLiveSource({

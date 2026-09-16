@@ -92,12 +92,38 @@ describe("positionForMove", () => {
     expect(move).toMatchObject({ taskId: 4, position: 15 });
   });
 
-  it("treats a neighbour with no position as no neighbour", () => {
+  it("looks past a positionless task for the neighbour that has one", () => {
     // The newcomer sorts last anyway, so landing above it is satisfied by any
     // value; what must not happen is arithmetic on undefined.
     const trailing = [{ id: 1, position: 10 }, { id: 2, position: 20 }, { id: 3 }];
     const move = positionForMove(trailing, 0, 1);
     expect(move).toMatchObject({ taskId: 1, position: 20 + 65536 });
+  });
+
+  it("sends a task dropped at the BOTTOM to the bottom, not the top", () => {
+    /*
+     * The one a review caught, and the worst kind: it did the opposite of the
+     * gesture, silently, and persisted it.
+     *
+     * A task the incremental poll produced has no position, and the comparator
+     * parks it at the tail — so the last slot's neighbours were BOTH read as
+     * "absent", `positionBetween(undefined, undefined)` took its empty-list
+     * branch, and the answer was 0. Zero sorts FIRST. Dragging a row to the
+     * bottom put it at the top of the view and wrote that to the server, with
+     * `needsRenumber: false` so nothing ever repaired it.
+     *
+     * The existing positionless test hid it by moving to index 1, which takes
+     * the `before + 2^16` branch.
+     */
+    const withNewcomer = [{ id: 1, position: 10 }, { id: 2, position: 20 }, { id: 3 }];
+    const move = positionForMove(withNewcomer, 0, 2);
+    expect(move?.position).toBe(20 + 65536);
+    expect(move?.position).toBeGreaterThan(20);
+  });
+
+  it("finds the neighbour above even with several positionless tasks between", () => {
+    const many = [{ id: 1, position: 10 }, { id: 2, position: 20 }, { id: 3 }, { id: 4 }];
+    expect(positionForMove(many, 0, 3)?.position).toBe(20 + 65536);
   });
 
   it("does not expect a renumber when the gaps are wide", () => {
@@ -116,22 +142,27 @@ describe("positionForMove", () => {
     expect(positionForMove(crowded, 2, 1)?.needsRenumber).toBe(true);
   });
 
-  it("errs towards expecting a renumber at the spacing boundary", () => {
-    // Neighbours 0.02 apart put the midpoint 0.01 from each — nominally the
-    // boundary, which Vikunja compares as "below". In binary that subtraction
-    // is 0.00999999999999978, so the boundary case is decided by float noise
-    // and cannot be pinned either way honestly.
-    //
-    // It is pinned as TRUE deliberately, because the two errors are not equal:
-    // a spurious `true` costs one renumber of a view that was nearly due one
-    // anyway, while a spurious `false` lets the gaps keep halving until two
-    // tasks share a float and the order silently falls back to id.
-    const spaced = [
-      { id: 1, position: 10 },
-      { id: 2, position: 10 + 2 * MIN_POSITION_SPACING },
-      { id: 3, position: 30 },
-    ];
-    expect(positionForMove(spaced, 2, 1)?.needsRenumber).toBe(true);
+  it("expects a renumber for a genuinely tight gap, at any magnitude", () => {
+    /*
+     * A gap comfortably under the spacing, checked at three magnitudes because
+     * that is what a review showed to matter: the comparison used to be a
+     * strict `<` against a midpoint distance, and above ~10^5 a float's own
+     * error is a measurable fraction of 0.01.
+     *
+     * The EXACT boundary is deliberately not pinned. At 10^6, `base + 0.02` is
+     * not 0.02 above base — the nearest representable value is 0.0200000000186
+     * above it — so the halves really do exceed the spacing and declining to
+     * renumber is correct, not a miss. It costs one further halving before the
+     * repair fires, which is the right side to be wrong on.
+     */
+    for (const base of [10, 131072, 1_000_000]) {
+      const tight = [
+        { id: 1, position: base },
+        { id: 2, position: base + 0.001 },
+        { id: 3, position: base * 3 },
+      ];
+      expect(positionForMove(tight, 2, 1)?.needsRenumber).toBe(true);
+    }
   });
 
   it("does not expect a renumber a decimal order away from the boundary", () => {
@@ -143,14 +174,22 @@ describe("positionForMove", () => {
     expect(positionForMove(spaced, 2, 1)?.needsRenumber).toBe(false);
   });
 
-  it("expects a renumber after the equal-neighbours step", () => {
-    // before === after means the 0.01 branch fired, which leaves exactly zero
-    // gap on one side — the clearest possible sign the view needs renumbering.
-    const tied = [
-      { id: 1, position: 5 },
-      { id: 2, position: 5 },
-      { id: 3, position: 30 },
-    ];
-    expect(positionForMove(tied, 2, 1)?.needsRenumber).toBe(true);
+  it("expects a renumber after the equal-neighbours step, at any magnitude", () => {
+    /*
+     * A tie is reported unconditionally rather than left to the gap
+     * arithmetic. Two reasons, and the second is the one that matters: the
+     * 0.01 step lands the task just BELOW the neighbour it was dropped above,
+     * so the order the user asked for cannot be expressed at all until the
+     * view is spread out again. Until this was made unconditional, a tie at
+     * 131072 reported false and the row silently reverted on the next poll.
+     */
+    for (const base of [0, 5, 131072]) {
+      const tied = [
+        { id: 1, position: base },
+        { id: 2, position: base },
+        { id: 3, position: base + 1000 },
+      ];
+      expect(positionForMove(tied, 2, 1)?.needsRenumber).toBe(true);
+    }
   });
 });

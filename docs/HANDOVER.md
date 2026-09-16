@@ -667,6 +667,35 @@ integration files: §6 items 22-30.
   user's Vikunja, visible in Veyrn and the web UI, because they opened a screen.
   No matching filter means no handle, and no explanation of Vikunja's data model.
 
+**What a `/code-review` pass caught afterwards**, all six fixed in one commit
+and each pinned by a test that was verified to fail without its fix:
+
+- **Dropping a task at the BOTTOM could send it to the top.** A task the
+  incremental poll produced has no position and the comparator parks it at the
+  tail, so the last slot's neighbours were both read as "absent",
+  `positionBetween` took its empty-list branch and returned **0** — which sorts
+  first. The gesture said bottom and the server was told top, with
+  `needsRenumber: false` so nothing repaired it. Neighbours are now the nearest
+  ones that actually HAVE a position.
+- **A tie now reports `needsRenumber` unconditionally.** The 0.01 step places
+  the task just BELOW the neighbour it was dropped above, so the requested
+  order cannot be expressed until the view is spread out; leaving it to the gap
+  arithmetic made the answer depend on magnitude (true at 5, false at 131072 —
+  and 131072 is a number the renumber loop itself writes).
+- **A failed renumber no longer rolls back a move that succeeded.** The move is
+  written before the loop, so a failure inside it used to restore the pre-move
+  array and say "Not moved" about a move that had landed, leaving the view
+  half-renumbered with nothing to refetch it.
+- **The post-renumber re-read carries `filter_timezone`.** Without it Today's
+  `now/d+1d` resolved against the server's midnight (GMT here) and that array
+  was written into the cache as the truth.
+- **One move at a time.** Two overlapping ones are not merely racy: the first,
+  if it renumbers, rewrites every position from a snapshot that does not
+  contain the second. Alt+Arrow also ignores auto-repeat.
+- **`writeBack` carries the position across.** `updateTask` answers through
+  `/tasks/bulk`, not a view endpoint, so its copy carries the meaningless 0 —
+  renaming a task would float it to the top of a hand-arranged list.
+
 **The defect only driving the app found, and the one to remember:**
 `groupTasksForView` identified the view by `view.key === "today"`. The key became
 `today@v42` when it started carrying its view id, the comparison silently

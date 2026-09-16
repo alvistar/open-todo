@@ -65,7 +65,7 @@ function reordered(tasks: Task[], vars: Variables): Task[] {
  * map means "you just completed this, here is an Undo"; a failed move has
  * nothing to undo, and borrowing the channel would offer one.
  */
-export function useReorderTask(view: ViewDef | null): ReorderApi {
+export function useReorderTask(view: ViewDef | null, timeZone: string): ReorderApi {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
@@ -90,20 +90,44 @@ export function useReorderTask(view: ViewDef | null): ReorderApi {
        * concurrent read could observe as scrambled.
        */
       const current = queryClient.getQueryData<Task[]>(queryKey) ?? [];
-      for (const [index, task] of current.entries()) {
-        await setTaskPosition(http, task.id, source.viewId, (index + 1) * RENUMBER_STEP);
+      try {
+        for (const [index, task] of current.entries()) {
+          await setTaskPosition(
+            http,
+            task.id,
+            source.viewId,
+            (index + 1) * RENUMBER_STEP,
+          );
+        }
+      } catch {
+        /*
+         * Swallowed on purpose. The MOVE already succeeded above; only the
+         * tidying failed. Rethrowing would run onError, which restores the
+         * pre-move array and says "Not moved" — telling the user their drag
+         * was refused when it landed, and leaving the view half-renumbered
+         * with nothing to refetch it, since this hook never invalidates.
+         *
+         * Falling through to the re-read below is the repair: it replaces the
+         * cache with whatever the server actually holds, half-renumbered or
+         * not, which is both true and still in the order the user asked for.
+         */
       }
       // Re-read rather than assume: what we just wrote is the authority, and
       // the optimistic copies are not.
       return listViewTasks(http, source.projectId, source.viewId, {
         filter: view?.filter ?? "",
         includeNulls: view?.includeNulls ?? false,
+        // Today's filter is `due_date < now/d+1d`, which the server resolves
+        // against filter_timezone. Omitting it computed the authoritative
+        // array against the SERVER's midnight - on this instance an untouched
+        // GMT - so the re-read could drop a task due late today, or add
+        // tomorrow's, and then write that into the cache as the truth.
+        timezone: timeZone,
         expand: "comment_count",
       });
     },
 
     onMutate: async (vars: Variables) => {
-      inFlight.current = true;
       setError(null);
       const previous = queryClient.getQueryData<Task[]>(queryKey);
       queryClient.setQueryData<Task[]>(queryKey, (current = []) =>
@@ -141,6 +165,18 @@ export function useReorderTask(view: ViewDef | null): ReorderApi {
   const reorder = useCallback(
     (taskId: number, overId: number) => {
       if (!source) return;
+      /*
+       * One move at a time. Two overlapping ones are not merely racy: if the
+       * first takes the renumber path it rewrites EVERY task's position from
+       * its own snapshot, which does not contain the second move, so the
+       * second is silently undone. And whichever settles first would clear
+       * `inFlight`, reopening the poll gate while the other write is still on
+       * the wire - the exact mid-move tick the gate exists to stop.
+       *
+       * Dropped rather than queued: the list has not settled, so the indices
+       * a queued move was computed from would no longer mean anything.
+       */
+      if (inFlight.current) return;
       const current = queryClient.getQueryData<Task[]>(queryKey) ?? [];
       const fromIndex = current.findIndex((task) => task.id === taskId);
       const toIndex = current.findIndex((task) => task.id === overId);
@@ -150,6 +186,10 @@ export function useReorderTask(view: ViewDef | null): ReorderApi {
       // leaves no error on screen.
       const move = positionForMove(current, fromIndex, toIndex);
       if (!move) return;
+      // Raised HERE rather than in onMutate, which TanStack does not run
+      // synchronously: a second call arriving in the same tick would sail past
+      // a flag that had not been set yet.
+      inFlight.current = true;
       mutate({ move, fromIndex, toIndex });
     },
     [mutate, queryClient, queryKey, source],

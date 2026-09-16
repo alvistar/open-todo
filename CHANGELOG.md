@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     would be a change of DATE, not of order, so it is refused rather than
     quietly doing nothing.
   - Upcoming is unchanged.
+  - A move waits for the previous one to be saved, so holding the keys does not
+    queue moves against a list that has not settled yet.
 
 - **You can open a task.** Enter on a focused row, or a click, opens the detail
   at the geometry measured in `docs/layout-specs.md` §4: the project it belongs

@@ -211,6 +211,9 @@ export function ListView({
      */
     if (event.altKey && !event.metaKey && !event.ctrlKey) {
       if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      // Auto-repeat is ignored: each move is a server write, and holding the
+      // key would queue moves computed against a list that has not settled.
+      if (event.repeat) return;
       if (!reorderable || !onReorder) return;
       const from = order.indexOf(task.id);
       const to = from + (event.key === "ArrowDown" ? 1 : -1);
