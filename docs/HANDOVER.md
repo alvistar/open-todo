@@ -1115,11 +1115,23 @@ public HTTP API only, which carries no such obligation.
        It is also the only non-optimistic write in the app: a failed optimistic
        delete would have to put back the copy it happened to hold, and for the
        one irreversible action that is the wrong risk.
-    7. **Never measured**, from the original recon: hover and focus states, and
-       a project view with sections (item 3 above). Upcoming is now BUILT but
-       still unmeasured — its day heading is `todayHeading`'s shape with the
-       middle word dropped, derived rather than specified, and says so in the
-       code.
+    7. **Hover states are now MEASURED** (2026-09-16, `layout-specs.md` §2.3b).
+       The old blocker — "`:hover` cannot be triggered from `orca eval`" — was
+       solved by Orca's CLI having a real pointer `hover`; the Todoist session
+       of §8 is still alive. Two findings: hovering a row changes exactly five
+       things, all `opacity 0 → 1` on the controls it reveals, and **the row
+       takes no background at all** — open-todo's is a deliberate D2 deviation,
+       now recorded as one. The sidebar's hover fill is `#f2efed` r5 on a
+       256×34 wrapper, which `--hover-fill` already approximates within a hair.
+       **Focus is still not measured**, and the reason has CHANGED: a scripted
+       `.focus()` does not satisfy Chrome's `:focus-visible` heuristic and Tab
+       could not be walked past the skip-link through the CLI. Todoist declares
+       `outline: #666 none 3px` at rest, so the ring is almost certainly
+       switched on under `:focus-visible` alone — measure with a real keyboard
+       before copying a number.
+       Still never measured: a project view with sections (item 3 above).
+       Upcoming is BUILT but unmeasured — its day heading is derived from
+       `todayHeading`, and says so in the code.
     8. **The unsaved-changes confirmation** the reference product shows and
        open-todo does not (D-detail, last paragraph).
 

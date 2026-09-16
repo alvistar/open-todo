@@ -150,6 +150,41 @@ x−32  x−3   x=0 (col)                                                  x=800
 | Trailing actions | 16×24 absolute cell at right (`margin 8px −22px 0 0`) for hover actions |
 | Row height | 79px with a 1-line description; 59px title-only (79 − 20) |
 
+### 2.3b Hover states — **measured 2026-09-16**, and what they are not
+
+The original pass could not capture these: `:hover` cannot be triggered from
+`orca eval`. Orca's CLI has a real pointer `hover`, so they are measured now,
+by hovering the element and reading the `:hover` chain rather than diffing
+guesses.
+
+**Hovering a task row changes exactly five things, and all five are the same
+thing:** `opacity 0 → 1` on the controls it reveals —
+
+| Revealed on row hover |
+|---|
+| `task_list_item__drag_handle` (§2.3's 24×24 handle) |
+| the trailing actions button |
+| `due_date_controls` |
+| `task_list_item__comments_link` |
+| one further action button |
+
+**Nothing else changes. The row does NOT take a background on hover.** The whole
+hovered chain inside it is transparent and the `li` stays `#fff` — verified by
+reading every element under the pointer, not by diffing a subset. The 816×78
+`task_list_item__body` carries `border-radius: 5px` and no fill, even hovered.
+
+Sidebar item hover: a wrapper `div` 256×34, `background rgb(242, 239, 237)`
+(`#f2efed`), `border-radius 5px`. The `a` inside it stays transparent, so the
+fill is on the wrapper, not the link.
+
+**Focus is still NOT measured, and the reason has changed.** It is no longer
+"eval cannot trigger it": a scripted `.focus()` does not satisfy Chrome's
+`:focus-visible` heuristic, and Tab could not be walked past the skip-link
+through the CLI. What IS visible is that Todoist declares
+`outline: #666 none 3px` at rest — style `none`, width 3 — so the ring is
+almost certainly switched on under `:focus-visible` alone. Measure it with a
+real keyboard before copying a number.
+
 ### 2.4 Inline "Aggiungi attività" affordance (below a section's rows)
 
 33px `li`, `padding 0 20px 0 1px`; button `14px 400 #808080`, `padding 0 8px 8px 9px`, `margin-left −8px`, r5, with a 17px circular "+" icon (`margin-right 11px`). Turns into the accent colour on hover. "Aggiungi sezione" appears 12px below as a centred 24px `14px 700` accent button, hidden until hover.
@@ -244,6 +279,12 @@ Cancelling with text present opens the confirmation modal (§5).
   single-user instances (saves 38px of indent).
 - Header toolbar reserves a 1157px-wide empty left cell. Ours can hold the
   breadcrumb / project colour instead.
+- **A task row takes no hover background** (§2.3b, measured). open-todo gives
+  one (`--hover-fill`), deliberately: our row is a single click target that
+  opens the dialog, and a row that lights up says what is about to be clicked.
+  Todoist relies on the five revealed controls to do that job instead. Recorded
+  as a D2 call so the deviation is a choice rather than an accident — the
+  measurement now exists either way.
 - Drag handle at `opacity 0` until hover is fine on desktop but gives touch
   users no affordance. **Settled 2026-09-16 when the drag slice was built:**
   hover-only on a fine pointer, as measured, but visible at rest and dimmed
