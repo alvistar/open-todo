@@ -1,0 +1,306 @@
+version = 1
+
+[[bindings]]
+doc = "knowledge/architecture/architecture.md"
+target = "src/app/App.tsx"
+sig = "689e1aaa60f24314"
+
+[[bindings]]
+doc = "knowledge/architecture/architecture.md"
+target = "src/live/useLiveSource.ts"
+sig = "694aa23413a4088f"
+
+[[bindings]]
+doc = "knowledge/architecture/architecture.md"
+target = "src/main.tsx"
+sig = "25ea71a25d1bf6cc"
+
+[[bindings]]
+doc = "knowledge/architecture/architecture.md"
+target = "src/queries/useUpdateTask.ts"
+sig = "3ec9c5569516ff4f"
+
+[[bindings]]
+doc = "knowledge/architecture/architecture.md"
+target = "src/screens/AppScreen.tsx"
+sig = "1f8f99b296ac6d46"
+
+[[bindings]]
+doc = "knowledge/architecture/quick-add.md"
+target = "src/model/quickadd/datePhrase.ts"
+sig = "19411f4881e802c6"
+
+[[bindings]]
+doc = "knowledge/architecture/quick-add.md"
+target = "src/model/quickadd/grammar.ts"
+sig = "ac58fb8352661120"
+
+[[bindings]]
+doc = "knowledge/architecture/quick-add.md"
+target = "src/model/quickadd/lang/index.ts"
+sig = "eb2bfa1f0d66aad8"
+
+[[bindings]]
+doc = "knowledge/architecture/quick-add.md"
+target = "src/model/quickadd/lang/it.ts"
+sig = "18392515bc98d1b6"
+
+[[bindings]]
+doc = "knowledge/architecture/quick-add.md"
+target = "src/model/quickadd/parse.ts"
+sig = "8f6da3d5fa0a0b68"
+
+[[bindings]]
+doc = "knowledge/architecture/quick-add.md"
+target = "src/model/titleEdit.ts"
+sig = "d724d0ebf25bcf9e"
+
+[[bindings]]
+doc = "knowledge/decisions/closed-date-grammar.md"
+target = "src/model/quickadd/datePhrase.ts"
+sig = "19411f4881e802c6"
+
+[[bindings]]
+doc = "knowledge/decisions/closed-date-grammar.md"
+target = "src/model/quickadd/grammar.ts"
+sig = "ac58fb8352661120"
+
+[[bindings]]
+doc = "knowledge/decisions/closed-date-grammar.md"
+target = "src/model/quickadd/parse.ts"
+sig = "8f6da3d5fa0a0b68"
+
+[[bindings]]
+doc = "knowledge/decisions/direct-browser-api.md"
+target = "src/api/http.ts"
+sig = "1b7aae879a471d82"
+
+[[bindings]]
+doc = "knowledge/decisions/direct-browser-api.md"
+target = "src/auth/authStore.ts"
+sig = "2c3d7e81024010cd"
+
+[[bindings]]
+doc = "knowledge/decisions/direct-browser-api.md"
+target = "vite.config.ts"
+sig = "a316fbe8ece4375c"
+
+[[bindings]]
+doc = "knowledge/decisions/distinct-brand.md"
+target = "src/theme/tokens.css"
+sig = "001338f3f581d06a"
+
+[[bindings]]
+doc = "knowledge/decisions/distinct-brand.md"
+target = "src/ui/icons/paths.ts"
+sig = "199f1714a4fe558c"
+
+[[bindings]]
+doc = "knowledge/decisions/offer-repeat-adverbs.md"
+target = "src/model/quickadd/decisions.ts"
+sig = "2929853ef0b8fc23"
+
+[[bindings]]
+doc = "knowledge/decisions/offer-repeat-adverbs.md"
+target = "src/model/quickadd/recurrence.ts"
+sig = "8cc42ac72b7e3b33"
+
+[[bindings]]
+doc = "knowledge/decisions/offer-repeat-adverbs.md"
+target = "src/ui/QuickAdd.tsx"
+sig = "5dfd5e383723591c"
+
+[[bindings]]
+doc = "knowledge/decisions/polling-live-source.md"
+target = "src/live/PollingSource.ts"
+sig = "49f03d716435434d"
+
+[[bindings]]
+doc = "knowledge/decisions/polling-live-source.md"
+target = "src/live/useLiveSource.ts"
+sig = "694aa23413a4088f"
+
+[[bindings]]
+doc = "knowledge/decisions/polling-live-source.md"
+target = "src/queries/client.ts"
+sig = "be77c72bdf97ea21"
+
+[[bindings]]
+doc = "knowledge/decisions/safe-task-writes.md"
+target = "src/api/endpoints.ts"
+sig = "ca3d99bb9c28740d"
+
+[[bindings]]
+doc = "knowledge/decisions/safe-task-writes.md"
+target = "src/queries/useCompleteTask.ts"
+sig = "7a9f9531725b7bad"
+
+[[bindings]]
+doc = "knowledge/decisions/safe-task-writes.md"
+target = "src/queries/useUpdateTask.ts"
+sig = "3ec9c5569516ff4f"
+
+[[bindings]]
+doc = "knowledge/playbooks/add-task-mutation.md"
+target = "src/api/endpoints.ts"
+sig = "ca3d99bb9c28740d"
+
+[[bindings]]
+doc = "knowledge/playbooks/add-task-mutation.md"
+target = "src/api/write.test.ts"
+sig = "90a804d5778d915f"
+
+[[bindings]]
+doc = "knowledge/playbooks/add-task-mutation.md"
+target = "src/queries/useUpdateTask.ts"
+sig = "3ec9c5569516ff4f"
+
+[[bindings]]
+doc = "knowledge/playbooks/add-task-mutation.md"
+target = "src/ui/detail/TaskDetail.test.tsx"
+sig = "7d17890213981500"
+
+[[bindings]]
+doc = "knowledge/playbooks/amend-quick-add.md"
+target = "scripts/quickadd-corpus-diff.mjs"
+sig = "8dafa8f65fabcd1e"
+
+[[bindings]]
+doc = "knowledge/playbooks/amend-quick-add.md"
+target = "scripts/quickadd-golden.mjs"
+sig = "d69bef99fe6fc603"
+
+[[bindings]]
+doc = "knowledge/playbooks/amend-quick-add.md"
+target = "src/model/quickadd/corpus.golden.test.ts"
+sig = "35245dea17a1d9cd"
+
+[[bindings]]
+doc = "knowledge/playbooks/amend-quick-add.md"
+target = "src/model/quickadd/lang/acceptance.test.ts"
+sig = "bb8d522dda9e4a50"
+
+[[bindings]]
+doc = "knowledge/playbooks/amend-quick-add.md"
+target = "src/model/quickadd/lang/pack.ts"
+sig = "0c37ad72776fa4ab"
+
+[[bindings]]
+doc = "knowledge/playbooks/change-design-tokens.md"
+target = "scripts/sync-design-tokens.mjs"
+sig = "d89037e6372fb7b0"
+
+[[bindings]]
+doc = "knowledge/playbooks/change-design-tokens.md"
+target = "src/theme/theme.test.ts"
+sig = "05a567ac315a6e31"
+
+[[bindings]]
+doc = "knowledge/playbooks/change-design-tokens.md"
+target = "src/theme/tokens.css"
+sig = "001338f3f581d06a"
+
+[[bindings]]
+doc = "knowledge/playbooks/debug-vikunja-connection.md"
+target = "src/api/endpoints.test.ts"
+sig = "f06d33bccb8954e3"
+
+[[bindings]]
+doc = "knowledge/playbooks/debug-vikunja-connection.md"
+target = "src/api/http.test.ts"
+sig = "387fbf07b55ac771"
+
+[[bindings]]
+doc = "knowledge/playbooks/debug-vikunja-connection.md"
+target = "src/api/http.ts"
+sig = "1b7aae879a471d82"
+
+[[bindings]]
+doc = "knowledge/playbooks/debug-vikunja-connection.md"
+target = "src/live/PollingSource.test.ts"
+sig = "ca8a2e03bc2a16ab"
+
+[[bindings]]
+doc = "knowledge/playbooks/debug-vikunja-connection.md"
+target = "src/screens/SetupScreen.tsx"
+sig = "7de5c286a07023d5"
+
+[[bindings]]
+doc = "knowledge/project/conventions.md"
+target = "biome.json"
+sig = "9d45ce7366489693"
+
+[[bindings]]
+doc = "knowledge/project/conventions.md"
+target = "scripts/sync-design-tokens.mjs"
+sig = "d89037e6372fb7b0"
+
+[[bindings]]
+doc = "knowledge/project/conventions.md"
+target = "src/api/endpoints.ts"
+sig = "ca3d99bb9c28740d"
+
+[[bindings]]
+doc = "knowledge/project/conventions.md"
+target = "src/model/views.ts"
+sig = "6cb2587bb457ac24"
+
+[[bindings]]
+doc = "knowledge/project/setup.md"
+target = "scripts/sync-version.mjs"
+sig = "2d2303b1b543c535"
+
+[[bindings]]
+doc = "knowledge/project/setup.md"
+target = "src/auth/authStore.ts"
+sig = "2c3d7e81024010cd"
+
+[[bindings]]
+doc = "knowledge/project/setup.md"
+target = "src/screens/SetupScreen.tsx"
+sig = "7de5c286a07023d5"
+
+[[bindings]]
+doc = "knowledge/project/setup.md"
+target = "src/settings/settingsStore.ts"
+sig = "4bb016145fd0b79d"
+
+[[bindings]]
+doc = "knowledge/project/stack.md"
+target = "package.json"
+sig = "45921d901071677b"
+
+[[bindings]]
+doc = "knowledge/project/stack.md"
+target = "pnpm-lock.yaml"
+sig = "07d5497bcfb4b7e4"
+
+[[bindings]]
+doc = "knowledge/project/stack.md"
+target = "vite.config.ts"
+sig = "a316fbe8ece4375c"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/model/titleEdit.ts"
+sig = "d724d0ebf25bcf9e"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/model/views.ts"
+sig = "6cb2587bb457ac24"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/screens/AppScreen.tsx"
+sig = "1f8f99b296ac6d46"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/ui/ListView.tsx"
+sig = "f095a3c7c3489620"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/ui/detail/TaskDetail.tsx"
+sig = "e0901a61096f864d"
