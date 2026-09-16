@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { getInfo, getUser, listProjects, listTasks } from "./endpoints";
 import { and, dueBeforeTomorrow, notDone, updatedSince } from "./filter";
 import { createHttp } from "./http";
+import type { ProjectView, Task } from "./types";
 
 // Declared locally rather than pulling @types/node into the app's global
 // scope, which would make `process` reachable from browser code.
@@ -143,5 +144,141 @@ describe.skipIf(!enabled)("live Vikunja instance (read-only)", () => {
     console.log(
       `  frontend_settings.default_due_time: ${settings.frontend_settings?.default_due_time ?? "(absent -> the 20:00 fallback applies)"}`,
     );
+  });
+
+  /*
+   * D4 step 3 probes. Mapping §3 describes per-view float positions, the
+   * midpoint arithmetic and a server-side renumber - all of it READ FROM
+   * VIKUNJA'S SOURCE ON `main`, never called. `/tasks/all` already taught this
+   * repo that a route can vanish between versions, so the ordering slice is
+   * built on what these measure, not on what §3 says.
+   */
+
+  it("reports whether GET /projects already carries its views (§3)", async () => {
+    // If it does, the list-view id is free and no second request is needed.
+    const projects = await listProjects(http);
+    const withViews = projects.filter((p) => (p.views?.length ?? 0) > 0);
+    console.log(
+      `  ${withViews.length} of ${projects.length} projects carry views inline`,
+    );
+    for (const project of withViews.slice(0, 5)) {
+      const kinds = (project.views ?? []).map((v) => `${v.id}:${v.view_kind}`).join(" ");
+      console.log(`    ${project.id} ${project.title}: ${kinds}`);
+    }
+    if (withViews.length === 0) {
+      console.log("  -> view ids need their own GET /projects/{id}/views.");
+    }
+  });
+
+  it("reads a project's views (§3)", async () => {
+    const user = await getUser(http);
+    const projectId = user.settings?.default_project_id;
+    expect(projectId).toBeGreaterThan(0);
+    const views = await http.request<ProjectView[]>(`/projects/${projectId}/views`);
+    expect(Array.isArray(views)).toBe(true);
+    for (const view of views) {
+      console.log(`    view ${view.id} ${view.view_kind} "${view.title}"`);
+    }
+    expect(views.some((v) => v.view_kind === "list")).toBe(true);
+  });
+
+  it("reads a list view's tasks and their positions (§3)", async () => {
+    const user = await getUser(http);
+    const projectId = user.settings?.default_project_id;
+    const views = await http.request<ProjectView[]>(`/projects/${projectId}/views`);
+    const list = views.find((v) => v.view_kind === "list");
+    expect(list).toBeDefined();
+    if (!list) return;
+
+    const body = await http.request<unknown>(
+      `/projects/${projectId}/views/${list.id}/tasks`,
+    );
+    // The kanban view answers buckets; the list view must answer bare tasks,
+    // or fetchAllPages cannot walk it.
+    expect(Array.isArray(body)).toBe(true);
+    const tasks = body as Task[];
+    const positioned = tasks.filter((t) => typeof t.position === "number");
+    console.log(
+      `  list view ${list.id}: ${tasks.length} tasks, ${positioned.length} positioned`,
+    );
+    console.log(
+      `    first positions: ${positioned
+        .slice(0, 8)
+        .map((t) => t.position)
+        .join(", ")}`,
+    );
+
+    const ascending = positioned.every(
+      (t, i) => i === 0 || (positioned[i - 1]?.position ?? 0) <= (t.position ?? 0),
+    );
+    console.log(`  already position-ascending: ${ascending}`);
+
+    // Reported, not asserted: each answer changes how the view is read, and a
+    // wrong guess here is a silently truncated or done-polluted list.
+    const filtered = await http.listRequest<Task>(
+      `/projects/${projectId}/views/${list.id}/tasks`,
+      { query: { filter: "done = false" } },
+    );
+    const done = filtered.items.filter((t) => t.done).length;
+    console.log(
+      `  with filter=done = false: ${filtered.items.length} items, ${done} of them done` +
+        (done > 0 ? "  <- FILTER IGNORED, filter client-side" : ""),
+    );
+
+    const expanded = await http.listRequest<Task>(
+      `/projects/${projectId}/views/${list.id}/tasks`,
+      { query: { expand: "comment_count" } },
+    );
+    const counted = expanded.items.filter((t) => t.comment_count !== undefined).length;
+    console.log(`  with expand=comment_count: ${counted} tasks carry a count`);
+
+    const firstPage = await http.listRequest<Task>(
+      `/projects/${projectId}/views/${list.id}/tasks`,
+      { query: { page: 1, per_page: 2 } },
+    );
+    console.log(
+      `  per_page=2 returned ${firstPage.items.length}` +
+        (firstPage.items.length > 2 ? "  <- PAGINATION IGNORED" : ""),
+    );
+  });
+
+  it("reports what a saved filter's views look like (§6 item 15, §4)", async () => {
+    // Today must become a saved filter to have a position space at all. On
+    // pinguino one already exists at -10, written by someone other than us.
+    const projects = await listProjects(http);
+    const filters = projects.filter((p) => p.id < 0);
+    console.log(
+      `  saved filters: ${filters.map((f) => `${f.id} "${f.title}"`).join(", ")}`,
+    );
+
+    for (const filter of filters) {
+      try {
+        const views = await http.request<ProjectView[]>(`/projects/${filter.id}/views`);
+        console.log(
+          `    ${filter.id} "${filter.title}" views: ${views.map((v) => `${v.id}:${v.view_kind}`).join(" ")}`,
+        );
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        console.log(
+          `    ${filter.id} "${filter.title}" views REJECTED (status ${status})`,
+        );
+      }
+
+      const filterId = -filter.id - 1;
+      try {
+        const saved = await http.request<{
+          title?: string;
+          filters?: { filter?: string };
+        }>(`/filters/${filterId}`);
+        console.log(
+          `    -> /filters/${filterId} is "${saved.title}" query: ${saved.filters?.filter ?? "(none)"}`,
+        );
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        console.log(
+          `    -> /filters/${filterId} REJECTED (status ${status}); id formula wrong`,
+        );
+      }
+    }
   });
 });
