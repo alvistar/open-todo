@@ -51,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be read as a repeat starting in December and refused.
 
 ### Changed
+- **One place decides which screen a link means.** Nothing looks different: the
+  work is that the address bar's answer — which list to show, or that nothing
+  is built for this route yet — is now worked out once instead of twice. It was
+  two pieces of code reading the same route and having to agree; a screen added
+  to one and not the other would highlight a sidebar entry while showing the
+  "not built yet" placeholder underneath it.
+
 - **Inbox and project lists now show the order you arranged in Vikunja**,
   instead of sorting by due date. Vikunja stores a manual order per list, and
   open-todo was never reading it — every list was re-sorted by date on arrival

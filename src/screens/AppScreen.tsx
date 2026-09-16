@@ -7,6 +7,7 @@ import {
   searchRoute,
   useRoute,
 } from "../app/route";
+import { viewForRoute } from "../app/viewForRoute";
 import { logOut } from "../auth/authStore";
 import { useLiveSource } from "../live/useLiveSource";
 import { formatDueLabel, parseVikunjaDate } from "../model/dates";
@@ -26,14 +27,7 @@ import {
   undoableLabelChange,
   undoableReminderChange,
 } from "../model/undoableChange";
-import {
-  inboxView,
-  projectView,
-  searchView,
-  todayView,
-  upcomingView,
-  type ViewDef,
-} from "../model/views";
+import { inboxView, todayView } from "../model/views";
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
 import { useDeleteTask } from "../queries/useDeleteTask";
@@ -137,40 +131,24 @@ export function AppScreen() {
   /** The committed query, or null when this route is not a search. */
   const searchQuery = searchQueryFromRoute(route);
 
-  const view: ViewDef | null = useMemo(() => {
-    const projectId = projectIdFromRoute(route);
-    if (projectId !== null) {
-      const project = projectsQuery.data?.find((p) => p.id === projectId);
-      return projectView(projectId, project?.title ?? "Project", viewIdOf(projectId));
-    }
-    if (route === "inbox") {
-      return inboxProjectId === null
-        ? null
-        : inboxView(inboxProjectId, viewIdOf(inboxProjectId));
-    }
-    if (searchQuery !== null) return searchView(searchQuery);
-    if (route === "upcoming") return upcomingView(upcomingSource);
-    if (route === "today") return todayView(todaySource);
-    /*
-     * Anything else has no view. It used to fall through to Today, which meant
-     * the sidebar's Search and Filters entries silently showed a DIFFERENT
-     * screen from the one they highlighted - the defect D-detail named, one
-     * step worse than a button that does nothing.
-     */
-    return null;
-  }, [route, inboxProjectId, projectsQuery.data, viewIdOf, todaySource, upcomingSource]);
-
-  /**
-   * The route the sidebar offers and nothing has built yet. Null for a route
-   * with a view, and null while Inbox waits for its project id - that is a
-   * load, not a gap.
+  /*
+   * One decision, not two. `view` and `notBuilt` classify the same route, and
+   * while they were computed separately each had to enumerate the route set -
+   * so a new route added to only one of them would render a screen that
+   * disagreed with its own sidebar entry.
    */
-  const notBuilt = useMemo(() => {
-    if (projectIdFromRoute(route) !== null) return null;
-    if (route === "inbox" || route === "today" || route === "upcoming") return null;
-    if (searchQueryFromRoute(route) !== null) return null;
-    return route;
-  }, [route]);
+  const { view, notBuilt } = useMemo(
+    () =>
+      viewForRoute({
+        route,
+        projects: projectsQuery.data,
+        inboxProjectId,
+        viewIdOf,
+        todaySource,
+        upcomingSource,
+      }),
+    [route, inboxProjectId, projectsQuery.data, viewIdOf, todaySource, upcomingSource],
+  );
 
   // The sidebar shows Inbox and Today counts regardless of the open view.
   // Both queries key off ViewDef.key, so when one of them *is* the open view

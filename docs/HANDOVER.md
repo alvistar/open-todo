@@ -668,14 +668,23 @@ Ported (see the commits):
 
 NOT ported, deliberately:
 
-- **`viewForRoute`**, the route-dispatcher extraction (`944d1ac`). Its stated
-  benefit is structural — AppScreen 638 → 568 lines — and it depends on
-  `savedFilterView` and `scheduledView`, views this branch does not have, so it
-  would drag in a feature to land a refactor. The duplication it targets (the
-  sidebar counts re-deciding what the open route decided) is already avoided
-  here: the count views are built through the same `viewIdOf` and `ownedSource`
-  helpers as the open view, so their keys cannot drift. Revisit if the branches
-  are ever reconciled properly.
+- **`viewForRoute` as they wrote it** (`944d1ac`). It imports `savedFilterView`
+  and `scheduledView`, views this branch does not have, so taking the file
+  would drag in a feature to land a refactor. A second opinion (Codex
+  gpt-5.6-sol, 2026-09-16) agreed and checked the rest: their dispatcher
+  handles no case this branch gets wrong — the route parsers are mutually
+  exclusive, so the order in which search is tested does not matter, and the
+  project-title fallback, the unresolved Inbox and the empty search behave
+  alike on both sides.
+
+  **The idea WAS taken, rewritten here** (`src/app/viewForRoute.ts`). The first
+  reading of the duplication was too generous: the sidebar counts genuinely
+  cannot drift, because they are built through the same `viewIdOf` and
+  `ownedSource` helpers as the open view — but `view` and `notBuilt` were two
+  `useMemo`s each enumerating the same route set. Adding a route to one and not
+  the other renders a screen that contradicts its own sidebar entry. They are
+  now one function returning both answers, with an invariant test: a route
+  reported as unbuilt never comes back with a view.
 - **`read-handover`'s `position.ts`.** It still carries §3's claim that the
   SERVER renumbers a crowded view, which §6 item 23 measured as false on 2.5.0.
   Nothing from it may come back without that correction.
