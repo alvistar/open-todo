@@ -31,6 +31,9 @@ them, and check there are zero leftovers.
 
 **Do this, in order:**
 
+0. **Run `git branch -a` and `git log --oneline main..<branch>` for each.** This
+   document is only true of the branch it sits on, and on 2026-09-16 that cost a
+   day of duplicated work — see **D-branches** in §4 before anything else.
 1. Read §1 (purpose) and §2 (what was found and what was rejected). Do not
    re-derive them — the reconnaissance pass is done and the Todoist tab that
    produced it is probably gone.
@@ -613,6 +616,78 @@ One convention outlived its file. `known-defects.test.ts` pinned a defect as a
 test that PASSES while asserting the wrong behaviour, so that a refactor could
 not quietly change its shape. Nothing is left to pin, so the file is deleted —
 recreate it when the next defect needs it.
+
+### D-branches — two branches built the same slice, and how that was resolved — **2026-09-16**
+
+**Read this before starting anything.** It is the reason §7 was wrong for six
+days, and the failure it describes cost a full day of duplicated work.
+
+`main` and `read-handover` both fork from `fdd598c` (10 September, 15:09) and
+**neither contains the other**. That afternoon the work split in two and both
+halves kept going:
+
+```
+                    fdd598c  10 Sep 15:09
+                       │
+        ┌──────────────┴──────────────┐
+  read-handover                     main
+  37 commits, to 10 Sep 21:31      to 15 Sep: D-write, keyboard,
+  drag reorder ("closes D4"),      detail dialog, labels, reminders,
+  Search, saved filters, toasts    comments, sub-tasks
+        │                             │
+        │                        list-reorder  (16 Sep)
+        │                        rebuilt reorder, filters,
+        ✗ never merged           Upcoming and toasts from scratch
+```
+
+The handover on `main` said D4 step 3 was the next thing to build. Written in
+good faith, and **false with respect to `read-handover`**, where D4 had been
+closed on the 10th. A session followed it for a day and rebuilt drag reorder
+with dnd-kit, saved-filter adoption, Upcoming and toasts — all of which already
+existed twenty metres away.
+
+It had happened before, in miniature: the same fix exists once per branch —
+`cf5a45c` "Stop offering a saved filter as a place to put a task" and `365e7e4`
+"Stop a saved filter posing as a project you can move a task into".
+
+**Resolution: `list-reorder` is the trunk, and `read-handover`'s unique work is
+PORTED FORWARD.** Not because it is better — it is not, in places — but because
+`read-handover` forked BEFORE the detail dialog, reminders, comments and
+sub-tasks, so porting its pieces forward is additive while rebasing it backwards
+is not.
+
+Ported (see the commits):
+
+- **The saved-filter ownership marker.** Strictly better than what it replaced
+  here: ownership is a marker stamped in the filter's description, which
+  `SavedFilter.ToProject()` copies onto the pseudo-project — so it is free,
+  survives a rename, and never hijacks a filter the user merely named "Today".
+  It replaced a title match plus a `GET /filters/{id}` per view.
+- **Search**, with its measured §8. Both candidate backends were probed on the
+  10th and the design derived from what they do; that was not re-run.
+
+NOT ported, deliberately:
+
+- **`viewForRoute`**, the route-dispatcher extraction (`944d1ac`). Its stated
+  benefit is structural — AppScreen 638 → 568 lines — and it depends on
+  `savedFilterView` and `scheduledView`, views this branch does not have, so it
+  would drag in a feature to land a refactor. The duplication it targets (the
+  sidebar counts re-deciding what the open route decided) is already avoided
+  here: the count views are built through the same `viewIdOf` and `ownedSource`
+  helpers as the open view, so their keys cannot drift. Revisit if the branches
+  are ever reconciled properly.
+- **`read-handover`'s `position.ts`.** It still carries §3's claim that the
+  SERVER renumbers a crowded view, which §6 item 23 measured as false on 2.5.0.
+  Nothing from it may come back without that correction.
+
+**`read-handover` is NOT deleted.** It still holds browsable saved filters, a
+scheduled view, and 37 commits of reasoning in its messages. Anything wanted
+from it is a port, judged one piece at a time.
+
+**The lesson, which is about this document and not about git:** a handover is
+only true of the branch it sits on. Before trusting §7, run
+`git branch -a` and `git log --oneline main..<each branch>`, and reconcile what
+you find with what this says.
 
 ### D-toast — Undo toasts, and what stays where it is — **DECIDED 2026-09-16**
 
