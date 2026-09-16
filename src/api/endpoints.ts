@@ -386,3 +386,57 @@ export function listTasks(http: Http, params: ListTasksParams = {}): Promise<Tas
     ...(params.signal ? { signal: params.signal } : {}),
   });
 }
+
+/**
+ * The same listing, read through one of a project's views.
+ *
+ * This is the ONLY way to see mapping §3's positions: a task fetched any other
+ * way carries `position` 0, which means nothing. Verified on `pinguino` (§6
+ * item 22): a LIST view answers a bare `Task[]` — the kanban view answers
+ * buckets, a shape `fetchAllPages` cannot walk — already position-ascending,
+ * and it honours `filter`, `expand` and `page`/`per_page`, so every existing
+ * view filter survives the move unchanged.
+ *
+ * `sort_by` is deliberately not sent. The view defines the order; asking for
+ * another one on top of it is asking the two to disagree.
+ */
+export function listViewTasks(
+  http: Http,
+  projectId: number,
+  viewId: number,
+  params: ListTasksParams = {},
+): Promise<Task[]> {
+  const query: RequestOptions["query"] = {};
+  if (params.filter) query.filter = params.filter;
+  if (params.includeNulls) query.filter_include_nulls = "true";
+  if (params.timezone) query.filter_timezone = params.timezone;
+  if (params.expand) query.expand = params.expand;
+
+  return fetchAllPages<Task>(http, `/projects/${projectId}/views/${viewId}/tasks`, {
+    query,
+    ...(params.signal ? { signal: params.signal } : {}),
+  });
+}
+
+/**
+ * Moves a task within one view's order (mapping §3, verified §6 item 22).
+ *
+ * Deliberately NOT routed through `updateTask`. A position is not a column on
+ * the task: it lives in `task_positions`, keyed by `(task, project_view)`, and
+ * the bulk route refuses `fields: ["position"]` outright with a 400 (§6 item
+ * 27). So the `fields` guard and the empty-`fields` wipe that shape every
+ * other write here (§6 items 13 and 17) have nothing to do with this call, and
+ * the two paths must not be consolidated later on the grounds that they both
+ * "update a task".
+ */
+export function setTaskPosition(
+  http: Http,
+  taskId: number,
+  projectViewId: number,
+  position: number,
+): Promise<unknown> {
+  return http.request(`/tasks/${taskId}/position`, {
+    method: "POST",
+    body: { project_view_id: projectViewId, position },
+  });
+}

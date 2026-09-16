@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "../api/types";
-import { compareByDueDateThenId, inboxView, todayView } from "./views";
+import {
+  compareByDueDateThenId,
+  compareByPositionThenId,
+  inboxView,
+  todayView,
+} from "./views";
 
 const TZ = "Europe/Rome";
 const NOW = new Date("2026-09-09T08:00:00Z");
@@ -129,4 +134,75 @@ describe("sub-tasks are not listed on their own", () => {
       expect(view.includes(parent)).toBe(true);
     });
   }
+});
+
+describe("compareByPositionThenId", () => {
+  const at = (id: number, position?: number) =>
+    ({
+      id,
+      title: "t",
+      project_id: 1,
+      ...(position === undefined ? {} : { position }),
+    }) as Task;
+
+  it("orders by the view's position", () => {
+    const sorted = [at(3, 30), at(1, 10), at(2, 20)].sort(compareByPositionThenId);
+    expect(sorted.map((t) => t.id)).toEqual([1, 2, 3]);
+  });
+
+  it("treats 0 as a real position, not as a missing one", () => {
+    // §3: the first task in an empty view gets 0. Reading it as "absent" would
+    // send whichever task happens to be first to the bottom of its own list.
+    const sorted = [at(2, 5), at(1, 0)].sort(compareByPositionThenId);
+    expect(sorted.map((t) => t.id)).toEqual([1, 2]);
+  });
+
+  it("puts a task with no position last", () => {
+    // Not a position of 0: the incremental poll reads through a flat GET,
+    // where §3 says the field means nothing, so reconcile.ts drops it. Such a
+    // task waits at the bottom until the next full fetch places it properly.
+    const sorted = [at(2), at(1, 900_000)].sort(compareByPositionThenId);
+    expect(sorted.map((t) => t.id)).toEqual([1, 2]);
+  });
+
+  it("falls back to id when two tasks share a position", () => {
+    const sorted = [at(9, 4), at(4, 4)].sort(compareByPositionThenId);
+    expect(sorted.map((t) => t.id)).toEqual([4, 9]);
+  });
+
+  it("keeps positionless tasks in id order among themselves", () => {
+    const sorted = [at(8), at(2)].sort(compareByPositionThenId);
+    expect(sorted.map((t) => t.id)).toEqual([2, 8]);
+  });
+});
+
+describe("a view that knows its Vikunja view", () => {
+  it("orders by position and says where the order lives", () => {
+    const view = inboxView(7, 5);
+    expect(view.positionSource).toEqual({ projectId: 7, viewId: 5 });
+    expect(view.compare).toBe(compareByPositionThenId);
+  });
+
+  it("keys separately from the same view read the flat way", () => {
+    // The two read different endpoints and produce differently ORDERED
+    // arrays; sharing a cache entry would render one through the other for as
+    // long as it took the view id to resolve.
+    expect(inboxView(7, 5).key).not.toBe(inboxView(7).key);
+  });
+
+  it("falls back to the due-date order when no view could be resolved", () => {
+    const view = inboxView(7);
+    expect(view.positionSource).toBeUndefined();
+    expect(view.compare).toBe(compareByDueDateThenId);
+  });
+
+  it("still excludes sub-tasks, and belongs still implies includes", () => {
+    const view = inboxView(7, 5);
+    const child = task({
+      project_id: 7,
+      related_tasks: { parenttask: [{ id: 2, title: "p" }] },
+    } as Partial<Task>);
+    expect(view.includes(child)).toBe(false);
+    expect(view.belongs(child, new Date(), "Europe/Rome")).toBe(false);
+  });
 });

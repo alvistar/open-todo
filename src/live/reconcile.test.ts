@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Task } from "../api/types";
-import { diffDeleted, latestUpdated, mergeUpserts } from "./reconcile";
+import { carryViewPosition, diffDeleted, latestUpdated, mergeUpserts } from "./reconcile";
 
 const task = (id: number, over: Partial<Task> = {}): Task =>
   ({
@@ -86,5 +86,77 @@ describe("latestUpdated", () => {
 
   it("ignores unparseable timestamps", () => {
     expect(latestUpdated([task(1, { updated: "nonsense" })])).toBeNull();
+  });
+});
+
+describe("carryViewPosition", () => {
+  /*
+   * The incremental poll is deliberately a flat `GET /tasks` (useLiveSource
+   * explains why), and mapping §3 says a task read that way has no meaningful
+   * position - the server sends 0. Taking the server's copy wholesale, which
+   * is mergeUpserts' normal contract, would therefore drop every edited task
+   * to position 0 and send it to the top of a manually ordered list.
+   */
+
+  it("keeps the position we read through the view", () => {
+    const existing = task(1, { position: 4096 });
+    const incoming = task(1, { title: "renamed", position: 0 });
+    const merged = carryViewPosition(existing, incoming);
+    expect(merged.position).toBe(4096);
+    expect(merged.title).toBe("renamed");
+  });
+
+  it("keeps it when the flat copy omits the field entirely", () => {
+    expect(carryViewPosition(task(1, { position: 4096 }), task(1)).position).toBe(4096);
+  });
+
+  it("does not resurrect a position for a task we have never placed", () => {
+    // Undefined, not 0: 0 is a real position (§3 gives it to the first task in
+    // an empty view), so writing 0 here would claim the top of the list. The
+    // comparator sorts an undefined position last, which is where a task we
+    // cannot place belongs until the next full fetch says otherwise.
+    const merged = carryViewPosition(undefined, task(9, { position: 0 }));
+    expect(merged.position).toBeUndefined();
+  });
+
+  it("still takes every other field from the server", () => {
+    const merged = carryViewPosition(
+      task(1, { position: 10, title: "old", done: false }),
+      task(1, { position: 0, title: "new", done: true }),
+    );
+    expect(merged).toMatchObject({ title: "new", done: true, position: 10 });
+  });
+
+  it("does not mutate either input", () => {
+    const existing = task(1, { position: 10 });
+    const incoming = task(1, { position: 0 });
+    carryViewPosition(existing, incoming);
+    expect(existing.position).toBe(10);
+    expect(incoming.position).toBe(0);
+  });
+
+  it("believes a non-zero position the incoming copy actually carries", () => {
+    // A full fetch goes through the view endpoint, so its positions are real
+    // and must win - otherwise the app could never learn about a reorder made
+    // on another device.
+    expect(
+      carryViewPosition(task(1, { position: 10 }), task(1, { position: 20 })).position,
+    ).toBe(20);
+  });
+});
+
+describe("mergeUpserts with an adopt hook", () => {
+  it("routes both the known and the unknown case through it", () => {
+    const current = [task(1, { position: 5 })];
+    const merged = mergeUpserts(
+      current,
+      [task(1, { position: 0 }), task(2, { position: 0 })],
+      () => true,
+      carryViewPosition,
+    );
+    expect(merged.map((t) => [t.id, t.position])).toEqual([
+      [1, 5],
+      [2, undefined],
+    ]);
   });
 });

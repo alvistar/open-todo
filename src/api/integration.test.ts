@@ -10,7 +10,8 @@
  * It only reads. Nothing here writes to the instance.
  */
 import { describe, expect, it } from "vitest";
-import { getInfo, getUser, listProjects, listTasks } from "./endpoints";
+import { listViewId } from "../model/projectViews";
+import { getInfo, getUser, listProjects, listTasks, listViewTasks } from "./endpoints";
 import { and, dueBeforeTomorrow, notDone, updatedSince } from "./filter";
 import { createHttp } from "./http";
 import type { ProjectView, Task } from "./types";
@@ -280,5 +281,28 @@ describe.skipIf(!enabled)("live Vikunja instance (read-only)", () => {
         );
       }
     }
+  });
+
+  it("reads a view through the client's own paging walk", async () => {
+    // The probes above use raw http to measure the ROUTE; this one exercises
+    // listViewTasks, so a change to the paging walk or the query mapping is
+    // caught against a real server rather than against a mock of one.
+    const projects = await listProjects(http);
+    const inbox = projects.find((p) => p.id === 1);
+    const viewId = listViewId(inbox);
+    expect(viewId).not.toBeNull();
+    if (viewId === null) return;
+
+    const tasks = await listViewTasks(http, 1, viewId, {
+      filter: notDone(),
+      expand: "comment_count",
+    });
+    expect(Array.isArray(tasks)).toBe(true);
+    for (const task of tasks) expect(typeof task.position).toBe("number");
+    const ascending = tasks.every(
+      (t, i) => i === 0 || (tasks[i - 1]?.position ?? 0) <= (t.position ?? 0),
+    );
+    expect(ascending).toBe(true);
+    console.log(`  listViewTasks: ${tasks.length} tasks, ascending: ${ascending}`);
   });
 });

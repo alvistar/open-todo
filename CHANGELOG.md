@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Inbox and project lists now show the order you arranged in Vikunja**,
+  instead of sorting by due date. Vikunja stores a manual order per list, and
+  open-todo was never reading it — every list was re-sorted by date on arrival
+  and again on every background refresh. It now reads the list through
+  Vikunja's own list view, which is the only way that order is visible, and
+  keeps it across refreshes. Editing a task somewhere else no longer moves it
+  to the top of a list you had arranged by hand.
+  - Today and Upcoming are unchanged for now: they are filters rather than
+    lists, and keep their due-date order.
+  - A task that appears between full refreshes — created on your phone, say —
+    waits at the bottom until the next refresh places it, rather than guessing
+    at a position and jumping once it learns the real one.
+
 ### Added
 - **You can open a task.** Enter on a focused row, or a click, opens the detail
   at the geometry measured in `docs/layout-specs.md` §4: the project it belongs

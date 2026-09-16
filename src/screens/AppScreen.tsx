@@ -7,6 +7,7 @@ import { dueDateFromPhrase } from "../model/duePhrase";
 import { groupTasksForView } from "../model/grouping";
 import { isRealProject, resolveInboxProjectId, sidebarProjects } from "../model/inbox";
 import { applyPending } from "../model/pending";
+import { listViewId } from "../model/projectViews";
 import { type Decision, withDecisions } from "../model/quickadd/decisions";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
 import { type RowContext, toTaskRow } from "../model/taskRow";
@@ -68,24 +69,44 @@ export function AppScreen() {
   const inboxProjectId = resolveInboxProjectId(userQuery.data, projectsQuery.data);
   const projects = sidebarProjects(projectsQuery.data, inboxProjectId);
 
+  /*
+   * The list view whose order a project shows (§3). `GET /projects` carries
+   * its views inline (§6 item 25), so this is a lookup, not a request - but it
+   * is only available once the projects query has answered, and a view built
+   * without it keys and orders differently. That is why the key carries the
+   * view id: the two spellings must not share a cache entry, or the flat
+   * listing's due-date order would render for as long as the id took to
+   * resolve and then rearrange itself under the reader.
+   */
+  const viewIdOf = useCallback(
+    (projectId: number): number | undefined =>
+      listViewId(projectsQuery.data?.find((p) => p.id === projectId)) ?? undefined,
+    [projectsQuery.data],
+  );
+
   const view: ViewDef | null = useMemo(() => {
     const projectId = projectIdFromRoute(route);
     if (projectId !== null) {
       const project = projectsQuery.data?.find((p) => p.id === projectId);
-      return projectView(projectId, project?.title ?? "Project");
+      return projectView(projectId, project?.title ?? "Project", viewIdOf(projectId));
     }
     if (route === "inbox") {
-      return inboxProjectId === null ? null : inboxView(inboxProjectId);
+      return inboxProjectId === null
+        ? null
+        : inboxView(inboxProjectId, viewIdOf(inboxProjectId));
     }
     return todayView();
-  }, [route, inboxProjectId, projectsQuery.data]);
+  }, [route, inboxProjectId, projectsQuery.data, viewIdOf]);
 
   // The sidebar shows Inbox and Today counts regardless of the open view.
   // Both queries key off ViewDef.key, so when one of them *is* the open view
   // TanStack serves a single request rather than two.
   const inboxCountView = useMemo(
-    () => (inboxProjectId === null ? null : inboxView(inboxProjectId)),
-    [inboxProjectId],
+    () =>
+      inboxProjectId === null
+        ? null
+        : inboxView(inboxProjectId, viewIdOf(inboxProjectId)),
+    [inboxProjectId, viewIdOf],
   );
   const todayCountView = useMemo(() => todayView(), []);
   const inboxTasksQuery = useViewTasks(inboxCountView, timeZone);

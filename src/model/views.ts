@@ -18,6 +18,20 @@ function hasNoParent(task: Task): boolean {
   return (task.related_tasks?.parenttask?.length ?? 0) === 0;
 }
 
+/**
+ * Where a view's manual order is stored: the `(project, project_view)` pair
+ * that mapping §3's positions hang off.
+ *
+ * `projectId` is not always a project. A saved filter arrives in
+ * `GET /projects` under a negative id (§6 item 15) and its views take position
+ * writes like any other (§6 item 24), which is the only reason Today can be
+ * ordered by hand at all.
+ */
+export interface PositionSource {
+  projectId: number;
+  viewId: number;
+}
+
 export interface ViewDef {
   key: string;
   title: string;
@@ -42,6 +56,19 @@ export interface ViewDef {
   belongs: (task: Task, now: Date, timeZone: string) => boolean;
   /** Show the project name on each row (false for a single-project view). */
   showProject: boolean;
+  /**
+   * Set when the view is read through a view endpoint and can therefore be
+   * reordered. Absent means the list is read the flat way, ordered by due
+   * date, and offers no drag handle — a missing affordance rather than one
+   * that quietly fails to persist.
+   */
+  positionSource?: PositionSource;
+  /**
+   * How the cached array is ordered after an incremental merge. Explicit
+   * because it now differs per view: the poll used to re-sort everything by
+   * due date, which would undo a manual order within one tick.
+   */
+  compare: (a: Task, b: Task) => number;
 }
 
 const taskCount = (n: number) => `${n} ${n === 1 ? "task" : "tasks"}`;
@@ -61,9 +88,36 @@ export function compareByDueDateThenId(a: Task, b: Task): number {
   return a.id - b.id;
 }
 
-export function inboxView(projectId: number): ViewDef {
+/**
+ * Orders a list the way the user arranged it (mapping §3).
+ *
+ * `position` 0 and `position` undefined are deliberately NOT the same thing.
+ * 0 is a real position — §3 gives it to the first task in an empty view — while
+ * undefined means the task has only ever been seen through a flat `GET /tasks`,
+ * where the field is meaningless. Conflating them would send whichever task
+ * legitimately sits at 0 to the bottom of its own list, or float every
+ * poll-merged task to the top.
+ */
+export function compareByPositionThenId(a: Task, b: Task): number {
+  const ap = a.position ?? Number.POSITIVE_INFINITY;
+  const bp = b.position ?? Number.POSITIVE_INFINITY;
+  if (ap !== bp) return ap - bp;
+  return a.id - b.id;
+}
+
+/**
+ * The Inbox, or any single project.
+ *
+ * `viewId` is the project's LIST view (§3). With it the tasks are read through
+ * that view, carry its positions and can be reordered; without it nothing
+ * changes from before. The two cases key separately on purpose: they read
+ * different endpoints and produce differently ordered arrays, so sharing a
+ * cache entry would render one through the other for as long as the view id
+ * took to resolve.
+ */
+export function inboxView(projectId: number, viewId?: number): ViewDef {
   return {
-    key: `inbox:${projectId}`,
+    key: viewId === undefined ? `inbox:${projectId}` : `inbox:${projectId}@v${viewId}`,
     title: "Inbox",
     subtitleFor: taskCount,
     filter: and(notDone(), projectIs(projectId)),
@@ -74,13 +128,20 @@ export function inboxView(projectId: number): ViewDef {
     includes: hasNoParent,
     belongs: (task) => hasNoParent(task) && !task.done && task.project_id === projectId,
     showProject: false,
+    ...(viewId === undefined
+      ? { compare: compareByDueDateThenId }
+      : {
+          positionSource: { projectId, viewId },
+          compare: compareByPositionThenId,
+        }),
   };
 }
 
-export function projectView(projectId: number, title: string): ViewDef {
+export function projectView(projectId: number, title: string, viewId?: number): ViewDef {
   return {
-    ...inboxView(projectId),
-    key: `project:${projectId}`,
+    ...inboxView(projectId, viewId),
+    key:
+      viewId === undefined ? `project:${projectId}` : `project:${projectId}@v${viewId}`,
     title,
   };
 }
@@ -108,5 +169,6 @@ export function todayView(): ViewDef {
       return dayDifference(now, due, timeZone) <= 0;
     },
     showProject: true,
+    compare: compareByDueDateThenId,
   };
 }
