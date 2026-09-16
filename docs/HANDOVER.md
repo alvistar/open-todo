@@ -591,9 +591,23 @@ twice). Three of the four look like genuine repeats and now take one click. That
 is the trade — a click on the common case buys the removal of a silent wrong
 answer on the uncommon one.
 
-Not taken, and worth revisiting because it is cheap to measure against the
-4325-phrase corpus: the **billing-participle veto**. If it holds up it reduces
-how often the offer fires; it does not replace it.
+Not taken — and **CLOSED by the owner on 2026-09-16**: leave it as it is.
+
+The reasoning, recorded so nobody reopens it on the strength of "it is cheap to
+measure". It was worth considering while a bare adverb was APPLIED, because
+then a missing veto wrote a false recurrence silently. Since this decision the
+adverb is only ever offered as a chip, so the veto no longer has to be right —
+it would decide nothing except whether the chip appears. Getting it wrong costs
+a chip you add by hand; omitting it costs a chip you ignore. Against that, the
+rule is wrong in both directions (it loses `get paid monthly`, it misses
+`cancel membership renewed monthly`), and a rule that is wrong in a way nobody
+notices is the defect shape this repo has now hit three times: F8 itself, the
+stale `TODO(F3/F5/F6)` comments, and a green 738-record corpus that covered
+none of the phrases it was trusted for.
+
+If it is ever reconsidered, measure FIRST: count how often the chip fires across
+the 4325-phrase corpus. If the answer is a handful, the veto has nothing to win
+and the question closes with a number instead of an opinion.
 
 One convention outlived its file. `known-defects.test.ts` pinned a defect as a
 test that PASSES while asserting the wrong behaviour, so that a refactor could
@@ -1079,10 +1093,12 @@ public HTTP API only, which carries no such obligation.
          no delete-comment route in the client at all; removing only the
          relation would leave an orphan task invisible from that screen.
          These belong to the delete slice, not to this one.
-    4. **The participle veto left open by D-adverb** — no rule separates
-       `disdire il servizio pagato mensilmente` from `controllare il saldo
-       mensilmente`. The decision was to offer, not apply; the veto stays open,
-       and it is cheap to measure against the 4325-phrase corpus.
+    4. ~~**The participle veto left open by D-adverb**~~ — **closed by the
+       owner 2026-09-16: leave it as it is.** Since the adverb is offered
+       rather than applied, the veto would decide only whether a chip appears
+       on an uncommon line, while being wrong in both directions. Full
+       reasoning in D-adverb (§4), including what to measure first if anyone
+       reconsiders.
     5. ~~**F7**~~ — measured closed 2026-09-16: `corri ogni 1,5 km` matches no
        recurrence and raises no warning. The later rule about what may follow a
        complete schedule closed it; nobody had re-measured. Mapping §5 updated.
