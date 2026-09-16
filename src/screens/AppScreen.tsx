@@ -15,6 +15,7 @@ import { titleEdit } from "../model/titleEdit";
 import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
+import { useReorderTask } from "../queries/useReorderTask";
 import {
   useAddSubtask,
   useCreateComment,
@@ -114,8 +115,17 @@ export function AppScreen() {
 
   const tasksQuery = useViewTasks(view, timeZone);
 
+  const reordering = useReorderTask(view);
+
   // Live refresh for the open view (D6): polls while visible, wakes on focus.
-  useLiveSource({ view, timeZone, enabled: !tasksQuery.isPending });
+  useLiveSource({
+    view,
+    timeZone,
+    enabled: !tasksQuery.isPending,
+    // A poll tick landing mid-move would put the row back where it was
+    // dragged from, which reads as the move having been refused.
+    apply: () => !reordering.isMoving(),
+  });
 
   const completing = useCompleteTask({ timeZone, defaultDueTime });
   const editing = useUpdateTask();
@@ -372,6 +382,8 @@ export function AppScreen() {
         }}
         onUndo={(row) => completing.undo(row.id)}
         onOpenTask={(row) => setOpenTaskId(row.id)}
+        reorderable={reordering.reorderable}
+        onReorder={reordering.reorder}
         footer={
           composerOpen ? (
             <QuickAdd
@@ -393,6 +405,7 @@ export function AppScreen() {
         }
       />
       {error ? <p className={styles.error}>{error.message}</p> : null}
+      {reordering.error ? <p className={styles.error}>{reordering.error}</p> : null}
       {openTask ? (
         <TaskDetail
           task={openTask}

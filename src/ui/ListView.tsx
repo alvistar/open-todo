@@ -19,6 +19,18 @@ export interface ListViewProps {
   onToggleDone?: (task: TaskRowModel) => void;
   onUndo?: (task: TaskRowModel) => void;
   onOpenTask?: (task: TaskRowModel) => void;
+  /**
+   * Put `taskId` where `overId` currently sits. Ids rather than indices,
+   * because the rendered list is not the array the order is computed against
+   * — and because it is dnd-kit's own `active`/`over` pair.
+   */
+  onReorder?: (taskId: number, overId: number) => void;
+  /**
+   * Whether this list has an order that can be written (mapping §3). False
+   * means no handle and no binding — a list that cannot keep an arrangement
+   * must not appear to offer one.
+   */
+  reorderable?: boolean;
   /** Rendered above the sections (view header lives outside the scroll area). */
   header?: React.ReactNode;
 }
@@ -29,6 +41,8 @@ export function ListView({
   onToggleDone,
   onUndo,
   onOpenTask,
+  onReorder,
+  reorderable = false,
   header,
   footer,
 }: ListViewProps) {
@@ -70,6 +84,32 @@ export function ListView({
    * "u" would undo while you were spelling "usare".
    */
   const rowKeyDown = (task: TaskRowModel) => (event: React.KeyboardEvent) => {
+    /*
+     * Alt+Arrow moves the ROW, and has to be read before the modifier
+     * bail-out below rather than inside the switch.
+     *
+     * Alt because the alternatives are taken: Cmd+Arrow is scroll-to-end on
+     * macOS and Ctrl+Arrow switches Spaces. It shares its handler with the
+     * drop gesture that arrives with dnd-kit, and unlike that gesture it can
+     * be driven in jsdom, which is why the contract is pinned here.
+     */
+    if (event.altKey && !event.metaKey && !event.ctrlKey) {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      if (!reorderable || !onReorder) return;
+      const from = order.indexOf(task.id);
+      const to = from + (event.key === "ArrowDown" ? 1 : -1);
+      if (from < 0 || to < 0 || to >= order.length) return;
+      const over = order[to];
+      if (over === undefined) return;
+      event.preventDefault();
+      // The focus is not moved: the row keeps its React key, so the DOM node
+      // travels with it and the focus goes along. Moving `active` as well
+      // would be describing the same thing twice, in two places that can
+      // disagree.
+      onReorder(task.id, over);
+      return;
+    }
+
     if (event.metaKey || event.ctrlKey || event.altKey) return;
 
     /*

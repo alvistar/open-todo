@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     at a position and jumping once it learns the real one.
 
 ### Added
+- **You can move a task up or down a list, and it stays there.** Focus a row
+  and press **Alt+↑ / Alt+↓**: the row moves immediately, and the new order is
+  written to Vikunja, so it is the same order in Vikunja's own interface and in
+  Veyrn. If the write fails the row goes back where it was and says why.
+  - Only where there is an order to keep: Inbox and project lists. Today and
+    Upcoming are filters, not lists, so they offer nothing — rather than
+    offering a move that would not survive a refresh.
+  - Dragging with the mouse comes next; this is the same move, from the
+    keyboard, and both will write the same thing.
+
 - **You can open a task.** Enter on a focused row, or a click, opens the detail
   at the geometry measured in `docs/layout-specs.md` §4: the project it belongs
   to, its description, its sub-tasks, and its date, priority, labels and

@@ -10,6 +10,16 @@ import { createPollingSource } from "./PollingSource";
 import { carryViewPosition, mergeUpserts } from "./reconcile";
 
 export interface UseLiveSourceOptions {
+  /**
+   * Asked before every event is applied. False means "leave the list alone" —
+   * a reorder is on the wire, and a poll landing mid-write would show the
+   * pre-move order for as long as it took the next tick to correct it, which
+   * reads as the drag having been refused.
+   *
+   * Read through a ref inside the subscription, so changing it does not tear
+   * down and restart the poller on every gesture.
+   */
+  apply?: () => boolean;
   view: ViewDef | null;
   timeZone: string;
   enabled?: boolean;
@@ -27,11 +37,14 @@ export function useLiveSource({
   timeZone,
   enabled = true,
   onError,
+  apply,
 }: UseLiveSourceOptions): void {
   const queryClient = useQueryClient();
   // Read through a ref so changing the callback does not restart polling.
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
 
   const viewKey = view?.key ?? null;
 
@@ -90,6 +103,11 @@ export function useLiveSource({
     });
 
     const unsubscribe = source.subscribe((event) => {
+      // Dropped, not queued: the next tick fetches again in at most one
+      // interval, and a queued event would land after the write it was
+      // supposed to lose to.
+      if (applyRef.current?.() === false) return;
+
       if (event.type === "reset") {
         /*
          * The poller only follows the OPEN view, but the sidebar's Inbox and

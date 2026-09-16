@@ -172,3 +172,90 @@ describe("the composer shares this container", () => {
     expect(onToggleDone).not.toHaveBeenCalled();
   });
 });
+
+/*
+ * D4 step 3, the keyboard half. The gesture arrives with dnd-kit, but the
+ * binding lands first: it is the one path that works in jsdom, so it is what
+ * pins the contract the drop handler will share.
+ */
+describe("Alt+Arrow moves a row", () => {
+  const flat = (...tasks: TaskRowModel[]): TaskSection[] => [{ key: "a", tasks }];
+
+  it("asks to move the focused row down", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).toHaveBeenCalledWith(2, 3);
+  });
+
+  it("asks to move it up", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[2] as HTMLElement, { key: "ArrowUp", altKey: true });
+    expect(onReorder).toHaveBeenCalledWith(3, 2);
+  });
+
+  it("does nothing at the ends", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView sections={flat(row(1), row(2))} reorderable onReorder={onReorder} />,
+    );
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowUp", altKey: true });
+    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("stays silent on a list with no order to write to", () => {
+    // Nothing is painted that cannot be honoured: a view without a position
+    // space gets no handle, and its keyboard equivalent must agree.
+    const onReorder = vi.fn();
+    render(<ListView sections={flat(row(1), row(2))} onReorder={onReorder} />);
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("leaves the plain arrows moving the focus and nothing else", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowDown" });
+    expect(onReorder).not.toHaveBeenCalled();
+    expect(rowsOf()[1]).toHaveFocus();
+  });
+
+  it("does not move a row when Alt arrives with another modifier", () => {
+    // Alt+Cmd+Arrow is a window-manager gesture on more than one desktop; a
+    // list that reorders underneath one would be reordering by accident.
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, {
+      key: "ArrowDown",
+      altKey: true,
+      metaKey: true,
+    });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+});

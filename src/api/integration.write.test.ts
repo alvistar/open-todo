@@ -21,6 +21,7 @@
  * It cleans up after itself: every task it creates is deleted at the end.
  */
 import { afterAll, describe, expect, it } from "vitest";
+import { positionForMove } from "../model/position";
 import {
   addLabel,
   addSubtask,
@@ -33,7 +34,9 @@ import {
   getUser,
   listComments,
   listProjects,
+  listViewTasks,
   removeLabel,
+  setTaskPosition,
   updateReminders,
   updateTask,
 } from "./endpoints";
@@ -640,6 +643,48 @@ describe.skipIf(!enabled)("live Vikunja instance (writes)", () => {
     } catch (error) {
       const status = (error as { status?: number }).status;
       console.log(`  bulk fields:["position"] rejected (status ${status}) - as expected`);
+    }
+  });
+
+  it("the app's own move arithmetic lands where it says it will", {
+    timeout: 30_000,
+  }, async () => {
+    /*
+     * The probes above measure the ROUTE. This one runs the code the app
+     * actually runs - positionForMove, then setTaskPosition, then a read back
+     * through listViewTasks - so the arithmetic is checked against a real
+     * server instead of against the reading of §3 it was written from.
+     *
+     * It walks a task from the bottom to the top one step at a time, which is
+     * the case where taking neighbours BEFORE lifting the task out would look
+     * right and be wrong.
+     */
+    const { project, listViewId } = await scratchProject("arithmetic");
+    for (const title of ["a", "b", "c", "d"]) {
+      const task = await createTask(http, project.id, {
+        title: `open-todo position probe: ${title}`,
+      });
+      created.push(task.id);
+    }
+
+    let tasks = await listViewTasks(http, project.id, listViewId, {});
+    expect(tasks.length).toBe(4);
+    const walker = tasks[3];
+    expect(walker).toBeDefined();
+    if (!walker) return;
+
+    for (let target = 2; target >= 0; target -= 1) {
+      const from = tasks.findIndex((t) => t.id === walker.id);
+      const move = positionForMove(tasks, from, target);
+      expect(move).not.toBeNull();
+      if (!move) return;
+      await setTaskPosition(http, move.taskId, listViewId, move.position);
+
+      tasks = await listViewTasks(http, project.id, listViewId, {});
+      expect(tasks.findIndex((t) => t.id === walker.id)).toBe(target);
+      // And the server stored what we computed, which is the half of §3 that
+      // turned out not to hold the way it was written (§6 item 23).
+      expect(tasks[target]?.position).toBeCloseTo(move.position, 6);
     }
   });
 });
