@@ -66,7 +66,7 @@ export function groupTasksForView(
   tasks: Task[],
   context: Pick<RowContext, "now" | "timeZone">,
 ): TaskGroup[] {
-  if (view.key === "today") {
+  if (view.grouping === "dueDay") {
     return groupToday(tasks, context.now, context.timeZone);
   }
   return [{ key: view.key, tasks }];

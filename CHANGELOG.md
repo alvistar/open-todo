@@ -15,8 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Vikunja's own list view, which is the only way that order is visible, and
   keeps it across refreshes. Editing a task somewhere else no longer moves it
   to the top of a list you had arranged by hand.
-  - Today and Upcoming are unchanged for now: they are filters rather than
-    lists, and keep their due-date order.
   - A task that appears between full refreshes — created on your phone, say —
     waits at the bottom until the next refresh places it, rather than guessing
     at a position and jumping once it learns the real one.
@@ -29,9 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the write fails the row goes back where it was and says why.
   - On a touch screen the handle is visible at rest rather than on hover, since
     there is no hover to reveal it with.
-  - Only where there is an order to keep: Inbox and project lists. Today and
-    Upcoming are filters, not lists, so they offer nothing — rather than
-    offering a move that would not survive a refresh.
+  - **Today can be arranged by hand too**, if your Vikunja has a saved filter
+    called "Today" asking the same question open-todo does. Vikunja keeps an
+    order per list, and a filter is the only kind of list a query can have; the
+    filter's own query is read and compared first, so a filter someone else
+    wrote is never adopted silently. Without one, Today keeps its due-date
+    order and shows no handle. open-todo does not create the filter for you.
+  - A row moves within its own section. Dragging from "Overdue" into today
+    would be a change of DATE, not of order, so it is refused rather than
+    quietly doing nothing.
+  - Upcoming is unchanged.
 
 - **You can open a task.** Enter on a focused row, or a click, opens the detail
   at the geometry measured in `docs/layout-specs.md` §4: the project it belongs

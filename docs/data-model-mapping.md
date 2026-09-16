@@ -91,10 +91,18 @@ Consequences for open-todo:
 | Today | Saved filter `done = false && due_date < now/d+1d` with **one list view** | Grouping into "Scadute" / today is client-side (`due_date < now/d`). Persisted manual order via the filter view's positions. `now/d` date-math verified (§6 item 4). |
 | Upcoming | Saved filter `done = false && due_date > now/d` grouped by day client-side | Drag between days = due-date change, not a position write. |
 
-**Status in the foundation slice:** Today is issued as an *ad-hoc*
-`GET /tasks?filter=…`, not as a SavedFilter. That is enough for a read-only
-view, but the saved filter and its view must exist before D4 step 3 — the
-per-view `position` that makes a manually ordered Today persist lives on it.
+**Status after D4 step 3 (2026-09-16):** Today reads through the saved
+filter's list view when the instance has a filter titled `Today` whose query
+matches ours, and is ordered by hand there. `pinguino` already had one, written
+by someone other than us, and its query turned out to be identical (§6 item
+26) — so the query is CHECKED rather than assumed: a filter produces the task
+list, and adopting one written elsewhere would silently change what the screen
+shows. With no matching filter, Today falls back to the ad-hoc
+`GET /tasks?filter=…` and due-date order, and simply shows no drag handle.
+
+Open-todo does **not** create the filter. Doing so would put an object in the
+user's Vikunja that Veyrn and the web UI both see, on the strength of them
+having opened a screen.
 | Project list / board | The project's `list` / `kanban` view | Board columns = buckets. |
 | Custom filter (`p1 & #Work`, `today \| overdue`) | `SavedFilter.filters.filter` in Vikunja syntax (`priority = 4 && project = 12`) | **No automatic translation** of Todoist query strings; open-todo's filter editor speaks Vikunja syntax, with a picker UI on top. |
 | Labels view (`@label`) | `GET /tasks?filter=labels in [id]` | |
@@ -323,6 +331,8 @@ owner's `vja` config is client-side only.
 | 26 | The existing `Today` saved filter is already ours | **Verified against `pinguino` 2026-09-16.** `/filters/9` (`Today`, project -10) carries the query `done = false && due_date < now/d+1d`, which is character-for-character what `todayView().filter` builds from `and(notDone(), dueBeforeTomorrow())`. `Upcoming` (`/filters/8`, project -9) is `done = false && due_date >= now/d+1d`. So adopting the existing filter for a position-ordered Today changes nothing about what the screen shows — the adoption question §4 raised is settled by measurement, not by policy. |
 | 27 | The bulk route refuses a position | **Verified against `pinguino` 2026-09-16.** `POST /tasks/bulk` with `fields: ["position"]` answers **400**. Positions live in `task_positions`, not on the task row, so there is exactly one write path and no second one to consolidate it with later. |
 | 28 | A new task is created at the TOP of a list view | **Measured against `pinguino` 2026-09-16.** Three tasks created in order into a fresh project came back from its list view as `three=16384, two=32768, one=65536` — ascending position, newest first. Worth stating because open-todo's incremental poll does the opposite: a task it has never seen through a view carries no position and sorts **last** until the next full fetch (~100 s) puts it where the server has it. |
+| 29 | A saved filter's query is readable one at a time, or not at all | **Verified against `pinguino` 2026-09-16.** `GET /filters` answers **405 Method Not Allowed**; `GET /filters/{id}` returns the filter with `filters.filter` carrying the query string. Since `GET /projects` gives saved filters a **null** `filter` (§6 item 15), reading the query costs one request per filter — which is worth paying, because the query is what produces the task list, so adopting a filter unread would be adopting a screen whose contents nobody checked. |
+| 30 | The saved-filter view shows exactly what the ad-hoc Today shows | **Verified against `pinguino` 2026-09-16.** `GET /projects/-10/views/42/tasks` and the ad-hoc `GET /tasks?filter=done = false && due_date < now/d+1d` returned the **same 9 task ids**, and the view's tasks carry real positions. So moving Today onto the saved filter changes where its ORDER lives and nothing about its contents — measured, not argued. Still unresolved, and no worse than before: `filter_timezone` against the filter view gave identical results for `Europe/Rome` and `Pacific/Auckland`, which is the same inconclusive answer §6 item 7 got, because the data does not straddle the boundary. Re-run near local midnight. |
 | — | Default project for sigil-less quick-add | **Verified.** `GET /user` → `settings.default_project_id = 1` ("Inbox"). |
 | 7 | `filter_timezone` and `filter_include_nulls` | **Verified on `pinguino` 2026-09-09: `filter_timezone` is honoured.** The same Today filter returned 13 tasks with `Europe/Rome` and 15 with `Pacific/Auckland`, so the server really does evaluate `now/d` in the supplied zone. |
 | 8 | Do subtask relations carry `done`? | **Verified on `pinguino` 2026-09-09: yes.** All 18 subtask relations returned a boolean `done`, so the "0 / 3" badge is correct even though completed children are excluded by the view's `done = false` filter. Item 2's "children are themselves in the listing" does not hold under that filter, but it does not need to: the relation object carries the flag. Also of note, `related_tasks` was present on 49 of 49 open tasks. |

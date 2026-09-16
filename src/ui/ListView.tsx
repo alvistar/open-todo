@@ -161,6 +161,30 @@ export function ListView({
    * handler up here would also see every keystroke typed into a task name, so
    * "u" would undo while you were spelling "usare".
    */
+  /*
+   * Which section a row is in.
+   *
+   * Sections and order are two different things once a list is position
+   * ordered: Today's "Overdue" and "16 Sept" come from each task's DUE DATE,
+   * while the order comes from its position. So a section's rows are NOT
+   * contiguous in the position space, and a move across the boundary would
+   * write a perfectly correct position and then render the row straight back
+   * where it came from, because its date has not changed - a gesture that
+   * visibly does nothing.
+   *
+   * Crossing that boundary means "reschedule", which is a different and
+   * destructive intent nobody expressed by dragging. So it is refused.
+   */
+  const sectionOf = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const section of sections) {
+      for (const task of section.tasks) map.set(task.id, section.key);
+    }
+    return map;
+  }, [sections]);
+  const sameSection = (a: number, b: number) =>
+    sectionOf.get(a) !== undefined && sectionOf.get(a) === sectionOf.get(b);
+
   const sensors = useSensors(
     // A few pixels of travel before a drag starts, so a click that wobbles
     // still opens the task rather than picking it up.
@@ -171,6 +195,7 @@ export function ListView({
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+    if (!sameSection(Number(active.id), Number(over.id))) return;
     onReorder?.(Number(active.id), Number(over.id));
   };
 
@@ -192,6 +217,7 @@ export function ListView({
       if (from < 0 || to < 0 || to >= order.length) return;
       const over = order[to];
       if (over === undefined) return;
+      if (!sameSection(task.id, over)) return;
       event.preventDefault();
       // The focus is not moved: the row keeps its React key, so the DOM node
       // travels with it and the focus goes along. Moving `active` as well

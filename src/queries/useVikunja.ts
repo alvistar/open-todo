@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { http } from "../api/client";
 import {
   getInfo,
+  getSavedFilter,
   getUser,
   listComments,
   listLabels,
@@ -42,6 +43,22 @@ export function useLabels() {
   return useQuery({
     queryKey: queryKeys.labels,
     queryFn: ({ signal }) => listLabels(http, signal),
+  });
+}
+
+/**
+ * One saved filter's query, so a filter is never adopted unread.
+ *
+ * `staleTime: Infinity` because a filter's query is edited in Vikunja's own UI
+ * and effectively never during a session here; refetching it on a schedule
+ * would be a request per view change to learn nothing.
+ */
+export function useSavedFilter(filterId: number | null) {
+  return useQuery({
+    queryKey: queryKeys.savedFilter(filterId ?? 0),
+    enabled: filterId !== null,
+    staleTime: Number.POSITIVE_INFINITY,
+    queryFn: ({ signal }) => getSavedFilter(http, filterId as number, signal),
   });
 }
 

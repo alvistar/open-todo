@@ -299,3 +299,38 @@ describe("the drag handle", () => {
     expect(onOpenTask).not.toHaveBeenCalled();
   });
 });
+
+describe("a move stays inside its section", () => {
+  it("refuses to step across a section boundary", () => {
+    /*
+     * `sections()` puts rows 1-2 in section "a" and the rest in "b". In Today
+     * those are Overdue and today, cut by due date while the order comes from
+     * position — so the row would land correctly in the position space and
+     * render back where it started, its date being unchanged. Crossing means
+     * reschedule, which is not what a drag asked for.
+     */
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={sections(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[1] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("still moves within one", () => {
+    const onReorder = vi.fn();
+    render(
+      <ListView
+        sections={sections(row(1), row(2), row(3))}
+        reorderable
+        onReorder={onReorder}
+      />,
+    );
+    fireEvent.keyDown(rowsOf()[0] as HTMLElement, { key: "ArrowDown", altKey: true });
+    expect(onReorder).toHaveBeenCalledWith(1, 2);
+  });
+});

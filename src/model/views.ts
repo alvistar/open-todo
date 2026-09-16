@@ -57,6 +57,16 @@ export interface ViewDef {
   /** Show the project name on each row (false for a single-project view). */
   showProject: boolean;
   /**
+   * How the rows are cut into sections.
+   *
+   * A field rather than a comparison against `key`, which is what this was
+   * until the key had to carry a view id: `key === "today"` silently stopped
+   * matching `today@v42`, and Today lost its Overdue heading with nothing
+   * failing anywhere. A key identifies a cache entry; it does not declare
+   * behaviour.
+   */
+  grouping: "dueDay" | "none";
+  /**
    * Set when the view is read through a view endpoint and can therefore be
    * reordered. Absent means the list is read the flat way, ordered by due
    * date, and offers no drag handle — a missing affordance rather than one
@@ -128,6 +138,7 @@ export function inboxView(projectId: number, viewId?: number): ViewDef {
     includes: hasNoParent,
     belongs: (task) => hasNoParent(task) && !task.done && task.project_id === projectId,
     showProject: false,
+    grouping: "none",
     ...(viewId === undefined
       ? { compare: compareByDueDateThenId }
       : {
@@ -150,10 +161,15 @@ export function projectView(projectId: number, title: string, viewId?: number): 
  * Today = overdue plus everything due before tomorrow. `now/d+1d` is Vikunja
  * date math, verified in mapping §6 item 4; the request carries
  * filter_timezone so the server's midnight is the user's.
+ *
+ * `source` is the saved filter's list view, when the instance has one asking
+ * exactly this question (§6 items 24 and 26). With it, Today keeps a manual
+ * order like any list; without it the view is read the flat way and offers
+ * none, because a query has nowhere to store one (mapping §4).
  */
-export function todayView(): ViewDef {
+export function todayView(source?: PositionSource): ViewDef {
   return {
-    key: "today",
+    key: source === undefined ? "today" : `today@v${source.viewId}`,
     title: "Today",
     subtitleFor: taskCount,
     filter: and(notDone(), dueBeforeTomorrow()),
@@ -169,6 +185,9 @@ export function todayView(): ViewDef {
       return dayDifference(now, due, timeZone) <= 0;
     },
     showProject: true,
-    compare: compareByDueDateThenId,
+    grouping: "dueDay",
+    ...(source === undefined
+      ? { compare: compareByDueDateThenId }
+      : { positionSource: source, compare: compareByPositionThenId }),
   };
 }

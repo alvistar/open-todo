@@ -10,6 +10,11 @@ import { applyPending } from "../model/pending";
 import { listViewId } from "../model/projectViews";
 import { type Decision, withDecisions } from "../model/quickadd/decisions";
 import { parseQuickAdd, type QuickAddContext } from "../model/quickadd/parse";
+import {
+  asksTheSameAs,
+  filterIdFromProjectId,
+  findSavedFilter,
+} from "../model/savedFilters";
 import { type RowContext, toTaskRow } from "../model/taskRow";
 import { titleEdit } from "../model/titleEdit";
 import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
@@ -26,6 +31,7 @@ import {
 import {
   useLabels,
   useProjects,
+  useSavedFilter,
   useTaskComments,
   useUser,
   useViewTasks,
@@ -85,6 +91,26 @@ export function AppScreen() {
     [projectsQuery.data],
   );
 
+  /*
+   * Today is a query, and a query has nowhere to keep a manual order (mapping
+   * §4). Vikunja's answer is the saved filter: it exists as a project under a
+   * negative id and owns real views, which accept position writes (§6 items 15
+   * and 24). So Today is ordered only if the instance has a filter called
+   * Today ASKING THE SAME QUESTION - checked rather than assumed, because a
+   * filter produces the task list, so adopting one written by someone else
+   * would quietly change what this screen shows.
+   */
+  const todayFilterProject = findSavedFilter(projectsQuery.data, "Today");
+  const todayFilterQuery = useSavedFilter(
+    todayFilterProject ? filterIdFromProjectId(todayFilterProject.id) : null,
+  );
+  const todaySource = useMemo(() => {
+    if (!todayFilterProject) return undefined;
+    if (!asksTheSameAs(todayFilterQuery.data, todayView().filter)) return undefined;
+    const viewId = listViewId(todayFilterProject);
+    return viewId === null ? undefined : { projectId: todayFilterProject.id, viewId };
+  }, [todayFilterProject, todayFilterQuery.data]);
+
   const view: ViewDef | null = useMemo(() => {
     const projectId = projectIdFromRoute(route);
     if (projectId !== null) {
@@ -96,8 +122,8 @@ export function AppScreen() {
         ? null
         : inboxView(inboxProjectId, viewIdOf(inboxProjectId));
     }
-    return todayView();
-  }, [route, inboxProjectId, projectsQuery.data, viewIdOf]);
+    return todayView(todaySource);
+  }, [route, inboxProjectId, projectsQuery.data, viewIdOf, todaySource]);
 
   // The sidebar shows Inbox and Today counts regardless of the open view.
   // Both queries key off ViewDef.key, so when one of them *is* the open view
@@ -109,7 +135,7 @@ export function AppScreen() {
         : inboxView(inboxProjectId, viewIdOf(inboxProjectId)),
     [inboxProjectId, viewIdOf],
   );
-  const todayCountView = useMemo(() => todayView(), []);
+  const todayCountView = useMemo(() => todayView(todaySource), [todaySource]);
   const inboxTasksQuery = useViewTasks(inboxCountView, timeZone);
   const todayTasksQuery = useViewTasks(todayCountView, timeZone);
 

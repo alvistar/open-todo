@@ -6,6 +6,7 @@ import type {
   LoginRequest,
   LoginResponse,
   Project,
+  SavedFilter,
   Task,
   TaskComment,
   TaskReminder,
@@ -81,6 +82,23 @@ async function fetchAllPages<T>(
 
 export function listProjects(http: Http, signal?: AbortSignal): Promise<Project[]> {
   return fetchAllPages<Project>(http, "/projects", signal ? { signal } : {});
+}
+
+/**
+ * One saved filter, which is the only way to read the QUERY behind it.
+ *
+ * `GET /projects` carries saved filters as project shells with a negative id
+ * and a null `filter` (§6 item 15), and `GET /filters` answers 405 — so this
+ * is per-id or not at all. Worth the request: the query is what produces the
+ * task list, so adopting a filter without reading it would be adopting a
+ * screen whose contents nobody checked.
+ */
+export function getSavedFilter(
+  http: Http,
+  filterId: number,
+  signal?: AbortSignal,
+): Promise<SavedFilter> {
+  return http.request<SavedFilter>(`/filters/${filterId}`, signal ? { signal } : {});
 }
 
 export function listLabels(http: Http, signal?: AbortSignal): Promise<Label[]> {

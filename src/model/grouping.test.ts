@@ -94,3 +94,28 @@ describe("locale consistency", () => {
     expect(heading).not.toContain("mercoledì");
   });
 });
+
+describe("grouping does not depend on what a view is CALLED", () => {
+  it("still cuts Today into sections once it is read through a saved filter", () => {
+    /*
+     * The regression this pins, found by driving the app and not by any test
+     * here: Today's key became `today@v42` when it started carrying its view
+     * id, and `groupTasksForView` was comparing that key against the literal
+     * "today". The Overdue heading silently disappeared and the whole suite
+     * stayed green. A key identifies a cache entry; the grouping is its own
+     * field now.
+     */
+    const ordered = todayView({ projectId: -10, viewId: 42 });
+    expect(ordered.key).not.toBe("today");
+
+    const groups = groupTasksForView(
+      ordered,
+      [task(1, "2026-09-01T10:00:00Z"), task(2, "2026-09-09T10:00:00Z")],
+      {
+        now: NOW,
+        timeZone: TZ,
+      },
+    );
+    expect(groups.map((g) => g.key)).toEqual(["overdue", "today"]);
+  });
+});
