@@ -3,6 +3,7 @@ import type { Project, Task } from "../api/types";
 import { projectIdFromRoute, useRoute } from "../app/route";
 import { logOut } from "../auth/authStore";
 import { useLiveSource } from "../live/useLiveSource";
+import { formatDueLabel, parseVikunjaDate } from "../model/dates";
 import { dueDateFromPhrase } from "../model/duePhrase";
 import { groupTasksForView } from "../model/grouping";
 import { isRealProject, resolveInboxProjectId, sidebarProjects } from "../model/inbox";
@@ -17,6 +18,7 @@ import {
 } from "../model/savedFilters";
 import { type RowContext, toTaskRow } from "../model/taskRow";
 import { titleEdit } from "../model/titleEdit";
+import { undoableChange } from "../model/undoableChange";
 import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
@@ -42,6 +44,8 @@ import { ListView } from "../ui/ListView";
 import { AddTaskAffordance, QuickAdd } from "../ui/QuickAdd";
 import { Shell } from "../ui/Shell";
 import { Sidebar } from "../ui/Sidebar";
+import { ToastRegion } from "../ui/ToastRegion";
+import { useToasts } from "../ui/useToasts";
 import { ViewTitle, ViewToolbar } from "../ui/ViewHeader";
 import styles from "./AppScreen.module.css";
 
@@ -141,7 +145,12 @@ export function AppScreen() {
 
   const tasksQuery = useViewTasks(view, timeZone);
 
-  const reordering = useReorderTask(view, timeZone);
+  const toasts = useToasts();
+  const reordering = useReorderTask(view, timeZone, {
+    // Not under the list: it has just snapped back, and the reader may have
+    // scrolled away from the row entirely.
+    onFailure: (message) => toasts.show({ message, kind: "error" }),
+  });
 
   // Live refresh for the open view (D6): polls while visible, wakes on focus.
   useLiveSource({
@@ -431,7 +440,7 @@ export function AppScreen() {
         }
       />
       {error ? <p className={styles.error}>{error.message}</p> : null}
-      {reordering.error ? <p className={styles.error}>{reordering.error}</p> : null}
+      <ToastRegion {...toasts} />
       {openTask ? (
         <TaskDetail
           task={openTask}
@@ -446,7 +455,39 @@ export function AppScreen() {
           defaultDueTime={defaultDueTime}
           onClose={() => setOpenTaskId(null)}
           onSave={async (values) => {
-            await editing.mutateAsync({ task: openTask, values });
+            /*
+             * Captured BEFORE the write and from the server's own copy: the
+             * previous value is never reconstructed, which is the rule D-write
+             * and D-vocab both keep.
+             */
+            const change = undoableChange(openTask, values, {
+              projectName: (id) =>
+                projectsQuery.data?.find((p) => p.id === id)?.title ?? "another project",
+              describeDue: (iso) => {
+                const when = parseVikunjaDate(iso);
+                return when
+                  ? formatDueLabel(when, new Date(), timeZone, defaultDueTime)
+                  : "no date";
+              },
+            });
+            const fresh = await editing.mutateAsync({ task: openTask, values });
+            if (!change) return;
+            toasts.show({
+              message: change.message,
+              action: {
+                label: "Undo",
+                /*
+                 * The task handed back is the one the SERVER returned from
+                 * this write, not the stale copy the closure captured.
+                 * `updateTask` echoes reminders and assignees off whatever it
+                 * is given (its contract), so an older copy would quietly
+                 * restore the reminders as they were then.
+                 */
+                run: async () => {
+                  await editing.mutateAsync({ task: fresh, values: change.previous });
+                },
+              },
+            });
           }}
           onSaveReminders={async (reminders) => {
             await reminding.mutateAsync({ task: openTask, reminders });

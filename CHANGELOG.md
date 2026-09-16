@@ -20,6 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     at a position and jumping once it learns the real one.
 
 ### Added
+- **Picking a date, a project or a priority in a task now offers an Undo.**
+  Those pickers write the moment you choose (there is no Save button, on
+  purpose), and two of them can carry the task out of the list you were looking
+  at — so a short message appears at the bottom left saying what happened, with
+  one click to put it back. The value it restores is the one the server had,
+  never one the app reconstructed.
+- **Messages that have nowhere to sit now have somewhere.** A reorder that
+  fails used to write a line under the list, which is the wrong place: the list
+  has just snapped back, and you may have scrolled away from the row. It says
+  so at the bottom left instead, and stays longer than a confirmation does,
+  because a failure has to be read.
+  - The messages that belong to a field stay with that field. A failed rename
+    still keeps your text on screen with the reason under it, and a completed
+    task still offers its Undo on its own row.
+
 - **You can drag a task up or down a list, and it stays there.** Pick a row up
   by the handle that appears at its left on hover, or focus the row and press
   **Alt+↑ / Alt+↓**: the row moves immediately, and the new order is written to

@@ -65,10 +65,27 @@ function reordered(tasks: Task[], vars: Variables): Task[] {
  * map means "you just completed this, here is an Undo"; a failed move has
  * nothing to undo, and borrowing the channel would offer one.
  */
-export function useReorderTask(view: ViewDef | null, timeZone: string): ReorderApi {
+export interface ReorderOptions {
+  /**
+   * Told when a move did not stick. The list is the wrong place to say so — it
+   * has just snapped back, and the reader may have scrolled away from the row
+   * entirely — so this goes to the toast region (D4 step 4).
+   */
+  onFailure?: (message: string) => void;
+}
+
+export function useReorderTask(
+  view: ViewDef | null,
+  timeZone: string,
+  options: ReorderOptions = {},
+): ReorderApi {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  // Through a ref, so passing a fresh closure each render does not rebuild the
+  // mutation on every keystroke elsewhere in the screen.
+  const onFailure = useRef(options.onFailure);
+  onFailure.current = options.onFailure;
 
   const source = view?.positionSource;
   const queryKey = queryKeys.viewTasks(view?.key ?? "none");
@@ -152,6 +169,7 @@ export function useReorderTask(view: ViewDef | null, timeZone: string): ReorderA
       if (context?.previous) queryClient.setQueryData(queryKey, context.previous);
       const message = cause instanceof Error ? cause.message : String(cause);
       setError(`Not moved: ${message}`);
+      onFailure.current?.(`Not moved: ${message}`);
     },
 
     onSuccess: (fresh) => {

@@ -2,10 +2,11 @@
 
 **Created:** 2026-09-09
 **Status:** the app reads *and writes*: quick-add, completion, a keyboard, a
-full task-detail dialog, and a manual order that persists in Vikunja. All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
+full task-detail dialog, a manual order that persists in Vikunja, and undo
+toasts. **All four D4 interaction slices are built.** All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
 **Previous session:** 2026-09-15 — two of them, in sequence. The first made a task completable (D-write) and turned a bare repeat adverb into an offer rather than a schedule (D-adverb); until then the app could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. The second gave the list a keyboard (D4 step 2) and built the whole task-detail dialog (D-detail).
 
-**Last session:** 2026-09-16 — D4 step 3 (D-order): a list can be reordered by drag or by Alt+Arrow, and the order is written to Vikunja, in projects, in Inbox and in Today. The slice was larger than it looks, because the app could not READ an order either — every list was a flat `GET /tasks` where §3 says `position` means nothing. The probes that opened it found §3 **wrong about who renumbers** a crowded view (§6 item 23: the client must), and driving the app found Today silently losing its "Overdue" heading with all 713 tests green. **Next:** D4 step 4 (general undo / toasts), with the incomplete Italian language pack (§4, D-vocab) as the other live candidate — see §7 item 12.
+**Last session:** 2026-09-16 — D4 step 3 (D-order): a list can be reordered by drag or by Alt+Arrow, and the order is written to Vikunja, in projects, in Inbox and in Today. The slice was larger than it looks, because the app could not READ an order either — every list was a flat `GET /tasks` where §3 says `position` means nothing. The probes that opened it found §3 **wrong about who renumbers** a crowded view (§6 item 23: the client must), and driving the app found Today silently losing its "Overdue" heading with all 713 tests green. **D4 is complete** (quick-add, keyboard, drag reorder, undo toasts). **Next:** the incomplete Italian language pack (§4, D-vocab) is the ranked candidate — see §7 item 13.
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -35,7 +36,7 @@ them, and check there are zero leftovers.
    produced it is probably gone.
 2. D3, D4 and D5 are decided (§4). Do not reopen them; D2 is settled
    per screen during the measuring pass.
-3. Go to §7. Items 1-11 are done; **item 12 is the open list, ranked**.
+3. Go to §7. Items 1-12 are done; **item 13 is the open list, ranked**.
 4. Before touching any write, read D-write, D-detail and D-order in §4 and
    items 13-30 of `docs/data-model-mapping.md` §6. `POST /tasks/{id}` is not a
    patch — every omitted field is erased — and several of the traps under that
@@ -210,7 +211,9 @@ this order:
    work is how Vikunja's `position` field and kanban buckets represent order.
    **Check Vikunja's position semantics in Veyrn's Swift code during the
    foundation slice**, so the list component is not built on a wrong assumption.
-4. **Undo toasts** — depends on every mutation being reversible; cheapest last.
+4. ~~**Undo toasts**~~ — done 2026-09-16: a toast region bottom-left, with an
+   Undo on the dialog's sidebar picks and a home for the reorder failure. See
+   **D-toast** below for what deliberately did NOT move into it.
 
 Rejected: drag reorder first (weeks before anything is usable; mapping table
 postponed); keyboard first (polish before the ability to add quickly).
@@ -597,6 +600,69 @@ test that PASSES while asserting the wrong behaviour, so that a refactor could
 not quietly change its shape. Nothing is left to pin, so the file is deleted —
 recreate it when the next defect needs it.
 
+### D-toast — Undo toasts, and what stays where it is — **DECIDED 2026-09-16**
+
+D4 step 4, the last of the four interaction slices. The interesting half is
+what did NOT move into it.
+
+**The nine inline `role="status"` messages stay where they are.** D-detail put
+each beside the field it belongs to because a failed write must not take what
+you typed out of sight, and D-write put a completion's message on the ROW so a
+self-hosted instance does not feel like it is thinking. Moving either into a
+toast would undo a decision that was made by experiment. What was left over is
+what the toast region is for: a write that succeeded and took its row off the
+screen, and one that failed with no row left to say so on.
+
+So there are exactly two callers, and each replaced something worse:
+
+1. **A failed reorder.** It used to render a `<p>` under the list — the wrong
+   place twice over: the list has just snapped back to the old order, and the
+   reader may have scrolled away from the row entirely.
+2. **A sidebar pick in the task dialog.** Project, date and priority commit on
+   pick, with no Save and no Cancel (D-detail, settled by experiment). That is
+   the right shape and it is precisely why they need an Undo: there is no
+   moment at which the pick can be reconsidered, and two of them can carry the
+   task out of the view it was opened from.
+
+**The previous value comes from the server's copy, never from a reconstruction.**
+`undoableChange` reads it off the task as it was before the write. This is
+D-write's and D-vocab's rule one level up: an invented value presented as one
+the user had is worse than no offer.
+
+**The task handed to the Undo is the one this write RETURNED**, not the copy the
+closure captured. `updateTask` echoes reminders and assignees off whatever it is
+given (its contract, §6 item 13), so undoing with a stale copy would quietly
+restore the reminders as they were at the time the dialog opened.
+
+**Clearing a date is naming the column with Vikunja's null date**, not omitting
+it — under the bulk route an unnamed column is re-read from the stored row (§6
+item 16). So undoing a date ADDED to a task that had none writes
+`0001-01-01T00:00:00Z`.
+
+**The toast is refused rather than approximated** when the write names more than
+one sidebar field, or names a field with its own way back (`title`,
+`description`, `done`). No picker writes two at once, so that can only be a
+caller this was not written for, and describing it as one of them would put a
+message on screen that does not match what happened.
+
+**Its geometry is NOT measured.** The reconnaissance never captured Todoist's
+snackbar, so `docs/layout-specs.md` has no section for it. It is derived from
+the nearest measured thing — the confirmation modal of §5, 448 wide, r12 — and
+built from tokens. Say so before copying numbers out of it. New tokens:
+`--bg-elevated` / `--text-on-elevated` / `--hover-on-elevated` (not "inverse":
+in dark the page is already dark, so it lifts rather than flips) and
+`--bg-danger` / `--text-on-danger` on the same measured red the p1 and overdue
+roles use.
+
+**The unmount guard is the timers, not a flag.** §7 item 9 records what a
+"live" boolean did last time: it latched false after StrictMode's remount and
+switched the undo window off in `pnpm dev` while a production build stayed fine.
+`useToasts` clears its timeouts on unmount and consults nothing.
+
+Verified by driving the app against `pinguino`: picking P3 raised
+"Priority set to P3" with an Undo, the Undo put the priority back, the toast
+went, and the server showed the description, project and reminders untouched.
+
 ### D-order — Drag reorder, and what §3 got wrong — **DECIDED 2026-09-16**
 
 D4 step 3. The owner chose the full scope: project lists, Inbox **and** Today.
@@ -967,17 +1033,25 @@ public HTTP API only, which carries no such obligation.
       would take the same treatment, but its day grouping makes a cross-day
       drag a reschedule, which is its own decision.
 
-12. **Open, ranked.** Nothing here is started.
+12. ~~D4 step 4 (general undo / toasts)~~ — done 2026-09-16 (D-toast in §4).
+    A toast region bottom-left, with two callers: a failed reorder and a
+    sidebar pick's Undo. **D4 is now complete.** Notes for whoever continues:
+    - The nine inline `role="status"` messages are NOT candidates for it, and
+      neither is the completion row linger. Read D-toast before "consolidating"
+      them.
+    - The geometry is unmeasured — see D-toast.
+
+13. **Open, ranked.** Nothing here is started.
     1. **The Italian language pack is incomplete** — `TODO(F3)`, `TODO(F5)` and
        `TODO(F6)` in `src/model/quickadd/lang/pack.ts`. Those defects are closed
        in **English only**, so `ogni secondo martedì` is silently scheduled as a
        plain Tuesday and `ogni giorno a partire da lunedì` invents a due date.
        The comments say **"Do not 'complete' this list as a tidy-up"**: this
        needs the interview and the corpus gates, not a guess.
-    2. **D4 step 4 — general undo / toasts.** There is still no toast
-       primitive: transient messages are inline `role="status"` elements in
-       nine places, and the reorder failure is one more line under the list.
-       `useCompleteTask`'s linger is the only timer-expiry mechanism there is.
+    2. **Undo is offered for three writes, not all of them.** A completion has
+       the row linger, and the sidebar picks have a toast; a label change, a
+       reminder change, an added sub-task and a comment have none. Each is
+       reversible — the pattern is `undoableChange`'s — and none is done.
     3. **The participle veto left open by D-adverb** — no rule separates
        `disdire il servizio pagato mensilmente` from `controllare il saldo
        mensilmente`. The decision was to offer, not apply; the veto stays open,
@@ -991,7 +1065,7 @@ public HTTP API only, which carries no such obligation.
     7. **The unsaved-changes confirmation** the reference product shows and
        open-todo does not (D-detail, last paragraph).
 
-13. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
+14. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
     WebSocket events (D6). Start from `pkg/websocket/listener.go` and
     `validEvents` in `connection.go`; the open question is how to resolve the
     recipients of a project-scoped event. Before the OIDC part: add the SPA's
