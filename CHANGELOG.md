@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
 ### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
 - **"ogni giorno da lunedì" no longer invents a date and eats the task name.**
   Typing a repeat with a start date in the ordinary Italian way — the bare
   "da", rather than "a partire da" — set a daily repeat, scheduled a Monday
@@ -153,7 +168,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision follows the line to the save, so what the composer shows is what
   gets created.
 
+### Added
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
 ### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
 - **"ogni giorno da lunedì" no longer invents a date and eats the task name.**
   Typing a repeat with a start date in the ordinary Italian way — the bare
   "da", rather than "a partire da" — set a daily repeat, scheduled a Monday
@@ -177,7 +207,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they say what they are. Rationale and the rules that were tried and rejected:
   `D-adverb` in `docs/HANDOVER.md`.
 
+### Added
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
 ### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
 - The lint run is clean again. `quickadd-corpus-diff` had three spellings of
   one path and used the tidiest one nowhere; the composer's auto-growing box
   keeps the dependency that makes it grow, now with the reason written down.
@@ -289,7 +334,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plain title instead of resolving a project. `#` was the only sigil without
   the lookbehind that `@label` and `p1` already used.
 
+### Added
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
 ### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
 - **"ogni giorno da lunedì" no longer invents a date and eats the task name.**
   Typing a repeat with a start date in the ordinary Italian way — the bare
   "da", rather than "a partire da" — set a daily repeat, scheduled a Monday
@@ -446,7 +506,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than approximated, and it is not re-read as a one-off date either.
 - Discarding a composer with text in it asks for confirmation.
 
-### Fixed (quick-add review)
+### Added
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
+### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+ (quick-add review)
 - `every 2 months` and every other English "every N months" phrase was
   rejected as unsupported: the weekday list's bare `mon` matched the start of
   `month` in an unanchored reject pattern, killing a whole accepted grammar row
@@ -503,7 +578,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one 20s interval, sorted into its place by due date, while a deletion cleared
   within ~40s on the next full fetch.
 
+### Added
+- **Upcoming is a real screen.** Everything due tomorrow or later, one section
+  per day, and you can arrange each day by hand the way you can a project — if
+  your Vikunja has a saved filter called "Upcoming" asking the same question,
+  which is checked rather than assumed. Today and Upcoming divide the dated
+  tasks exactly between them: nothing appears in both, nothing falls between.
+  - Dragging a task into another day does nothing on purpose. That is a change
+    of DATE, not of order, and rescheduling by drag is not built yet.
+
 ### Fixed
+- **Three sidebar entries no longer show you a different screen.** "Upcoming",
+  "Search" and "Filters & labels" all rendered Today — heading included — while
+  the sidebar highlighted the entry you had clicked. Upcoming now works;
+  Search and Filters say plainly that they are not built yet, under their own
+  name.
+
 - The page walk ended on the `x-pagination-total-pages` header, which a
   cross-origin browser cannot read unless the instance sends
   `Access-Control-Expose-Headers` — measured, and the deployment model is

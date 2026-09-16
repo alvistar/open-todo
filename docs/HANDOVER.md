@@ -1060,17 +1060,11 @@ public HTTP API only, which carries no such obligation.
        never contained a phrase of this shape, which is exactly why the defect
        survived. A green corpus is evidence about what it covers and nothing
        else.
-    2. **Three sidebar entries go to the wrong screen.** Measured 2026-09-16:
-       `#/upcoming`, `#/search` and `#/labels` — and any unknown route — all
-       render **Today**, heading included, because `AppScreen`'s view memo ends
-       in `return todayView(...)` with no case for them and `Route` is a bare
-       `string`. The sidebar offers them as navigation and they silently take
-       you somewhere else. This is the defect D-detail named — "a button that
-       does nothing is the defect this app keeps relearning" — one step worse,
-       because these do something wrong rather than nothing. Cheapest honest
-       fix is to render an explicit "not built yet" view for a route with no
-       handler; the real fix is Upcoming, which mapping §4 already specifies
-       and whose saved filter (-9, `/filters/8`) already exists on `pinguino`.
+    2. ~~**Three sidebar entries go to the wrong screen**~~ — fixed
+       2026-09-16. **Upcoming is built**, on its own saved filter and
+       reorderable by day; `#/search`, `#/labels` and any unknown route now
+       render an explicit "not built yet" screen under their OWN name instead
+       of silently showing Today under Today's heading.
 
     3. **Undo is offered for three writes, not all of them.** A completion has
        the row linger, and the sidebar picks have a toast; a label change, a
@@ -1084,12 +1078,27 @@ public HTTP API only, which carries no such obligation.
        recurrence and raises no warning. The later rule about what may follow a
        complete schedule closed it; nobody had re-measured. Mapping §5 updated.
     6. **A delete affordance** (item 10 above).
-    7. **Never measured**, from the original recon: hover and focus states, the
-       Upcoming view, and a project view with sections (item 3 above).
+    7. **Never measured**, from the original recon: hover and focus states, and
+       a project view with sections (item 3 above). Upcoming is now BUILT but
+       still unmeasured — its day heading is `todayHeading`'s shape with the
+       middle word dropped, derived rather than specified, and says so in the
+       code.
     8. **The unsaved-changes confirmation** the reference product shows and
        open-todo does not (D-detail, last paragraph).
 
-14. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
+14. ~~The Upcoming view~~ — done 2026-09-16, with the three dead sidebar
+    routes. Notes for whoever continues:
+    - It reuses everything: the saved-filter adoption of D-order (query checked,
+      never adopted by title), view-scoped reading, positions, and ListView's
+      refusal to move a row across a section. That refusal is what makes
+      Upcoming safe — its sections are DAYS, so crossing one is a reschedule.
+    - **Rescheduling by drag is NOT built** and is its own decision: the
+      reference product moves the task's date when you drop it in another day.
+    - The two filters partition the dated tasks, and `views.test.ts` asserts it
+      across the midnight boundary in both directions. Breaking that would make
+      a task vanish between two screens, or give it two manual orders.
+
+15. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
     WebSocket events (D6). Start from `pkg/websocket/listener.go` and
     `validEvents` in `connection.go`; the open question is how to resolve the
     recipients of a project-scoped event. Before the OIDC part: add the SPA's

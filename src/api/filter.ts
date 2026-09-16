@@ -39,6 +39,18 @@ export function dueBeforeTomorrow(): string {
   return "due_date < now/d+1d";
 }
 
+/**
+ * Upcoming: everything due tomorrow or later.
+ *
+ * The boundary is the same `now/d+1d` Today stops at, written the other way
+ * round, so the two views partition the dated tasks with no overlap and no
+ * gap — a task cannot be in both, and none falls between them. Matches the
+ * saved filter already on the instance (§6 item 26).
+ */
+export function dueFromTomorrow(): string {
+  return "due_date >= now/d+1d";
+}
+
 export function labelIn(labelIds: number[]): string {
   return `labels in [${labelIds.join(", ")}]`;
 }

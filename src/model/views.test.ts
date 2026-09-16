@@ -5,6 +5,7 @@ import {
   compareByPositionThenId,
   inboxView,
   todayView,
+  upcomingView,
 } from "./views";
 
 const TZ = "Europe/Rome";
@@ -204,5 +205,65 @@ describe("a view that knows its Vikunja view", () => {
     } as Partial<Task>);
     expect(view.includes(child)).toBe(false);
     expect(view.belongs(child, new Date(), "Europe/Rome")).toBe(false);
+  });
+});
+
+describe("upcomingView", () => {
+  const view = upcomingView();
+
+  it("asks the server for tomorrow onwards", () => {
+    expect(view.filter).toBe("done = false && due_date >= now/d+1d");
+    // Undated tasks are not upcoming; including nulls would put every one of
+    // them in a view whose sections are days.
+    expect(view.includeNulls).toBe(false);
+  });
+
+  it("accepts tomorrow and later, rejects today, overdue and undated", () => {
+    const at = (due?: string) => (due ? task({ due_date: due }) : task({}));
+    expect(view.belongs(at("2026-09-10T08:00:00Z"), NOW, TZ)).toBe(true);
+    expect(view.belongs(at("2026-12-01T08:00:00Z"), NOW, TZ)).toBe(true);
+    expect(view.belongs(at("2026-09-09T20:00:00Z"), NOW, TZ)).toBe(false);
+    expect(view.belongs(at("2026-09-01T08:00:00Z"), NOW, TZ)).toBe(false);
+    expect(view.belongs(at(), NOW, TZ)).toBe(false);
+  });
+
+  it("partitions the dated tasks with Today: no overlap, no gap", () => {
+    /*
+     * The two filters are the same boundary written from either side, so this
+     * is the property that keeps a task from vanishing between the screens -
+     * or appearing on both, which would give it two manual orders.
+     */
+    const today = todayView();
+    for (const iso of [
+      "2026-09-01T08:00:00Z",
+      "2026-09-09T00:30:00Z",
+      "2026-09-09T23:30:00Z",
+      "2026-09-10T00:30:00Z",
+      "2026-12-31T23:00:00Z",
+    ]) {
+      const t = task({ due_date: iso });
+      const inToday = today.belongs(t, NOW, TZ);
+      const inUpcoming = view.belongs(t, NOW, TZ);
+      expect(inToday && inUpcoming).toBe(false);
+      expect(inToday || inUpcoming).toBe(true);
+    }
+  });
+
+  it("excludes sub-tasks, and belongs still implies includes", () => {
+    const child = task({
+      due_date: "2026-09-20T08:00:00Z",
+      related_tasks: { parenttask: [{ id: 2, title: "p" }] },
+    } as Partial<Task>);
+    expect(view.includes(child)).toBe(false);
+    expect(view.belongs(child, NOW, TZ)).toBe(false);
+  });
+
+  it("orders by position once it knows its view, like any other list", () => {
+    const ordered = upcomingView({ projectId: -9, viewId: 41 });
+    expect(ordered.positionSource).toEqual({ projectId: -9, viewId: 41 });
+    expect(ordered.compare).toBe(compareByPositionThenId);
+    expect(ordered.key).not.toBe(view.key);
+    // The grouping must not depend on the key - the mistake Today made.
+    expect(ordered.grouping).toBe("everyDueDay");
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Project, Task } from "../api/types";
-import { projectIdFromRoute, useRoute } from "../app/route";
+import { projectIdFromRoute, routeTitle, useRoute } from "../app/route";
 import { logOut } from "../auth/authStore";
 import { useLiveSource } from "../live/useLiveSource";
 import { formatDueLabel, parseVikunjaDate } from "../model/dates";
@@ -19,7 +19,13 @@ import {
 import { type RowContext, toTaskRow } from "../model/taskRow";
 import { titleEdit } from "../model/titleEdit";
 import { undoableChange } from "../model/undoableChange";
-import { inboxView, projectView, todayView, type ViewDef } from "../model/views";
+import {
+  inboxView,
+  projectView,
+  todayView,
+  upcomingView,
+  type ViewDef,
+} from "../model/views";
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
 import { useReorderTask } from "../queries/useReorderTask";
@@ -115,6 +121,20 @@ export function AppScreen() {
     return viewId === null ? undefined : { projectId: todayFilterProject.id, viewId };
   }, [todayFilterProject, todayFilterQuery.data]);
 
+  // Upcoming is the same arrangement, against its own filter. Both hooks are
+  // unconditional because hooks must be, and both cost nothing when the
+  // instance has no such filter.
+  const upcomingFilterProject = findSavedFilter(projectsQuery.data, "Upcoming");
+  const upcomingFilterQuery = useSavedFilter(
+    upcomingFilterProject ? filterIdFromProjectId(upcomingFilterProject.id) : null,
+  );
+  const upcomingSource = useMemo(() => {
+    if (!upcomingFilterProject) return undefined;
+    if (!asksTheSameAs(upcomingFilterQuery.data, upcomingView().filter)) return undefined;
+    const viewId = listViewId(upcomingFilterProject);
+    return viewId === null ? undefined : { projectId: upcomingFilterProject.id, viewId };
+  }, [upcomingFilterProject, upcomingFilterQuery.data]);
+
   const view: ViewDef | null = useMemo(() => {
     const projectId = projectIdFromRoute(route);
     if (projectId !== null) {
@@ -126,8 +146,27 @@ export function AppScreen() {
         ? null
         : inboxView(inboxProjectId, viewIdOf(inboxProjectId));
     }
-    return todayView(todaySource);
-  }, [route, inboxProjectId, projectsQuery.data, viewIdOf, todaySource]);
+    if (route === "upcoming") return upcomingView(upcomingSource);
+    if (route === "today") return todayView(todaySource);
+    /*
+     * Anything else has no view. It used to fall through to Today, which meant
+     * the sidebar's Search and Filters entries silently showed a DIFFERENT
+     * screen from the one they highlighted - the defect D-detail named, one
+     * step worse than a button that does nothing.
+     */
+    return null;
+  }, [route, inboxProjectId, projectsQuery.data, viewIdOf, todaySource, upcomingSource]);
+
+  /**
+   * The route the sidebar offers and nothing has built yet. Null for a route
+   * with a view, and null while Inbox waits for its project id - that is a
+   * load, not a gap.
+   */
+  const notBuilt = useMemo(() => {
+    if (projectIdFromRoute(route) !== null) return null;
+    if (route === "inbox" || route === "today" || route === "upcoming") return null;
+    return route;
+  }, [route]);
 
   // The sidebar shows Inbox and Today counts regardless of the open view.
   // Both queries key off ViewDef.key, so when one of them *is* the open view
@@ -403,7 +442,7 @@ export function AppScreen() {
       <ListView
         header={
           <ViewTitle
-            title={view?.title ?? "open-todo"}
+            title={notBuilt ? routeTitle(notBuilt) : (view?.title ?? "open-todo")}
             {...(view?.subtitleFor && !tasksQuery.isPending
               ? { subtitle: view.subtitleFor(visible.length) }
               : {})}
@@ -420,7 +459,10 @@ export function AppScreen() {
         reorderable={reordering.reorderable}
         onReorder={reordering.reorder}
         footer={
-          composerOpen ? (
+          // No composer on a screen that is not built: there is no list for a
+          // new task to join, and creating one would be the only thing the
+          // screen could do.
+          notBuilt ? null : composerOpen ? (
             <QuickAdd
               context={quickAddContext}
               onSubmit={submitQuickAdd}
@@ -432,11 +474,13 @@ export function AppScreen() {
           )
         }
         emptyMessage={
-          error
-            ? `Could not load tasks: ${error.message}`
-            : tasksQuery.isPending
-              ? "Loading…"
-              : "Nothing due. Enjoy the quiet."
+          notBuilt
+            ? "This screen is not built yet."
+            : error
+              ? `Could not load tasks: ${error.message}`
+              : tasksQuery.isPending
+                ? "Loading…"
+                : "Nothing due. Enjoy the quiet."
         }
       />
       {error ? <p className={styles.error}>{error.message}</p> : null}

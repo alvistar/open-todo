@@ -89,7 +89,7 @@ Consequences for open-todo:
 |---|---|---|
 | Inbox | default project, list view | Sections from its kanban view (§1). |
 | Today | Saved filter `done = false && due_date < now/d+1d` with **one list view** | Grouping into "Scadute" / today is client-side (`due_date < now/d`). Persisted manual order via the filter view's positions. `now/d` date-math verified (§6 item 4). |
-| Upcoming | Saved filter `done = false && due_date > now/d` grouped by day client-side | Drag between days = due-date change, not a position write. |
+| Upcoming | Saved filter `done = false && due_date >= now/d+1d` with one list view, grouped by day client-side | **Built 2026-09-16.** The boundary is Today's, written the other way round, so the two partition the dated tasks — no task in both, none between them. The instance's own filter (-9, `/filters/8`) already asks exactly this and is adopted after the same query check Today gets. Drag between days = due-date change, not a position write, so a cross-section move is refused. |
 
 **Status after D4 step 3 (2026-09-16):** Today reads through the saved
 filter's list view when the instance has a filter titled `Today` whose query

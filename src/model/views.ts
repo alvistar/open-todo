@@ -1,4 +1,10 @@
-import { and, dueBeforeTomorrow, notDone, projectIs } from "../api/filter";
+import {
+  and,
+  dueBeforeTomorrow,
+  dueFromTomorrow,
+  notDone,
+  projectIs,
+} from "../api/filter";
 import type { Task } from "../api/types";
 import { dayDifference, parseVikunjaDate } from "./dates";
 
@@ -65,7 +71,7 @@ export interface ViewDef {
    * failing anywhere. A key identifies a cache entry; it does not declare
    * behaviour.
    */
-  grouping: "dueDay" | "none";
+  grouping: "dueDay" | "everyDueDay" | "none";
   /**
    * Set when the view is read through a view endpoint and can therefore be
    * reordered. Absent means the list is read the flat way, ordered by due
@@ -186,6 +192,47 @@ export function todayView(source?: PositionSource): ViewDef {
     },
     showProject: true,
     grouping: "dueDay",
+    ...(source === undefined
+      ? { compare: compareByDueDateThenId }
+      : { positionSource: source, compare: compareByPositionThenId }),
+  };
+}
+
+/**
+ * Upcoming = everything due tomorrow or later, one section per day.
+ *
+ * The boundary is the same `now/d+1d` Today stops at, written the other way
+ * round, so the two views partition the dated tasks: no task is in both, and
+ * none falls between them.
+ *
+ * Like Today it can only hold a manual order if the instance has a saved
+ * filter asking this same question (§6 items 24 and 26). Unlike Today its
+ * sections are DAYS, so a drag across one is a change of date rather than of
+ * order - ListView refuses a cross-section move for exactly that reason, and
+ * rescheduling by drag is its own decision, not part of this one.
+ */
+export function upcomingView(source?: PositionSource): ViewDef {
+  return {
+    key: source === undefined ? "upcoming" : `upcoming@v${source.viewId}`,
+    title: "Upcoming",
+    subtitleFor: taskCount,
+    filter: and(notDone(), dueFromTomorrow()),
+    sortBy: ["due_date", "id"],
+    orderBy: ["asc", "asc"],
+    // A task with no due date is not upcoming, it is undated - and including
+    // nulls here would put every undated task in the view with no day to sit
+    // under.
+    includeNulls: false,
+    includes: hasNoParent,
+    belongs: (task, now, timeZone) => {
+      if (!hasNoParent(task)) return false;
+      if (task.done) return false;
+      const due = parseVikunjaDate(task.due_date);
+      if (!due) return false;
+      return dayDifference(now, due, timeZone) >= 1;
+    },
+    showProject: true,
+    grouping: "everyDueDay",
     ...(source === undefined
       ? { compare: compareByDueDateThenId }
       : { positionSource: source, compare: compareByPositionThenId }),

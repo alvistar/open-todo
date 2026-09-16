@@ -35,3 +35,20 @@ export function projectIdFromRoute(route: Route): number | null {
   const id = Number(match[1]);
   return Number.isFinite(id) ? id : null;
 }
+
+/**
+ * What to call a route on screen.
+ *
+ * Only needed for the ones the sidebar offers and nothing has built: they used
+ * to fall through to Today, so the heading said "Today" while the sidebar
+ * highlighted "Search". Naming the screen the user asked for, and saying it is
+ * not built, is the smallest honest thing.
+ */
+export function routeTitle(route: Route): string {
+  if (route === "search") return "Search";
+  if (route === "labels") return "Filters & labels";
+  if (route === "upcoming") return "Upcoming";
+  if (route === "inbox") return "Inbox";
+  if (route === "today") return "Today";
+  return route;
+}
