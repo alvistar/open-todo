@@ -6,16 +6,28 @@
  * place that arithmetic exists — a second copy of it would be a second opinion
  * about the server.
  *
+ * One of §3's rules did not survive contact with a real instance: see
+ * MIN_POSITION_SPACING below and mapping §6 item 23.
+ *
  * Nothing here talks to the network. It is deliberately pure so the one part
  * of the ordering slice that can be reasoned about exactly is also the part
  * that is tested exactly; the rest needs a real instance.
  */
 
 /**
- * Vikunja's `MinPositionSpacing`. A write that leaves a gap BELOW this does
- * not fail: the server silently renumbers the whole view, so the value it
- * stores is not the value that was sent (§3). That is why `positionForMove`
- * reports `willRenumber` instead of refusing.
+ * Vikunja's `MinPositionSpacing`.
+ *
+ * §3 read this off `main` as a server-side guard: a write leaving a gap below
+ * it was supposed to make the server renumber the whole view. Measured against
+ * `pinguino` v2.5.0 it does no such thing (§6 item 23) — a position written
+ * 0.001 from its neighbour was stored verbatim and nothing else moved. The
+ * recalculation is the CLIENT'S, which is what Vikunja's own
+ * `calculateItemPosition.ts` always was.
+ *
+ * So nothing on the server stops positions converging. Halving a gap 21 times
+ * from the starting spacing of 2^16 reaches this value, and past it two tasks
+ * share a float and the view falls back to id order. `positionForMove` reports
+ * it rather than refusing, because the repair is the caller's to schedule.
  */
 export const MIN_POSITION_SPACING = 0.01;
 
@@ -33,11 +45,14 @@ export interface Move {
   taskId: number;
   position: number;
   /**
-   * True when the computed value crowds a neighbour past MIN_POSITION_SPACING,
-   * so the server is expected to rewrite the view and the caller must re-read
-   * rather than trust what it sent.
+   * True when the computed value crowds a neighbour past MIN_POSITION_SPACING.
+   *
+   * The write still succeeds and still lands where the user dropped it — this
+   * is not an error. It says the VIEW now needs renumbering, which no one else
+   * will do (§6 item 23), and that re-reading alone would not help: the same
+   * crowded numbers would come back and the next drop would halve them again.
    */
-  willRenumber: boolean;
+  needsRenumber: boolean;
 }
 
 /**
@@ -60,7 +75,7 @@ export function positionBetween(
   return before + (after - before) / 2;
 }
 
-/** A gap that the server would refuse to leave alone. */
+/** A gap too small to keep halving. */
 function crowds(position: number, neighbour: number | undefined): boolean {
   if (neighbour === undefined) return false;
   return Math.abs(position - neighbour) < MIN_POSITION_SPACING;
@@ -101,6 +116,6 @@ export function positionForMove(
   return {
     taskId: moved.id,
     position,
-    willRenumber: crowds(position, before) || crowds(position, after),
+    needsRenumber: crowds(position, before) || crowds(position, after),
   };
 }

@@ -6,8 +6,9 @@
  * `calculateItemPosition.ts` — so a change here is a claim about the server,
  * not a refactor. The two rules worth staring at are that neighbours are taken
  * AFTER the moved task is lifted out (which makes up and down asymmetric), and
- * that a gap under MinPositionSpacing does not fail: the server silently
- * renumbers the whole view, so the caller has to re-read.
+ * that a gap under MinPositionSpacing does not fail — and, since `pinguino`
+ * turned out not to renumber anything (mapping §6 item 23), leaves the view
+ * for the CLIENT to repair.
  */
 import { describe, expect, it } from "vitest";
 import { MIN_POSITION_SPACING, positionBetween, positionForMove } from "./position";
@@ -100,7 +101,7 @@ describe("positionForMove", () => {
   });
 
   it("does not expect a renumber when the gaps are wide", () => {
-    expect(positionForMove(list, 0, 1)?.willRenumber).toBe(false);
+    expect(positionForMove(list, 0, 1)?.needsRenumber).toBe(false);
   });
 
   it("expects a renumber when a gap falls below the spacing", () => {
@@ -110,9 +111,9 @@ describe("positionForMove", () => {
       { id: 3, position: 30 },
     ];
     // 3 lands between two tasks 0.001 apart: the halves are 0.0005, well
-    // under the spacing, so the server rewrites the view and the value we
-    // computed is not the value that will be stored.
-    expect(positionForMove(crowded, 2, 1)?.willRenumber).toBe(true);
+    // under the spacing. The write succeeds and the order is right; what is
+    // wrong is the view, which has run out of room to subdivide.
+    expect(positionForMove(crowded, 2, 1)?.needsRenumber).toBe(true);
   });
 
   it("errs towards expecting a renumber at the spacing boundary", () => {
@@ -122,15 +123,15 @@ describe("positionForMove", () => {
     // and cannot be pinned either way honestly.
     //
     // It is pinned as TRUE deliberately, because the two errors are not equal:
-    // a spurious `true` costs one re-read of a list we already have, while a
-    // spurious `false` leaves the cache holding a position the server has
-    // since rewritten, and every later move computes against that stale value.
+    // a spurious `true` costs one renumber of a view that was nearly due one
+    // anyway, while a spurious `false` lets the gaps keep halving until two
+    // tasks share a float and the order silently falls back to id.
     const spaced = [
       { id: 1, position: 10 },
       { id: 2, position: 10 + 2 * MIN_POSITION_SPACING },
       { id: 3, position: 30 },
     ];
-    expect(positionForMove(spaced, 2, 1)?.willRenumber).toBe(true);
+    expect(positionForMove(spaced, 2, 1)?.needsRenumber).toBe(true);
   });
 
   it("does not expect a renumber a decimal order away from the boundary", () => {
@@ -139,17 +140,17 @@ describe("positionForMove", () => {
       { id: 2, position: 10 + 20 * MIN_POSITION_SPACING },
       { id: 3, position: 30 },
     ];
-    expect(positionForMove(spaced, 2, 1)?.willRenumber).toBe(false);
+    expect(positionForMove(spaced, 2, 1)?.needsRenumber).toBe(false);
   });
 
   it("expects a renumber after the equal-neighbours step", () => {
     // before === after means the 0.01 branch fired, which leaves exactly zero
-    // gap on one side: whatever we send, the server is going to restate it.
+    // gap on one side — the clearest possible sign the view needs renumbering.
     const tied = [
       { id: 1, position: 5 },
       { id: 2, position: 5 },
       { id: 3, position: 30 },
     ];
-    expect(positionForMove(tied, 2, 1)?.willRenumber).toBe(true);
+    expect(positionForMove(tied, 2, 1)?.needsRenumber).toBe(true);
   });
 });
