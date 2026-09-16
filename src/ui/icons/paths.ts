@@ -71,6 +71,19 @@ export const icons = {
   sidebar: {
     stroke: ["M4.5 5h15v14h-15zM10 5v14"],
   },
+  /* Two columns of three: the universal "pick me up" mark. Drawn here rather
+     than borrowed, like every other glyph in this set (§6). */
+  grip: {
+    fill: [
+      circle(9, 6, 1.4),
+      circle(15, 6, 1.4),
+      circle(9, 12, 1.4),
+      circle(15, 12, 1.4),
+      circle(9, 18, 1.4),
+      circle(15, 18, 1.4),
+    ],
+    stroke: [],
+  },
   more: {
     fill: [circle(6, 12, 1.6), circle(12, 12, 1.6), circle(18, 12, 1.6)],
     stroke: [],

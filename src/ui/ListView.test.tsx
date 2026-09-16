@@ -259,3 +259,43 @@ describe("Alt+Arrow moves a row", () => {
     expect(onReorder).not.toHaveBeenCalled();
   });
 });
+
+describe("the drag handle", () => {
+  const flat = (...tasks: TaskRowModel[]): TaskSection[] => [{ key: "a", tasks }];
+
+  it("is there, once per row, when the list has an order to keep", () => {
+    render(<ListView sections={flat(row(1), row(2))} reorderable onReorder={vi.fn()} />);
+    expect(screen.getAllByRole("button", { name: /^Move Task/ })).toHaveLength(2);
+  });
+
+  it("is absent when there is nothing to write an order to", () => {
+    // The rule this list keeps relearning: nothing is painted that cannot be
+    // honoured. A handle on Today would move a row and lose it on refresh.
+    render(<ListView sections={flat(row(1), row(2))} />);
+    expect(screen.queryByRole("button", { name: /^Move Task/ })).toBeNull();
+  });
+
+  it("stays out of the tab order, so the list is still one stop", () => {
+    // dnd-kit's own attributes would make it tabIndex 0, which is the defect
+    // D4 step 2 was built to remove - a hundred Tab presses to cross a list.
+    render(<ListView sections={flat(row(1), row(2))} reorderable onReorder={vi.fn()} />);
+    for (const handle of screen.getAllByRole("button", { name: /^Move Task/ })) {
+      expect(handle.tabIndex).toBe(-1);
+    }
+    expect(rowsOf().map((el) => el.tabIndex)).toEqual([0, -1]);
+  });
+
+  it("does not open the task when it is clicked", () => {
+    const onOpenTask = vi.fn();
+    render(
+      <ListView
+        sections={flat(row(1))}
+        reorderable
+        onReorder={vi.fn()}
+        onOpenTask={onOpenTask}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Move Task 1" }));
+    expect(onOpenTask).not.toHaveBeenCalled();
+  });
+});

@@ -1,8 +1,86 @@
-import { useMemo, useRef, useState } from "react";
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { type CSSProperties, useMemo, useRef, useState } from "react";
 import type { TaskRowModel } from "../model/display";
+import { Icon } from "./icons/Icon";
 import styles from "./ListView.module.css";
+import { mergeRefs } from "./mergeRefs";
 import { SectionHeader } from "./SectionHeader";
 import { TaskRow } from "./TaskRow";
+import rowStyles from "./TaskRow.module.css";
+
+/**
+ * A task row that can be picked up.
+ *
+ * The load-bearing decision: `attributes` and `listeners` go on the HANDLE,
+ * never on the row.
+ *
+ * `useSortable`'s attributes carry their own `role="button"` and `tabIndex=0`.
+ * On the row they would collide with the row's deliberate `role="button"` —
+ * which has a biome suppression and a reason — and would make every row
+ * tabbable again, undoing the one-tab-stop model D4 step 2 exists to provide.
+ * On the handle they are harmless and bring dnd-kit's keyboard path and its
+ * live-region announcements with them.
+ *
+ * It also means the row's own click-to-open and key handling are untouched:
+ * the pointer sensor never sees them.
+ */
+function SortableRow({
+  task,
+  rowProps,
+}: {
+  task: TaskRowModel;
+  rowProps: Omit<React.ComponentProps<typeof TaskRow>, "task">;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: task.id, attributes: { tabIndex: -1 } });
+
+  const dragStyle: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <TaskRow
+      task={task}
+      {...rowProps}
+      rowRef={mergeRefs(rowProps.rowRef, setNodeRef)}
+      dragStyle={dragStyle}
+      dragging={isDragging}
+      dragHandle={
+        <button
+          type="button"
+          className={rowStyles.handle}
+          {...attributes}
+          {...listeners}
+          // After the spread, so it is this file that decides: focusable, so
+          // dnd-kit's keyboard path exists, but never a tab stop — the list is
+          // one stop, and Alt+Arrow is the documented way to move a row.
+          tabIndex={-1}
+          aria-label={`Move ${task.title}`}
+          // The row beneath opens the task on click; picking it up must not.
+          onClick={(event) => event.stopPropagation()}
+        >
+          <Icon name="grip" size={16} />
+        </button>
+      }
+    />
+  );
+}
 
 export interface TaskSection {
   key: string;
@@ -83,6 +161,19 @@ export function ListView({
    * handler up here would also see every keystroke typed into a task name, so
    * "u" would undo while you were spelling "usare".
    */
+  const sensors = useSensors(
+    // A few pixels of travel before a drag starts, so a click that wobbles
+    // still opens the task rather than picking it up.
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    onReorder?.(Number(active.id), Number(over.id));
+  };
+
   const rowKeyDown = (task: TaskRowModel) => (event: React.KeyboardEvent) => {
     /*
      * Alt+Arrow moves the ROW, and has to be read before the modifier
@@ -147,41 +238,71 @@ export function ListView({
     }
   };
 
+  const body =
+    total === 0 ? (
+      <p className={styles.empty}>{emptyMessage}</p>
+    ) : (
+      <>
+        {sections.map((section, index) => (
+          <section key={section.key} className={styles.section}>
+            {section.title ? (
+              <SectionHeader
+                title={section.title}
+                {...(section.count === undefined ? {} : { count: section.count })}
+                first={index === 0}
+              />
+            ) : null}
+            <ul className={styles.list}>
+              <SortableContext
+                items={section.tasks.map((task) => task.id)}
+                strategy={verticalListSortingStrategy}
+                disabled={!reorderable}
+              >
+                {section.tasks.map((task) => {
+                  const rowProps = {
+                    tabIndex: task.id === tabStop ? 0 : -1,
+                    onKeyDown: rowKeyDown(task),
+                    rowRef: (el: HTMLDivElement | null) => {
+                      if (el) rows.current.set(task.id, el);
+                      else rows.current.delete(task.id);
+                    },
+                    ...(onToggleDone ? { onToggleDone } : {}),
+                    ...(onUndo ? { onUndo } : {}),
+                    ...(onOpenTask ? { onOpen: onOpenTask } : {}),
+                  };
+                  return reorderable ? (
+                    <SortableRow key={task.id} task={task} rowProps={rowProps} />
+                  ) : (
+                    <TaskRow key={task.id} task={task} {...rowProps} />
+                  );
+                })}
+              </SortableContext>
+            </ul>
+          </section>
+        ))}
+      </>
+    );
+
   return (
     <div className={styles.scroll}>
       <div className={styles.column}>
         {header}
-        {total === 0 ? (
-          <p className={styles.empty}>{emptyMessage}</p>
+        {/*
+         * The drag context wraps the SECTIONS only — not the header, and not
+         * the footer, which is where the quick-add composer renders. Same
+         * reason the key handler hangs off each row rather than this
+         * container: a context up here would be listening to a text field.
+         */}
+        {reorderable ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+          >
+            {body}
+          </DndContext>
         ) : (
-          sections.map((section, index) => (
-            <section key={section.key} className={styles.section}>
-              {section.title ? (
-                <SectionHeader
-                  title={section.title}
-                  {...(section.count === undefined ? {} : { count: section.count })}
-                  first={index === 0}
-                />
-              ) : null}
-              <ul className={styles.list}>
-                {section.tasks.map((task) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    tabIndex={task.id === tabStop ? 0 : -1}
-                    onKeyDown={rowKeyDown(task)}
-                    rowRef={(el) => {
-                      if (el) rows.current.set(task.id, el);
-                      else rows.current.delete(task.id);
-                    }}
-                    {...(onToggleDone ? { onToggleDone } : {})}
-                    {...(onUndo ? { onUndo } : {})}
-                    {...(onOpenTask ? { onOpen: onOpenTask } : {})}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))
+          body
         )}
         {footer ? <div className={styles.footer}>{footer}</div> : null}
       </div>
