@@ -245,3 +245,43 @@
   font: 400 12px / 18px var(--font-sans);
   color: var(--schedule-overdue);
 }
+
+/*
+ * The "⋯" menu of layout-specs §4's header. The header itself is measured; the
+ * menu hanging off it is not — Todoist's was never captured — so it borrows the
+ * modal's own radius and shadow rather than inventing a second card style.
+ */
+.overflow {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 1;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-idle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+
+.menuItem {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-base);
+  background: none;
+  color: var(--text-primary);
+  font: 400 14px / 21px inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover {
+  background: var(--hover-fill);
+}

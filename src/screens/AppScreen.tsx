@@ -33,6 +33,7 @@ import {
 } from "../model/views";
 import { useCompleteTask } from "../queries/useCompleteTask";
 import { useCreateTask } from "../queries/useCreateTask";
+import { useDeleteTask } from "../queries/useDeleteTask";
 import { useReorderTask } from "../queries/useReorderTask";
 import {
   useAddSubtask,
@@ -50,6 +51,7 @@ import {
   useViewTasks,
 } from "../queries/useVikunja";
 import { readThemePreference, resolveTheme, setTheme } from "../theme/theme";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { TaskDetail } from "../ui/detail/TaskDetail";
 import { ListView } from "../ui/ListView";
 import { AddTaskAffordance, QuickAdd } from "../ui/QuickAdd";
@@ -207,6 +209,10 @@ export function AppScreen() {
   });
 
   const completing = useCompleteTask({ timeZone, defaultDueTime });
+  const deleting = useDeleteTask();
+  /* The task the confirmation is about, which is not simply the open one: the
+     dialog closes first, so the confirmation has to hold its own copy. */
+  const [confirmDelete, setConfirmDelete] = useState<Task | null>(null);
   const editing = useUpdateTask();
   const reminding = useUpdateReminders();
   const labelling = useTaskLabel();
@@ -490,6 +496,33 @@ export function AppScreen() {
       />
       {error ? <p className={styles.error}>{error.message}</p> : null}
       <ToastRegion {...toasts} />
+      {confirmDelete ? (
+        <ConfirmDialog
+          title="Delete this task?"
+          /*
+           * "cannot be undone" is measured, not softened: §6 item 31 - the
+           * task answers 404 afterwards and there is no restore route. This is
+           * the only write in the app with nothing behind it, which is why it
+           * is the only one that asks first.
+           */
+          body={`"${confirmDelete.title}" will be deleted from Vikunja. This cannot be undone.`}
+          confirmLabel="Delete"
+          cancelLabel="Keep"
+          onConfirm={() => {
+            const task = confirmDelete;
+            setConfirmDelete(null);
+            // Closed before the write, not after: the dialog reads its task
+            // out of the view's list, and that task is about to stop existing.
+            setOpenTaskId(null);
+            deleting.mutate(task, {
+              onError: (cause) =>
+                toasts.show({ message: `Not deleted: ${cause.message}`, kind: "error" }),
+              onSuccess: () => toasts.show({ message: `Deleted "${task.title}"` }),
+            });
+          }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      ) : null}
       {openTask ? (
         <TaskDetail
           task={openTask}
@@ -564,6 +597,7 @@ export function AppScreen() {
             });
           }}
           allLabels={labelsQuery.data ?? []}
+          onDelete={() => setConfirmDelete(openTask)}
           onChangeLabel={async (change) => {
             const undo = undoableLabelChange(
               change,

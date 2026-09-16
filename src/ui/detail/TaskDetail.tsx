@@ -57,6 +57,11 @@ export interface TaskDetailProps {
   /** One label on or off. A sub-resource call, so one pick is one write. */
   onChangeLabel: (change: LabelChange) => Promise<void>;
   /**
+   * Deleting the task. Absent means the "⋯" menu is not drawn at all, rather
+   * than drawn with a dead item — the rule this dialog was built on.
+   */
+  onDelete?: () => void;
+  /**
    * Reads an edited NAME the way the composer reads a new one. A callback, for
    * the same reason `readDuePhrase` is one: the clock must be read now, not
    * when the dialog opened.
@@ -88,6 +93,7 @@ export function TaskDetail({
   onSaveReminders,
   allLabels,
   onChangeLabel,
+  onDelete,
   readTitleEdit,
   onSaveTitle,
   comments,
@@ -104,6 +110,7 @@ export function TaskDetail({
 }: TaskDetailProps) {
   /** At most one editor is open, so the dialog holds which. */
   const [editing, setEditing] = useState<"title" | "description" | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   /*
    * The name being typed, mirrored here ONLY so the sidebar can show what the
    * phrase would set. The editor still owns the draft - this is a copy that
@@ -238,6 +245,44 @@ export function TaskDetail({
                 <Icon name="chevronRight" size={16} />
               </button>
             </span>
+            {onDelete ? (
+              /*
+               * The "⋯" of layout-specs §4's header, which was measured from
+               * the start and never drawn because there was nothing it could
+               * honour. Delete is the first thing there is.
+               *
+               * It opens a menu rather than acting: a 32px button between
+               * prev/next and Close that deleted a task on one click would be
+               * the worst possible neighbour for the close button.
+               */
+              <span className={styles.overflow}>
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  aria-label="More actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  onClick={() => setMenuOpen((was) => !was)}
+                >
+                  <Icon name="more" size={16} />
+                </button>
+                {menuOpen ? (
+                  <div className={styles.menu} role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.menuItem}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onDelete();
+                      }}
+                    >
+                      Delete task
+                    </button>
+                  </div>
+                ) : null}
+              </span>
+            ) : null}
             <button
               ref={closeRef}
               type="button"

@@ -81,6 +81,7 @@ interface Extras {
   onSaveTitle?: (raw: string) => Promise<void>;
   onAddComment?: (html: string) => Promise<void>;
   onAddSubtask?: (title: string) => Promise<void>;
+  onDelete?: () => void;
 }
 
 function open(over: Partial<Task> = {}, extra: Extras = {}) {
@@ -113,6 +114,7 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
       onAddSubtask={onAddSubtask}
       {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
       {...(extra.onNext ? { onNext: extra.onNext } : {})}
+      {...(extra.onDelete ? { onDelete: extra.onDelete } : {})}
     />,
   );
   return {
@@ -875,5 +877,47 @@ describe("sub-tasks", () => {
   it("offers the box even on a task that has none yet", () => {
     open();
     expect(screen.getByLabelText("Add a sub-task")).toBeInTheDocument();
+  });
+});
+
+describe("the header's ⋯ menu", () => {
+  it("is not drawn at all when there is nothing it could do", () => {
+    // The rule this dialog was built on: nothing is painted that cannot be
+    // honoured. The "⋯" was measured in layout-specs §4 from the start and
+    // deliberately left out until Delete gave it something to hold.
+    open();
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
+  });
+
+  it("opens on click and offers Delete", () => {
+    const onDelete = vi.fn();
+    open({}, { onDelete });
+    expect(screen.queryByRole("menuitem", { name: "Delete task" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: "Delete task" })).toBeVisible();
+  });
+
+  it("asks rather than acting, and closes itself when it does", () => {
+    // A 32px button sitting next to Close that deleted on one click would be
+    // the worst possible neighbour, which is why it is a menu for one item.
+    const onDelete = vi.fn();
+    open({}, { onDelete });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(onDelete).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete task" }));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menuitem", { name: "Delete task" })).toBeNull();
+  });
+
+  it("does not close the dialog by itself", () => {
+    // The confirmation has to come up over the task it is about; closing here
+    // would ask "delete this?" with the task already off screen.
+    const onDelete = vi.fn();
+    const { onClose } = open({}, { onDelete });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete task" }));
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

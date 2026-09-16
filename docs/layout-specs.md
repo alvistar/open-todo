@@ -207,7 +207,7 @@ Cancelling with text present opens the confirmation modal (§5).
 | Element | Spec |
 |---|---|
 | Dialog | 864×750, r10, white, `0 2px 8px rgba(0,0,0,.16)`; overlay `rgba(0,0,0,.4)`; top at y=64 |
-| Header | 48px, `padding 0 8px 0 12px`; breadcrumb button 80×28 (`padding 0 8px`, icon 16, `13px/20px 600 #666`); right cluster prev/next 32×32 pair, then "⋯" and close 32×32, `gap 8px` |
+| Header | 48px, `padding 0 8px 0 12px`; breadcrumb button 80×28 (`padding 0 8px`, icon 16, `13px/20px 600 #666`); right cluster prev/next 32×32 pair, then "⋯" and close 32×32, `gap 8px`. **The "⋯" was measured here from the start and drawn only on 2026-09-16**, when Delete gave it something it could honour; it holds one item today. The menu hanging off it is NOT measured — Todoist's was never captured — and borrows the modal's own radius and shadow rather than inventing a second card style. |
 | Split | main 604 / sidebar 260 |
 | Main padding | `16px 16px 0` |
 | Checkbox | 24×24, same anatomy as list; `margin-top −1px` |

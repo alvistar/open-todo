@@ -1102,7 +1102,19 @@ public HTTP API only, which carries no such obligation.
     5. ~~**F7**~~ — measured closed 2026-09-16: `corri ogni 1,5 km` matches no
        recurrence and raises no warning. The later rule about what may follow a
        complete schedule closed it; nobody had re-measured. Mapping §5 updated.
-    6. **A delete affordance** (item 10 above).
+    6. ~~**A delete affordance**~~ — built 2026-09-16. `deleteTask` had existed
+       since D-write with no UI; §7 said the slice was "confirmation, entry
+       point, reversibility", and all three had answers waiting:
+       - **Entry point**: the `⋯` of `layout-specs.md` §4's header, measured
+         from the start and never drawn because nothing could honour it.
+       - **Confirmation**: `ConfirmDialog`, already at §5's measured geometry.
+       - **Reversibility**: none. Measured (§6 item 31) — the task 404s
+         afterwards and there is no restore route — so it asks BEFORE and
+         offers nothing after. An Undo would re-create a DIFFERENT task: new
+         id, no comments, no relations, no position.
+       It is also the only non-optimistic write in the app: a failed optimistic
+       delete would have to put back the copy it happened to hold, and for the
+       one irreversible action that is the wrong risk.
     7. **Never measured**, from the original recon: hover and focus states, and
        a project view with sections (item 3 above). Upcoming is now BUILT but
        still unmeasured — its day heading is `todayHeading`'s shape with the
