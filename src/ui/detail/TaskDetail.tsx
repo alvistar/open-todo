@@ -7,6 +7,7 @@ import { priorityFromVikunja, priorityLabel } from "../../model/priority";
 import { describeReminder } from "../../model/reminders";
 import { isRichHtml, stripHtml, toDescriptionHtml } from "../../model/taskRow";
 import type { TitleEdit } from "../../model/titleEdit";
+import { ConfirmDialog } from "../ConfirmDialog";
 import { Icon } from "../icons/Icon";
 import { PriorityCheckbox } from "../PriorityCheckbox";
 import { Comments } from "./Comments";
@@ -112,6 +113,31 @@ export function TaskDetail({
   const [editing, setEditing] = useState<"title" | "description" | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   /*
+   * Every way out of this dialog goes through one function, so the question is
+   * asked once rather than at each door. Read through a ref by the key
+   * handler, which must not be rebuilt on every render.
+   */
+  const requestCloseRef = useRef<() => void>(() => {});
+  /*
+   * Whether the open editor holds work nobody has saved. Closing the whole
+   * pane over it loses the same text Cancel would, by a wider door — so the
+   * dialog asks the question its Cancel asks.
+   *
+   * Beyond the measurement, and said plainly: the reference product was
+   * measured guarding the EDITOR's own Cancel (2026-09-16). Whether its X
+   * guards too was not captured, and guessing loudly here is safer than
+   * guessing quietly.
+   */
+  const [dirty, setDirty] = useState(false);
+  const [confirmingClose, setConfirmingClose] = useState(false);
+
+  /** Close, unless there is unsaved work to ask about first. */
+  const requestClose = () => {
+    if (dirty) setConfirmingClose(true);
+    else onClose();
+  };
+  requestCloseRef.current = requestClose;
+  /*
    * The name being typed, mirrored here ONLY so the sidebar can show what the
    * phrase would set. The editor still owns the draft - this is a copy that
    * nothing writes back, so the 20s poll cannot re-seed what is being typed.
@@ -156,7 +182,7 @@ export function TaskDetail({
          */
         if (typing) return;
         event.preventDefault();
-        onCloseRef.current();
+        requestCloseRef.current();
         return;
       }
       /*
@@ -219,6 +245,19 @@ export function TaskDetail({
         aria-modal="true"
         aria-labelledby="task-detail-title"
       >
+        {confirmingClose ? (
+          <ConfirmDialog
+            title="Discard unsaved changes?"
+            body="Unsaved changes will be lost."
+            confirmLabel="Discard"
+            cancelLabel="Keep editing"
+            onConfirm={() => {
+              setConfirmingClose(false);
+              onClose();
+            }}
+            onCancel={() => setConfirmingClose(false)}
+          />
+        ) : null}
         <div className={styles.header}>
           <span className={styles.crumb}>
             <Icon name="project" size={16} />
@@ -288,7 +327,7 @@ export function TaskDetail({
               type="button"
               className={styles.iconButton}
               aria-label="Close"
-              onClick={onClose}
+              onClick={() => requestClose()}
             >
               <Icon name="close" size={16} />
             </button>
@@ -317,6 +356,7 @@ export function TaskDetail({
                     }}
                     onClose={closeEditor}
                     onDraft={setTitleDraft}
+                    onDirty={setDirty}
                     onSave={onSaveTitle}
                     {...(pending && pending.warnings.length > 0
                       ? { notice: pending.warnings.join(" ") }
@@ -332,6 +372,7 @@ export function TaskDetail({
                     multiline
                     editing={editing === "description"}
                     onEdit={() => setEditing("description")}
+                    onDirty={setDirty}
                     onClose={closeEditor}
                     onSave={(next) => onSave({ description: toDescriptionHtml(next) })}
                     {...(isRichHtml(task.description)

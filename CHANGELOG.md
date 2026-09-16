@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
 - **You can delete a task.** The "⋯" in a task's header — which had been drawn
   in the design from the beginning and left out until now — offers it, and it
   asks first, naming the task. It asks because it cannot be taken back:
@@ -181,6 +186,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gets created.
 
 ### Added
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
 - **You can delete a task.** The "⋯" in a task's header — which had been drawn
   in the design from the beginning and left out until now — offers it, and it
   asks first, naming the task. It asks because it cannot be taken back:
@@ -225,6 +235,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `D-adverb` in `docs/HANDOVER.md`.
 
 ### Added
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
 - **You can delete a task.** The "⋯" in a task's header — which had been drawn
   in the design from the beginning and left out until now — offers it, and it
   asks first, naming the task. It asks because it cannot be taken back:
@@ -357,6 +372,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the lookbehind that `@label` and `p1` already used.
 
 ### Added
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
 - **You can delete a task.** The "⋯" in a task's header — which had been drawn
   in the design from the beginning and left out until now — offers it, and it
   asks first, naming the task. It asks because it cannot be taken back:
@@ -534,6 +554,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Discarding a composer with text in it asks for confirmation.
 
 ### Added
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
 - **You can delete a task.** The "⋯" in a task's header — which had been drawn
   in the design from the beginning and left out until now — offers it, and it
   asks first, naming the task. It asks because it cannot be taken back:
@@ -611,6 +636,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   within ~40s on the next full fetch.
 
 ### Added
+- **Editing a task no longer throws your text away without asking.** Cancel on a
+  name or description you have changed now asks first, and so does closing the
+  task while an edit is open — the editor stays behind the question, so
+  "Keep editing" puts you back exactly where you were. An editor you opened and
+  did not change still closes without a word.
 - **You can delete a task.** The "⋯" in a task's header — which had been drawn
   in the design from the beginning and left out until now — offers it, and it
   asks first, naming the task. It asks because it cannot be taken back:

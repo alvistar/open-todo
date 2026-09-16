@@ -185,6 +185,24 @@ through the CLI. What IS visible is that Todoist declares
 almost certainly switched on under `:focus-visible` alone. Measure it with a
 real keyboard before copying a number.
 
+### 4.1 Unsaved-changes confirmation — **measured 2026-09-16**
+
+Cancelling an edit that HAS changes raises the §5 confirmation:
+
+```
+Ignorare le modifiche non salvate?
+Le modifiche non salvate andranno perse.
+                                     [Annulla]  [Chiudi]
+```
+
+The editor stays open BEHIND it, so the question is rendered over the editor
+rather than after closing it. An editor opened and left alone closes with no
+question. Whether the dialog's own X guards the same way was NOT captured.
+
+open-todo asks the same question in English and keeps its own button verbs —
+Discard / Keep editing, as the composer already uses — so the two confirmations
+in the app read alike.
+
 ### 2.4 Inline "Aggiungi attività" affordance (below a section's rows)
 
 33px `li`, `padding 0 20px 0 1px`; button `14px 400 #808080`, `padding 0 8px 8px 9px`, `margin-left −8px`, r5, with a 17px circular "+" icon (`margin-right 11px`). Turns into the accent colour on hover. "Aggiungi sezione" appears 12px below as a centred 24px `14px 700` accent button, hidden until hover.

@@ -876,9 +876,21 @@ open thread.
 step, and every scratch task, label and comment deleted afterwards. The
 server-side findings are `docs/data-model-mapping.md` §6 items 15-21.
 
-**Known gap with the reference product, measured and never decided:** it asks
-*"Ignorare le modifiche non salvate?"* before discarding an edit; open-todo's
-Cancel just discards.
+**That gap is CLOSED, 2026-09-16.** The reference behaviour was measured
+properly this time (`layout-specs.md` §4.1): cancelling an edit that HAS
+changes raises the §5 confirmation — *"Ignorare le modifiche non salvate? / Le
+modifiche non salvate andranno perse."* — and the editor stays open BEHIND it,
+which is why ours renders the question over the editor rather than closing
+first. An editor opened and left alone still closes without a word: asking
+there would teach the reader to click through the question without reading it.
+
+open-todo also guards the dialog's own CLOSE, which is **beyond the
+measurement** and labelled as such in the code: closing the pane loses the same
+text by a wider door, and whether Todoist's X guards too was not captured. Every
+exit routes through one `requestClose`, so the question is asked once rather
+than at each door, and the dirty flag is cleared on the editor's unmount — or a
+dialog whose editor had been saved would still believe there was something to
+lose.
 
 ---
 
@@ -1132,8 +1144,9 @@ public HTTP API only, which carries no such obligation.
        Still never measured: a project view with sections (item 3 above).
        Upcoming is BUILT but unmeasured — its day heading is derived from
        `todayHeading`, and says so in the code.
-    8. **The unsaved-changes confirmation** the reference product shows and
-       open-todo does not (D-detail, last paragraph).
+    8. ~~**The unsaved-changes confirmation**~~ — built 2026-09-16, on both the
+       editor's Cancel (measured) and the dialog's Close (ours). See D-detail's
+       closing note and `layout-specs.md` §4.1.
 
 14. ~~The Upcoming view~~ — done 2026-09-16, with the three dead sidebar
     routes. Notes for whoever continues:
