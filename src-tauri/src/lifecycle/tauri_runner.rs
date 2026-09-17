@@ -4,6 +4,209 @@
 use super::machine::{Attempt, Decision, Effect, Event, Kind, RecreationId, Token};
 use super::runtime::{EffectRunner, Envelope};
 use serde::{Deserialize, Serialize};
+use std::sync::{mpsc::Sender, Arc};
+use std::thread;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindowBuilder};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+const MAIN_WINDOW: &str = "main";
+
+#[derive(Clone, Debug, Serialize)]
+struct LifecycleDiagnostic<'a> {
+    message: &'a str,
+}
+
+type Recreate<R> = dyn Fn(&AppHandle<R>) -> Result<(), String> + Send + Sync + 'static;
+
+pub struct TauriRunner<R: Runtime> {
+    app: AppHandle<R>,
+    ask_timeout: Duration,
+    recreate: Arc<Recreate<R>>,
+}
+
+impl<R: Runtime> TauriRunner<R> {
+    pub fn new(app: AppHandle<R>) -> Self {
+        Self {
+            app,
+            ask_timeout: Duration::from_secs(5),
+            recreate: Arc::new(recreate_main_window),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_recreate<F>(app: AppHandle<R>, recreate: F) -> Self
+    where
+        F: Fn(&AppHandle<R>) -> Result<(), String> + Send + Sync + 'static,
+    {
+        Self {
+            app,
+            ask_timeout: Duration::from_secs(5),
+            recreate: Arc::new(recreate),
+        }
+    }
+}
+
+impl<R: Runtime> EffectRunner for TauriRunner<R> {
+    fn run(&mut self, effect: Effect, tx: &Sender<Envelope>) {
+        match effect {
+            Effect::EmitRequest { attempt, frontend } => {
+                let Some(window) = self.app.get_webview_window(MAIN_WINDOW) else {
+                    send_event(
+                        tx,
+                        Event::EmitFailed {
+                            attempt,
+                            frontend,
+                        },
+                    );
+                    self.emit_error("The editor did not respond to the desktop close request.");
+                    return;
+                };
+                if window
+                    .emit("lifecycle:request", WireAttempt::from(&attempt))
+                    .is_err()
+                {
+                    send_event(
+                        tx,
+                        Event::EmitFailed {
+                            attempt,
+                            frontend,
+                        },
+                    );
+                    self.emit_error("The editor did not respond to the desktop close request.");
+                }
+            }
+            Effect::ScheduleTimeout(attempt) => {
+                let timeout = self.ask_timeout;
+                let thread_tx = tx.clone();
+                let thread_attempt = attempt.clone();
+                let spawn = thread::Builder::new()
+                    .name("lifecycle-timeout".into())
+                    .spawn(move || {
+                        thread::sleep(timeout);
+                        send_event(&thread_tx, Event::Timeout(thread_attempt));
+                    });
+                if spawn.is_err() {
+                    send_event(&tx, Event::Timeout(attempt));
+                }
+            }
+            Effect::ShowRecoveryDialog(attempt) => {
+                self.show_recovery_dialog(attempt, tx);
+            }
+            Effect::ShowWindow => self.show_window(),
+            Effect::Finalize(_) => {
+                log::debug!("lifecycle finalization is not wired yet");
+            }
+            Effect::ArmExitBypass(generation) => {
+                log::debug!("lifecycle exit bypass armed for generation {generation}");
+            }
+            Effect::Exit => self.app.exit(0),
+            Effect::AllowExit => log::debug!("lifecycle exit allowed"),
+            Effect::PreventExit => log::debug!("lifecycle exit prevented"),
+            Effect::Recreate(_) => {
+                log::debug!("lifecycle recreation is not wired yet");
+            }
+            Effect::ReplyToken(token) => log::debug!(
+                "lifecycle ready reply dropped for instance {} generation {}",
+                token.instance_id,
+                token.generation
+            ),
+            Effect::EmitError(message) => self.emit_error(&message),
+            Effect::Log(reason) => log::debug!("lifecycle: {reason}"),
+        }
+    }
+}
+
+impl<R: Runtime> TauriRunner<R> {
+    fn emit_error(&self, message: &str) {
+        if let Some(window) = self.app.get_webview_window(MAIN_WINDOW) {
+            let _ = window.emit("lifecycle:error", LifecycleDiagnostic { message });
+        }
+    }
+
+    fn show_window(&self) {
+        let Some(window) = self.app.get_webview_window(MAIN_WINDOW) else {
+            self.emit_error("The main window could not be shown.");
+            return;
+        };
+        if !window.is_visible().unwrap_or(true) {
+            if let Err(error) = window.show() {
+                self.emit_error("The main window could not be shown.");
+                log::warn!("could not show the main window: {error}");
+            }
+            if let Err(error) = window.set_focus() {
+                self.emit_error("The main window could not be focused.");
+                log::warn!("could not focus the main window: {error}");
+            }
+        }
+    }
+
+    fn show_recovery_dialog(&self, attempt: Attempt, tx: &Sender<Envelope>) {
+        if self.app.get_webview_window(MAIN_WINDOW).is_none() {
+            send_event(
+                tx,
+                Event::Recovered {
+                    attempt,
+                    allow: false,
+                },
+            );
+            self.emit_error("The main window is unavailable for lifecycle recovery.");
+            return;
+        }
+        let action = if attempt.kind == Kind::Quit {
+            "exit anyway"
+        } else {
+            "close anyway"
+        };
+        let allow_label = if attempt.kind == Kind::Quit {
+            "Exit anyway"
+        } else {
+            "Close anyway"
+        };
+        let message = format!(
+            "The editor did not respond. Cancel to keep open-todo running, or {action} with a possible loss of unsaved work."
+        );
+        let tx = tx.clone();
+        self.app
+            .dialog()
+            .message(message)
+            .title("open-todo needs a decision")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                allow_label.to_string(),
+                "Cancel".to_string(),
+            ))
+            .show(move |allow| {
+                send_event(
+                    &tx,
+                    Event::Recovered {
+                        attempt,
+                        allow,
+                    },
+                );
+            });
+    }
+}
+
+fn send_event(tx: &Sender<Envelope>, event: Event) {
+    let _ = tx.send(Envelope { event, reply: None });
+}
+
+fn recreate_main_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == MAIN_WINDOW)
+        .cloned()
+        .ok_or_else(|| "main window configuration is missing".to_string())?;
+    let window = WebviewWindowBuilder::from_config(app, &config)
+        .and_then(|builder| builder.build())
+        .map_err(|error| format!("could not recreate the main window: {error}"))?;
+    crate::ensure_usable_geometry(&window);
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -115,6 +318,18 @@ impl From<WireDecision> for Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lifecycle::machine::{Attempt, Kind};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    fn attempt() -> Attempt {
+        Attempt {
+            id: 7,
+            generation: 3,
+            kind: Kind::Close,
+            sequence: 1,
+        }
+    }
 
     #[test]
     fn wire_attempt_round_trips_the_bridge_payload() {
@@ -180,6 +395,64 @@ mod tests {
                 decision: Decision::ExitAnyway,
                 dirty: true,
                 pending: false,
+            }
+        );
+    }
+
+    #[test]
+    fn show_window_makes_hidden_main_window_visible() {
+        let app = tauri::test::mock_app();
+        let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        window.hide().unwrap();
+
+        let mut runner = TauriRunner::new(app.handle().clone());
+        let (tx, _rx) = mpsc::channel();
+        runner.run(Effect::ShowWindow, &tx);
+
+        assert!(window.is_visible().unwrap());
+    }
+
+    #[test]
+    fn emit_request_without_main_reports_emit_failure() {
+        let app = tauri::test::mock_app();
+        let mut runner = TauriRunner::new(app.handle().clone());
+        let (tx, rx) = mpsc::channel();
+        let attempt = attempt();
+        let frontend = Token {
+            instance_id: "bridge".into(),
+            generation: 3,
+        };
+
+        runner.run(
+            Effect::EmitRequest {
+                attempt: attempt.clone(),
+                frontend: frontend.clone(),
+            },
+            &tx,
+        );
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+            Event::EmitFailed { attempt, frontend }
+        );
+    }
+
+    #[test]
+    fn recovery_without_main_cancels_the_native_action() {
+        let app = tauri::test::mock_app();
+        let mut runner = TauriRunner::new(app.handle().clone());
+        let (tx, rx) = mpsc::channel();
+        let attempt = attempt();
+
+        runner.run(Effect::ShowRecoveryDialog(attempt.clone()), &tx);
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+            Event::Recovered {
+                attempt,
+                allow: false,
             }
         );
     }
