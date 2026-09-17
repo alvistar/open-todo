@@ -2,16 +2,10 @@
 
 mod lifecycle;
 
-use lifecycle::{
-    BeginResult, DecisionResult, FrontendToken, LifecycleAttempt, LifecycleCoordinator,
-    LifecycleDecisionPayload, LifecycleKind, TimeoutOutcome,
-};
-use serde::Serialize;
-use std::{sync::Mutex, time::Duration};
-use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime, State, WebviewWindow,
-};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use lifecycle::machine::{Event, Kind, Machine};
+use lifecycle::runtime::{spawn_loop, ExitVerdict, LifecycleHandle};
+use lifecycle::tauri_runner::{RunnerOps, TauriRunner, WireDecision, WireToken};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime, State, WebviewWindow};
 use tauri_plugin_window_state::{AppHandleExt as WindowStateAppHandleExt, StateFlags};
 
 const MAIN_WINDOW: &str = "main";
@@ -25,75 +19,28 @@ const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
     .union(StateFlags::DECORATIONS);
 
 pub struct AppState {
-    coordinator: Mutex<LifecycleCoordinator>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct LifecycleDiagnostic<'a> {
-    message: &'a str,
+    lifecycle: LifecycleHandle,
 }
 
 #[tauri::command]
-fn lifecycle_ready(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    instance_id: String,
-) -> Result<FrontendToken, String> {
-    let outcome = {
-        let mut coordinator = state
-            .coordinator
-            .lock()
-            .map_err(|_| "desktop lifecycle state is unavailable".to_string())?;
-        // A destroyed main window cannot deliver a late initial ready call. Any
-        // ready handshake that arrives here therefore belongs to this generation;
-        // the returned token makes its later cleanup generation-specific.
-        coordinator.frontend_ready(instance_id)
-    };
-    if let Some(attempt) = outcome.reemit {
-        let should_send = state
-            .coordinator
-            .lock()
-            .map(|mut coordinator| coordinator.prepare_frontend_reemit(&attempt))
-            .unwrap_or(false);
-        if should_send {
-            send_lifecycle_request(&app, &state, attempt);
-        }
-    }
-    Ok(outcome.token)
+fn lifecycle_ready(state: State<'_, AppState>, instance_id: String) -> Result<WireToken, String> {
+    state
+        .lifecycle
+        .ready(instance_id)
+        .map(|token| WireToken::from(&token))
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn lifecycle_unready(state: State<'_, AppState>, token: FrontendToken) -> Result<(), String> {
-    let mut coordinator = state
-        .coordinator
-        .lock()
-        .map_err(|_| "desktop lifecycle state is unavailable".to_string())?;
-    coordinator.frontend_unready(&token);
-    Ok(())
+fn lifecycle_unready(state: State<'_, AppState>, token: WireToken) {
+    state.lifecycle.send(Event::FrontendUnready {
+        token: token.into(),
+    });
 }
 
 #[tauri::command]
-fn lifecycle_decision(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    payload: LifecycleDecisionPayload,
-) -> Result<(), String> {
-    let result = {
-        let mut coordinator = state
-            .coordinator
-            .lock()
-            .map_err(|_| "desktop lifecycle state is unavailable".to_string())?;
-        coordinator.decide(&payload)
-    };
-
-    match result {
-        DecisionResult::Authorized(attempt) => finalize_attempt(&app, &state, attempt),
-        DecisionResult::Cancelled | DecisionResult::Stale => Ok(()),
-        DecisionResult::Recheck(attempt) => {
-            send_lifecycle_request(&app, &state, attempt);
-            Ok(())
-        }
-    }
+fn lifecycle_decision(state: State<'_, AppState>, payload: WireDecision) {
+    state.lifecycle.send(payload.into());
 }
 
 pub fn run() {
@@ -102,7 +49,11 @@ pub fn run() {
         // only activates or recreates the one main window; it never opens a
         // second window or imports a session from the new process.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            activate_main_window(app);
+            let Some(state) = app.try_state::<AppState>() else {
+                log::error!("desktop lifecycle state missing during activation");
+                return;
+            };
+            on_activate(app, &state.lifecycle);
         }))
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -110,15 +61,15 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState {
-            coordinator: Mutex::new(LifecycleCoordinator::new(1)),
-        })
         .invoke_handler(tauri::generate_handler![
             lifecycle_ready,
             lifecycle_unready,
             lifecycle_decision,
         ])
         .setup(|app| {
+            app.manage(AppState {
+                lifecycle: spawn_loop(Machine::new(0), TauriRunner::new(app.handle().clone())),
+            });
             if cfg!(debug_assertions) {
                 log::debug!("open-todo desktop shell started");
             }
@@ -132,12 +83,11 @@ pub fn run() {
                 return;
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.app_handle().try_state::<AppState>().is_none() {
+                let Some(state) = window.app_handle().try_state::<AppState>() else {
                     log::error!("desktop lifecycle state missing during close");
                     return;
-                }
-                api.prevent_close();
-                request_lifecycle(window.app_handle(), LifecycleKind::Close);
+                };
+                on_close_requested(api, &state.lifecycle);
             }
         })
         .build(tauri::generate_context!())
@@ -148,343 +98,85 @@ pub fn run() {
                     log::error!("desktop lifecycle state missing during quit");
                     return;
                 };
-                let bypass = match state.coordinator.lock() {
-                    Ok(mut coordinator) => {
-                        let generation = coordinator.generation();
-                        coordinator.take_exit_bypass(generation)
-                    }
-                    Err(_) => {
-                        log::error!("desktop lifecycle state lock failed during quit");
-                        false
-                    }
-                };
-                if bypass {
-                    return;
-                }
-                api.prevent_exit();
-                request_lifecycle(app, LifecycleKind::Quit);
+                on_exit_requested(&api, &state.lifecycle);
             }
             #[cfg(target_os = "macos")]
-            tauri::RunEvent::Reopen { .. } => activate_main_window(app),
+            tauri::RunEvent::Reopen { .. } => {
+                let Some(state) = app.try_state::<AppState>() else {
+                    log::error!("desktop lifecycle state missing during reopen");
+                    return;
+                };
+                on_activate(app, &state.lifecycle);
+            }
             tauri::RunEvent::Ready => {
                 if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                     ensure_usable_geometry(&window);
                 }
             }
             tauri::RunEvent::Exit => {
-                if let Err(error) = app.save_window_state(WINDOW_STATE_FLAGS) {
-                    log::warn!("could not persist window geometry: {error}");
-                }
+                on_run_event_exit(app);
             }
             _ => {}
         });
 }
 
-fn request_lifecycle<R: Runtime>(app: &AppHandle<R>, kind: LifecycleKind) {
-    let Some(state) = app.try_state::<AppState>() else {
-        log::error!("desktop lifecycle state missing while requesting action");
-        return;
-    };
-    let has_visible_window = app
-        .get_webview_window(MAIN_WINDOW)
-        .map(|window| window.is_visible().unwrap_or(true))
-        .unwrap_or(false);
-    let result = match state.coordinator.lock() {
-        Ok(mut coordinator) => coordinator.begin(kind, has_visible_window),
-        Err(_) => {
-            log::error!("desktop lifecycle state lock failed while requesting action");
-            return;
-        }
-    };
-
-    match result {
-        BeginResult::AllowDirect => {
-            if let Ok(mut coordinator) = state.coordinator.lock() {
-                let generation = coordinator.generation();
-                coordinator.arm_exit_bypass(generation);
-            }
-            app.exit(0);
-        }
-        BeginResult::Ask(attempt) => {
-            send_lifecycle_request(app, &state, attempt);
-        }
-        BeginResult::Recover(attempt) => show_native_recovery(app, attempt),
-        BeginResult::Ignore | BeginResult::Queued(_) => {}
-    }
+fn on_close_requested(api: &tauri::CloseRequestApi, lifecycle: &LifecycleHandle) {
+    api.prevent_close();
+    on_close_verdict(lifecycle);
 }
 
-fn send_lifecycle_request<R: Runtime>(
-    app: &AppHandle<R>,
-    state: &AppState,
-    attempt: LifecycleAttempt,
-) {
-    if let Err(error) = emit_lifecycle_request(app, &attempt) {
-        mark_frontend_unready(state);
-        emit_lifecycle_error(
-            app,
-            "The editor did not respond to the desktop close request.",
-        );
-        log::warn!("could not send lifecycle request: {error}");
-        show_native_recovery(app, attempt);
-    } else {
-        schedule_recovery_timeout(app, attempt);
-    }
-}
-
-fn emit_lifecycle_request<R: Runtime>(
-    app: &AppHandle<R>,
-    attempt: &LifecycleAttempt,
-) -> Result<(), String> {
-    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
-        return Err("main window is unavailable".to_string());
-    };
-    window
-        .emit("lifecycle:request", attempt)
-        .map_err(|error| format!("could not reach the frontend: {error}"))
-}
-
-fn mark_frontend_unready(state: &AppState) {
-    if let Ok(mut coordinator) = state.coordinator.lock() {
-        coordinator.frontend_lost();
-    }
-}
-
-fn schedule_recovery_timeout<R: Runtime>(app: &AppHandle<R>, attempt: LifecycleAttempt) {
-    let app_handle = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(5));
-        let Some(state) = app_handle.try_state::<AppState>() else {
-            return;
-        };
-        let outcome = state
-            .coordinator
-            .lock()
-            .map(|mut coordinator| coordinator.timeout_expired(&attempt))
-            .unwrap_or(TimeoutOutcome::Stale);
-        match outcome {
-            TimeoutOutcome::Stale => (),
-            TimeoutOutcome::Reemit(attempt) => send_lifecycle_request(&app_handle, &state, attempt),
-            TimeoutOutcome::Expired => {
-                emit_lifecycle_error(
-                    &app_handle,
-                    "The editor did not respond to the desktop close request.",
-                );
-                show_native_recovery(&app_handle, attempt);
-            }
-        }
+fn on_close_verdict(lifecycle: &LifecycleHandle) {
+    lifecycle.send(Event::Begin {
+        kind: Kind::Close,
+        window_exists: true,
     });
 }
 
-fn emit_lifecycle_error<R: Runtime>(app: &AppHandle<R>, message: &str) {
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        let _ = window.emit("lifecycle:error", LifecycleDiagnostic { message });
+fn on_run_event_exit<R: Runtime>(app: &AppHandle<R>) {
+    on_exited(app);
+    if let Err(error) = app.save_window_state(WINDOW_STATE_FLAGS) {
+        log::warn!("could not persist window geometry: {error}");
     }
 }
 
-fn show_native_recovery<R: Runtime>(app: &AppHandle<R>, attempt: LifecycleAttempt) {
-    let Some(state) = app.try_state::<AppState>() else {
-        log::error!("desktop lifecycle state missing before recovery dialog");
-        return;
-    };
-    let should_show = state
-        .coordinator
-        .lock()
-        .map(|mut coordinator| coordinator.start_recovery(&attempt))
-        .unwrap_or(false);
-    if !should_show {
-        return;
+fn on_exited<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(state) = app.try_state::<AppState>() {
+        state.lifecycle.send(Event::Exited);
     }
-
-    let app_handle = app.clone();
-    let action = if attempt.kind == LifecycleKind::Quit {
-        "exit anyway"
-    } else {
-        "close anyway"
-    };
-    let allow_label = if attempt.kind == LifecycleKind::Quit {
-        "Exit anyway"
-    } else {
-        "Close anyway"
-    };
-    let message = format!(
-        "The editor did not respond. Cancel to keep open-todo running, or {action} with a possible loss of unsaved work."
-    );
-    app.dialog()
-        .message(message)
-        .title("open-todo needs a decision")
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            allow_label.to_string(),
-            "Cancel".to_string(),
-        ))
-        .show(move |allow_exit| {
-            let Some(state) = app_handle.try_state::<AppState>() else {
-                log::error!("desktop lifecycle state missing during recovery");
-                return;
-            };
-            let reservation = match state.coordinator.lock() {
-                Ok(mut coordinator) => coordinator.recover(&attempt, allow_exit),
-                Err(_) => {
-                    log::error!("desktop lifecycle state lock failed during recovery");
-                    None
-                }
-            };
-            if let Some(attempt) = reservation {
-                finalize_attempt(&app_handle, &state, attempt).unwrap_or_else(|error| {
-                    log::error!("desktop recovery action failed: {error}");
-                });
-            }
-        });
 }
 
-fn finalize_attempt<R: Runtime>(
+fn on_exit_requested(api: &tauri::ExitRequestApi, lifecycle: &LifecycleHandle) {
+    if on_exit_verdict(lifecycle) == ExitVerdict::Prevent {
+        api.prevent_exit();
+    }
+}
+
+fn on_exit_verdict(lifecycle: &LifecycleHandle) -> ExitVerdict {
+    lifecycle.exit_requested()
+}
+
+fn on_activate<R: Runtime>(app: &AppHandle<R>, lifecycle: &LifecycleHandle) {
+    on_activate_with_ops(app, lifecycle, &lifecycle::tauri_runner::AppRunnerOps);
+}
+
+fn on_activate_with_ops<R: Runtime, O: RunnerOps<R>>(
     app: &AppHandle<R>,
-    state: &AppState,
-    attempt: LifecycleAttempt,
-) -> Result<(), String> {
-    let result = match attempt.kind {
-        LifecycleKind::Close => match app.get_webview_window(MAIN_WINDOW) {
-            None => Ok(()),
-            Some(window) => {
-                #[cfg(target_os = "macos")]
-                {
-                    let hidden = window
-                        .hide()
-                        .map_err(|error| format!("could not hide the main window: {error}"));
-                    if hidden.is_ok() {
-                        if let Err(error) = app.save_window_state(WINDOW_STATE_FLAGS) {
-                            log::warn!("could not persist window geometry: {error}");
-                        }
-                    }
-                    hidden.map(|_| ())
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    if let Ok(mut coordinator) = state.coordinator.lock() {
-                        coordinator.arm_exit_bypass(attempt.generation);
-                    }
-                    window
-                        .destroy()
-                        .map_err(|error| format!("could not destroy the main window: {error}"))
-                }
-            }
-        },
-        LifecycleKind::Quit => {
-            if let Ok(mut coordinator) = state.coordinator.lock() {
-                coordinator.arm_exit_bypass(attempt.generation);
-            }
-            app.exit(0);
-            Ok(())
+    lifecycle: &LifecycleHandle,
+    ops: &O,
+) {
+    if ops.has_main_window(app) {
+        if let Err(error) = ops.unminimize(app) {
+            log::warn!("could not unminimize the main window: {error}");
         }
-    };
-    let pending_kind = state
-        .coordinator
-        .lock()
-        .map(|mut coordinator| coordinator.finish_finalize(&attempt))
-        .unwrap_or(None);
-    if let Some(kind) = pending_kind {
-        request_lifecycle(app, kind);
-    }
-    result
-}
-
-fn activate_main_window<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        if window.is_minimized().unwrap_or(false) {
-            if let Err(error) = window.unminimize() {
-                emit_lifecycle_error(
-                    app,
-                    "The existing window could not be restored from its minimized state.",
-                );
-                log::warn!("could not unminimize the main window: {error}");
-            }
-        }
-        if let Err(error) = window.show() {
-            emit_lifecycle_error(app, "The existing window could not be shown.");
+        if let Some(Err(error)) = ops.show_window(app) {
             log::warn!("could not show the main window: {error}");
         }
-        if let Err(error) = window.set_focus() {
-            emit_lifecycle_error(app, "The existing window could not be focused.");
+        if let Err(error) = ops.focus_window(app) {
             log::warn!("could not focus the main window: {error}");
         }
         return;
     }
-
-    let Some(state) = app.try_state::<AppState>() else {
-        emit_lifecycle_error(app, "The desktop lifecycle state is unavailable.");
-        log::error!("desktop lifecycle state missing while recreating the main window");
-        return;
-    };
-    let should_recreate = match state.coordinator.lock() {
-        Ok(mut coordinator) => coordinator.begin_recreation(),
-        Err(_) => {
-            emit_lifecycle_error(app, "The desktop lifecycle state is unavailable.");
-            log::error!("desktop lifecycle state lock failed while recreating the main window");
-            false
-        }
-    };
-    if !should_recreate {
-        return;
-    }
-
-    let app_handle = app.clone();
-    std::thread::spawn(move || recreate_main_window(&app_handle));
-}
-
-fn recreate_main_window<R: Runtime>(app: &AppHandle<R>) {
-    let Some(config) = app
-        .config()
-        .app
-        .windows
-        .iter()
-        .find(|window| window.label == MAIN_WINDOW)
-        .cloned()
-    else {
-        let pending_kind =
-            app.try_state::<AppState>()
-                .and_then(|state| match state.coordinator.lock() {
-                    Ok(mut coordinator) => coordinator.finish_recreation(false).pending_kind,
-                    Err(_) => None,
-                });
-        if let Some(kind) = pending_kind {
-            request_lifecycle(app, kind);
-        }
-        emit_recreation_error(app);
-        log::error!("main window configuration is missing");
-        return;
-    };
-
-    let result =
-        tauri::WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build());
-    let succeeded = result.is_ok();
-    let pending_kind =
-        app.try_state::<AppState>()
-            .and_then(|state| match state.coordinator.lock() {
-                Ok(mut coordinator) => coordinator.finish_recreation(succeeded).pending_kind,
-                Err(_) => None,
-            });
-    if let Some(kind) = pending_kind {
-        request_lifecycle(app, kind);
-    }
-
-    match result {
-        Ok(window) => ensure_usable_geometry(&window),
-        Err(error) => {
-            emit_recreation_error(app);
-            log::error!("could not recreate the main window: {error}");
-        }
-    }
-}
-
-fn emit_recreation_error<R: Runtime>(app: &AppHandle<R>) {
-    const MESSAGE: &str = "The main window could not be recreated. Try launching open-todo again.";
-    emit_lifecycle_error(app, MESSAGE);
-    app.dialog()
-        .message(MESSAGE)
-        .title("open-todo")
-        .kind(MessageDialogKind::Error)
-        .buttons(MessageDialogButtons::Ok)
-        .show(|_| {});
+    lifecycle.send(Event::RecreationStarted);
 }
 
 fn ensure_usable_geometry<R: Runtime>(window: &WebviewWindow<R>) {
@@ -534,6 +226,248 @@ fn monitor_intersects(
             height: monitor.size().height,
         },
     )
+}
+
+#[cfg(test)]
+mod lifecycle_mapping_tests {
+    use super::*;
+    use lifecycle::machine::{Attempt, Decision, Effect, Event, Kind, Machine, RecreationId};
+    use lifecycle::runtime::{spawn_loop, EffectRunner, Envelope, ExitVerdict};
+    use std::sync::{mpsc, Arc, Mutex};
+    use std::time::Duration;
+
+    #[derive(Clone, Default)]
+    struct RecordingWindowOps {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    impl RunnerOps<tauri::test::MockRuntime> for RecordingWindowOps {
+        fn show_window(
+            &self,
+            _app: &AppHandle<tauri::test::MockRuntime>,
+        ) -> Option<Result<(), String>> {
+            self.calls.lock().unwrap().push("show");
+            Some(Ok(()))
+        }
+
+        fn focus_window(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> Result<(), String> {
+            self.calls.lock().unwrap().push("focus");
+            Ok(())
+        }
+
+        fn has_main_window(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> bool {
+            true
+        }
+
+        fn unminimize(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> Result<(), String> {
+            self.calls.lock().unwrap().push("unminimize");
+            Ok(())
+        }
+    }
+
+    struct RecordingRunner {
+        seen: Arc<Mutex<Vec<Effect>>>,
+        notifications: mpsc::Sender<()>,
+        responses: Arc<Mutex<Vec<(Effect, Event)>>>,
+    }
+
+    impl EffectRunner for RecordingRunner {
+        fn run(&mut self, effect: Effect, tx: &mpsc::Sender<Envelope>) {
+            self.seen.lock().unwrap().push(effect.clone());
+            let mut responses = self.responses.lock().unwrap();
+            let response = responses
+                .iter()
+                .position(|(trigger, _)| trigger == &effect)
+                .map(|index| responses.remove(index).1);
+            drop(responses);
+            if let Some(event) = response {
+                let _ = tx.send(Envelope { event, reply: None });
+            }
+            let _ = self.notifications.send(());
+        }
+    }
+
+    fn recording_runner(
+        responses: Vec<(Effect, Event)>,
+    ) -> (RecordingRunner, Arc<Mutex<Vec<Effect>>>, mpsc::Receiver<()>) {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (notifications, observed) = mpsc::channel();
+        (
+            RecordingRunner {
+                seen: seen.clone(),
+                notifications,
+                responses: Arc::new(Mutex::new(responses)),
+            },
+            seen,
+            observed,
+        )
+    }
+
+    fn mock_app_with_window_state() -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .plugin(tauri_plugin_window_state::Builder::default().build())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
+    }
+
+    #[test]
+    fn exit_requested_without_bypass_prevents_and_begins_quit() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (notifications, observed) = mpsc::channel();
+        let handle = spawn_loop(
+            Machine::new(0),
+            RecordingRunner {
+                seen: seen.clone(),
+                notifications,
+                responses: Arc::new(Mutex::new(Vec::new())),
+            },
+        );
+
+        assert_eq!(on_exit_verdict(&handle), ExitVerdict::Prevent);
+        observed
+            .recv_timeout(Duration::from_secs(1))
+            .expect("prevent effect was not observed");
+        observed
+            .recv_timeout(Duration::from_secs(1))
+            .expect("begin quit effect was not observed");
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![
+                Effect::PreventExit,
+                Effect::ScheduleTimeout(lifecycle::machine::Attempt {
+                    id: 1,
+                    generation: 0,
+                    kind: Kind::Quit,
+                    sequence: 0,
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn exit_requested_with_armed_bypass_allows_exit() {
+        let attempt = Attempt {
+            id: 1,
+            generation: 0,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        let (runner, _seen, observed) = recording_runner(vec![(
+            Effect::Finalize(attempt.clone()),
+            Event::Finalized { attempt, ok: true },
+        )]);
+        let handle = spawn_loop(Machine::new(0), runner);
+        assert_eq!(
+            handle.ready("bridge".into()).unwrap(),
+            lifecycle::machine::Token {
+                instance_id: "bridge".into(),
+                generation: 0,
+            }
+        );
+        handle.send(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        for _ in 0..3 {
+            observed
+                .recv_timeout(Duration::from_secs(1))
+                .expect("close effects were not observed");
+        }
+        handle.send(Event::Decide {
+            attempt_id: 1,
+            generation: 0,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        observed
+            .recv_timeout(Duration::from_secs(1))
+            .expect("finalize effect was not observed");
+        handle.send(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        for _ in 0..2 {
+            observed
+                .recv_timeout(Duration::from_secs(1))
+                .expect("exit effects were not observed");
+        }
+
+        assert_eq!(on_exit_verdict(&handle), ExitVerdict::Allow);
+    }
+
+    #[test]
+    fn activation_without_main_starts_recreation() {
+        let app = tauri::test::mock_app();
+        let (runner, seen, observed) = recording_runner(Vec::new());
+        let handle = spawn_loop(Machine::new(0), runner);
+
+        on_activate(&app.handle().clone(), &handle);
+        observed
+            .recv_timeout(Duration::from_secs(1))
+            .expect("recreation effect was not observed");
+
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![Effect::Recreate(RecreationId(1))]
+        );
+    }
+
+    #[test]
+    fn s4_close_requested_maps_to_close_begin() {
+        let (runner, seen, observed) = recording_runner(Vec::new());
+        let handle = spawn_loop(Machine::new(0), runner);
+
+        on_close_verdict(&handle);
+        observed
+            .recv_timeout(Duration::from_secs(1))
+            .expect("close begin effect was not observed");
+
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![Effect::ScheduleTimeout(Attempt {
+                id: 1,
+                generation: 0,
+                kind: Kind::Close,
+                sequence: 0,
+            })]
+        );
+    }
+
+    #[test]
+    fn s4_run_event_exit_maps_to_exited() {
+        let app = mock_app_with_window_state();
+        let (runner, seen, observed) = recording_runner(Vec::new());
+        let handle = spawn_loop(Machine::new(0), runner);
+        app.manage(AppState { lifecycle: handle });
+
+        on_run_event_exit(app.handle());
+        observed
+            .recv_timeout(Duration::from_secs(1))
+            .expect("exit event was not observed");
+
+        assert_eq!(*seen.lock().unwrap(), vec![Effect::Log("unexpected")]);
+    }
+
+    #[test]
+    fn s4_activate_with_main_shows_and_focuses_without_event() {
+        let app = tauri::test::mock_app();
+        let ops = RecordingWindowOps::default();
+        let (runner, _seen, observed) = recording_runner(Vec::new());
+        let handle = spawn_loop(Machine::new(0), runner);
+
+        on_activate_with_ops(app.handle(), &handle, &ops);
+
+        assert!(matches!(
+            observed.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert_eq!(
+            *ops.calls.lock().unwrap(),
+            vec!["unminimize", "show", "focus"]
+        );
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

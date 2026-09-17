@@ -1,16 +1,16 @@
-#[allow(dead_code)] // wired in slice 4
+#[allow(dead_code)] // state()/generation() are test-facing accessors
 pub mod machine;
 #[cfg(test)]
 mod properties; // slice 2: proptest invariants over Machine::step
-#[allow(dead_code)] // wired in slice 4
 pub mod runtime;
-pub mod tauri_runner;
+pub mod tauri_runner; // slice 4: EffectRunner over tauri::AppHandle
 #[cfg(test)]
-mod traces; // slice 3: trace equivalence old coordinator vs Machine // slice 4: EffectRunner over tauri::AppHandle
+mod traces; // slice 3: trace equivalence old coordinator vs Machine
 
 use serde::{Deserialize, Serialize};
 
 /// The two native actions that must share one frontend draft decision.
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LifecycleKind {
@@ -18,6 +18,7 @@ pub enum LifecycleKind {
     Quit,
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum LifecycleDecision {
@@ -27,6 +28,7 @@ pub enum LifecycleDecision {
     ExitAnyway,
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LifecycleAttempt {
@@ -38,6 +40,7 @@ pub struct LifecycleAttempt {
 
 /// A readiness token is issued by the native window generation that accepted
 /// the bridge. Old cleanup from another generation cannot clear a replacement.
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrontendToken {
@@ -45,6 +48,7 @@ pub struct FrontendToken {
     pub generation: u64,
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LifecycleDecisionPayload {
@@ -56,12 +60,14 @@ pub struct LifecycleDecisionPayload {
     pub pending: bool,
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, PartialEq, Eq)]
 pub struct FrontendReadyOutcome {
     pub token: FrontendToken,
     pub reemit: Option<LifecycleAttempt>,
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, PartialEq, Eq)]
 pub enum TimeoutOutcome {
     Expired,
@@ -69,12 +75,14 @@ pub enum TimeoutOutcome {
     Reemit(LifecycleAttempt),
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, PartialEq, Eq)]
 pub struct RecreationOutcome {
     pub generation: Option<u64>,
     pub pending_kind: Option<LifecycleKind>,
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, PartialEq, Eq)]
 pub enum BeginResult {
     /// There is no frontend to ask and the application can exit directly.
@@ -90,6 +98,7 @@ pub enum BeginResult {
     Queued(LifecycleKind),
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug, PartialEq, Eq)]
 pub enum DecisionResult {
     Authorized(LifecycleAttempt),
@@ -100,6 +109,7 @@ pub enum DecisionResult {
     Recheck(LifecycleAttempt),
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 #[derive(Debug)]
 pub struct LifecycleCoordinator {
     generation: u64,
@@ -114,6 +124,7 @@ pub struct LifecycleCoordinator {
     recreation_in_progress: bool,
 }
 
+#[allow(dead_code)] // old coordinator deleted in slice 6
 impl LifecycleCoordinator {
     pub fn new(generation: u64) -> Self {
         Self {
