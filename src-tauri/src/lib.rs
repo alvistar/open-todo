@@ -508,16 +508,69 @@ fn monitor_intersects(
     position: PhysicalPosition<i32>,
     size: PhysicalSize<u32>,
 ) -> bool {
-    let monitor_position = *monitor.position();
-    let monitor_size = *monitor.size();
-    let right = monitor_position.x.saturating_add(monitor_size.width as i32);
-    let bottom = monitor_position
-        .y
-        .saturating_add(monitor_size.height as i32);
-    let window_right = position.x.saturating_add(size.width as i32);
-    let window_bottom = position.y.saturating_add(size.height as i32);
-    position.x < right
-        && window_right > monitor_position.x
-        && position.y < bottom
-        && window_bottom > monitor_position.y
+    rectangles_have_usable_intersection(
+        Rect {
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+        },
+        Rect {
+            x: monitor.position().x,
+            y: monitor.position().y,
+            width: monitor.size().width,
+            height: monitor.size().height,
+        },
+    )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Rect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+fn rectangles_have_usable_intersection(window: Rect, monitor: Rect) -> bool {
+    let right = monitor.x.saturating_add(monitor.width as i32);
+    let bottom = monitor.y.saturating_add(monitor.height as i32);
+    let window_right = window.x.saturating_add(window.width as i32);
+    let window_bottom = window.y.saturating_add(window.height as i32);
+    window.x < right
+        && window_right > monitor.x
+        && window.y < bottom
+        && window_bottom > monitor.y
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+
+    #[test]
+    fn orig_5_requires_a_minimum_usable_monitor_overlap() {
+        let monitor = Rect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let one_pixel = Rect {
+            x: 1919,
+            y: 1079,
+            width: 400,
+            height: 400,
+        };
+        let enough_for_controls = Rect {
+            x: 1560,
+            y: 660,
+            width: 360,
+            height: 420,
+        };
+
+        // A visible window must retain at least the 360x420 minimum-size area
+        // on one monitor; a 1x1 sliver cannot expose usable controls.
+        assert!(!rectangles_have_usable_intersection(one_pixel, monitor));
+        assert!(rectangles_have_usable_intersection(enough_for_controls, monitor));
+    }
 }
