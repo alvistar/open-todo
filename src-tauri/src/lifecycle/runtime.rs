@@ -1,3 +1,16 @@
+/*
+   Tauri callbacks / commands / worker threads
+                         │
+                         ▼
+   Sender<Envelope> ──► recv ──► Machine::step ──► effects in order
+                                                   │
+                                                   ▼
+                                             EffectRunner::run
+                                                   │
+                                  completion Event ─┘
+                                  (queued, never re-entrant)
+*/
+
 use super::machine::{Effect, Event, Machine, Token};
 use std::sync::mpsc::{self, Receiver, RecvError, Sender};
 use std::thread;

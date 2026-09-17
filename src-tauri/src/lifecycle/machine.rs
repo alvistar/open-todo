@@ -1,3 +1,25 @@
+/*
+   Begin(Quit, no window | hidden) ───────────────► Exiting
+                    │
+                    ▼
+   Idle ──Begin──► AwaitingFrontend ──Ready──► Asking
+    │                  │                       │
+    │                  └─Timeout──► Recovering │
+    │                                          │
+    ├─RecreationStarted──► Recreating         ├─Decide──► Finalizing
+    │                                          │             │
+    └─Begin(Quit, direct)──► Exiting           │             └─Finalized──► Idle
+       Asking ──Timeout(no replacement)──► Recovering       (queued quit → Exiting)
+       Asking ──EmitFailed(owner)──► Asking
+       Recovering ──Recovered(allow)──► Finalizing/Exiting
+       Recovering ──Recovered(deny)──► Idle
+       Recreating ──Finished(ok)──► Idle / Asking / AwaitingFrontend
+       Recreating ──Finished(error, queued quit)──► Exiting
+
+   Every arrow emits at least one Effect; events received by the runtime are
+   serialized through one owner thread.
+*/
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Close,
@@ -155,6 +177,13 @@ impl Machine {
         self.generation
     }
 
+    /// Apply one event and return the ordered effects for that transition.
+    ///
+    /// Composition rules are part of a transition: returning to `Idle` with
+    /// `recreate_pending` continues as `Idle × RecreationStarted`, and a
+    /// successful close with `queued_quit` continues as
+    /// `Idle{hidden_by_close: true} × Begin(Quit)`. The resulting effects are
+    /// appended in order, so a caller never has to dispatch a second event.
     pub fn step(&mut self, event: Event) -> Vec<Effect> {
         let current = std::mem::replace(
             &mut self.state,
@@ -324,8 +353,7 @@ impl Machine {
                 kind: Kind::Close, ..
             }
             | Event::Begin {
-                kind: Kind::Quit,
-                window_exists: true,
+                kind: Kind::Quit, ..
             } if attempt.kind == Kind::Quit => (
                 State::AwaitingFrontend {
                     attempt,
@@ -1997,6 +2025,734 @@ mod tests {
                     Effect::Log("unarmed exit request while exiting"),
                 ],
             )
+        );
+    }
+
+    #[test]
+    fn old_b1_frontend_ready_reports_an_active_attempt_for_reemit() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "one".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+
+        let effects = machine.step(Event::FrontendReady {
+            instance_id: "two".into(),
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 1,
+        };
+        let token = Token {
+            instance_id: "two".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt: attempt.clone(),
+                    frontend: token.clone(),
+                    recreate_pending: false,
+                },
+                vec![
+                    Effect::ReplyToken(token.clone()),
+                    Effect::EmitRequest {
+                        attempt: attempt.clone(),
+                        frontend: token,
+                    },
+                    Effect::ScheduleTimeout(attempt),
+                ],
+            )
+        );
+    }
+
+    #[test]
+    fn old_b1_timeout_reemits_an_active_attempt_after_frontend_replacement() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "one".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::FrontendReady {
+            instance_id: "two".into(),
+        });
+
+        // D9/6: the replacement-ready transition owns the new sequence; the
+        // old timeout cannot re-emit or clear the replacement bridge.
+        let effects = machine.step(Event::Timeout(Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        }));
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 1,
+        };
+        let token = Token {
+            instance_id: "two".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt,
+                    frontend: token,
+                    recreate_pending: false,
+                },
+                vec![Effect::Log("stale")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_s1_decide_reserves_finalization_before_recreation_can_begin() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "one".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        let effects = machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Quit,
+            sequence: 0,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Exiting {
+                    attempt: Some(attempt),
+                    generation: 1,
+                },
+                vec![Effect::ArmExitBypass(1), Effect::Exit],
+            )
+        );
+    }
+
+    #[test]
+    fn old_s2_quit_during_recreation_is_queued_and_replayed_after_success() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::RecreationStarted);
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: false,
+        });
+        let effects = machine.step(Event::RecreationFinished {
+            id: RecreationId(1),
+            ok: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 2,
+            kind: Kind::Quit,
+            sequence: 0,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::AwaitingFrontend {
+                    attempt: attempt.clone(),
+                    recreate_pending: false,
+                },
+                vec![Effect::ScheduleTimeout(attempt)],
+            )
+        );
+    }
+
+    #[test]
+    fn old_s2_quit_during_recreation_is_replayed_after_failure_too() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::RecreationStarted);
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: false,
+        });
+        let effects = machine.step(Event::RecreationFinished {
+            id: RecreationId(1),
+            ok: false,
+        });
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Exiting {
+                    attempt: None,
+                    generation: 1,
+                },
+                vec![
+                    Effect::EmitError("lifecycle recreation failed".into()),
+                    Effect::ArmExitBypass(1),
+                    Effect::Exit,
+                ],
+            )
+        );
+    }
+
+    #[test]
+    fn old_recovery_dialog_is_one_per_active_attempt() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        machine.step(Event::Timeout(attempt.clone()));
+        machine.step(Event::Recovered {
+            attempt: attempt.clone(),
+            allow: false,
+        });
+        let effects = machine.step(Event::Recovered {
+            attempt,
+            allow: false,
+        });
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Idle {
+                    hidden_by_close: false,
+                },
+                vec![Effect::Log("stale")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_new_window_invalidates_old_frontend_and_attempt() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "one".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::RecreationStarted);
+        machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Cancel,
+            dirty: false,
+            pending: false,
+        });
+        machine.step(Event::FrontendReady {
+            instance_id: "two".into(),
+        });
+        machine.step(Event::RecreationFinished {
+            id: RecreationId(1),
+            ok: true,
+        });
+
+        // D12: a completion from the old native generation cannot affect the
+        // new idle generation.
+        let effects = machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Idle {
+                    hidden_by_close: false,
+                },
+                vec![Effect::Log("stale")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_timeout_from_superseded_attempt_is_stale() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        let effects = machine.step(Event::Timeout(Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        }));
+        let attempt = Attempt {
+            id: 2,
+            generation: 1,
+            kind: Kind::Quit,
+            sequence: 0,
+        };
+        let token = Token {
+            instance_id: "bridge".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt,
+                    frontend: token,
+                    recreate_pending: false,
+                },
+                vec![Effect::Log("stale")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_finalization_reservation_is_taken_before_a_newer_request_can_start() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        let effects = machine.step(Event::RecreationStarted);
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        #[cfg(target_os = "macos")]
+        let expected_effects = vec![Effect::Log("queued")];
+        #[cfg(not(target_os = "macos"))]
+        let expected_effects = vec![Effect::Log("queued")];
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Finalizing {
+                    attempt,
+                    queued_quit: false,
+                    recreate_pending: true,
+                },
+                expected_effects,
+            )
+        );
+    }
+
+    #[test]
+    fn old_finalization_reservation_blocks_newer_actions_until_finished() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        let effects = machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Finalizing {
+                    attempt,
+                    queued_quit: false,
+                    recreate_pending: false,
+                },
+                vec![Effect::Log("finalizing")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_new_1_quit_during_close_finalization_is_not_lost() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        let effects = machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Finalizing {
+                    attempt,
+                    queued_quit: true,
+                    recreate_pending: false,
+                },
+                vec![Effect::Log("queued")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_new_1_recreation_does_not_clear_an_active_decision() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let effects = machine.step(Event::RecreationStarted);
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        let token = Token {
+            instance_id: "bridge".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt,
+                    frontend: token,
+                    recreate_pending: true,
+                },
+                vec![Effect::Log("queued")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_new_3_recreation_refuses_an_active_lifecycle_attempt() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        let effects = machine.step(Event::RecreationStarted);
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Quit,
+            sequence: 0,
+        };
+        let token = Token {
+            instance_id: "bridge".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt,
+                    frontend: token,
+                    recreate_pending: true,
+                },
+                vec![Effect::Log("queued")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_new_4_timeout_cannot_clear_a_replacement_frontend() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "one".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::FrontendReady {
+            instance_id: "two".into(),
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 1,
+        };
+        let effects = machine.step(Event::Timeout(attempt.clone()));
+        let token = Token {
+            instance_id: "two".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Recovering {
+                    attempt,
+                    recreate_pending: false,
+                },
+                vec![Effect::ShowRecoveryDialog(Attempt {
+                    id: 1,
+                    generation: 1,
+                    kind: Kind::Close,
+                    sequence: 1,
+                })],
+            )
+        );
+        let _ = token;
+    }
+
+    #[test]
+    fn old_readiness_cleanup_is_bound_to_the_native_generation_token() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "old".into(),
+        });
+        machine.step(Event::FrontendReady {
+            instance_id: "new".into(),
+        });
+        machine.step(Event::FrontendUnready {
+            token: Token {
+                instance_id: "old".into(),
+                generation: 1,
+            },
+        });
+        machine.step(Event::FrontendUnready {
+            token: Token {
+                instance_id: "new".into(),
+                generation: 1,
+            },
+        });
+        let effects = machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::AwaitingFrontend {
+                    attempt: attempt.clone(),
+                    recreate_pending: false,
+                },
+                vec![Effect::ScheduleTimeout(attempt)],
+            )
+        );
+    }
+
+    #[test]
+    fn old_readiness_tokens_record_the_window_generation() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "old".into(),
+        });
+        machine.step(Event::RecreationStarted);
+        machine.step(Event::RecreationFinished {
+            id: RecreationId(1),
+            ok: true,
+        });
+        machine.step(Event::FrontendReady {
+            instance_id: "current".into(),
+        });
+        machine.step(Event::FrontendUnready {
+            token: Token {
+                instance_id: "old".into(),
+                generation: 1,
+            },
+        });
+        let effects = machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 2,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        let token = Token {
+            instance_id: "current".into(),
+            generation: 2,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt: attempt.clone(),
+                    frontend: token.clone(),
+                    recreate_pending: false,
+                },
+                vec![
+                    Effect::EmitRequest {
+                        attempt: attempt.clone(),
+                        frontend: token,
+                    },
+                    Effect::ScheduleTimeout(attempt),
+                ],
+            )
+        );
+    }
+
+    #[test]
+    fn old_recovery_decision_from_superseded_attempt_is_stale() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        machine.step(Event::Timeout(attempt.clone()));
+        // Q1: the modal native dialog owns input, so a concurrent quit does
+        // not supersede this recovery attempt.
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        let effects = machine.step(Event::Recovered {
+            attempt,
+            allow: false,
+        });
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Idle {
+                    hidden_by_close: false,
+                },
+                vec![Effect::Log("cancelled")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_recreation_is_serialized_and_generation_advances_after_success() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::RecreationStarted);
+        let effects = machine.step(Event::RecreationStarted);
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Recreating {
+                    id: RecreationId(1),
+                    reserved: 2,
+                    queued_quit: false,
+                    ready: None,
+                },
+                vec![Effect::Log("already recreating")],
+            )
+        );
+        machine.step(Event::RecreationFinished {
+            id: RecreationId(1),
+            ok: false,
+        });
+        machine.step(Event::RecreationStarted);
+        let effects = machine.step(Event::RecreationFinished {
+            id: RecreationId(2),
+            ok: true,
+        });
+        assert_eq!(
+            (machine.generation(), machine.state(), effects),
+            (
+                2,
+                &State::Idle {
+                    hidden_by_close: false,
+                },
+                vec![Effect::Log("recreated")],
+            )
+        );
+    }
+
+    #[test]
+    fn old_bypasses_are_one_use_and_generation_bound() {
+        let mut machine = Machine::new(4);
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: false,
+        });
+        assert_eq!(machine.step(Event::ExitRequested), vec![Effect::AllowExit]);
+        let effects = machine.step(Event::ExitRequested);
+        assert_eq!(
+            effects,
+            vec![
+                Effect::PreventExit,
+                Effect::Log("unarmed exit request while exiting"),
+            ]
         );
     }
 }
