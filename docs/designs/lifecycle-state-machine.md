@@ -272,14 +272,18 @@ payloads (`attemptId`, `generation`, `requestSequence`, `instanceId`, token) are
 
 0. **Packaged spike** — done 2026-09-17 (`docs/designs/lifecycle-spike.md`, five
    commits, no product code). Outcomes in §8; one cell deleted (Q1).
-1. `machine.rs` and `runtime.rs` added and compiled beside the old module (`mod
-   lifecycle::{machine, runtime}` declared; nothing wired), with the ASCII diagrams, the
-   27 scenarios rewritten, the Codex scenarios 1–8, and the fake-runner tests.
-2. proptest suite with invariants 1–6; fix `step` until 10 000 cases pass.
-3. Trace equivalence: record the scenario traces from the old coordinator's tests and run
-   both implementations; document every difference as a decision above or fix it.
-4. Switch the event mapping in `lib.rs` to the loop; mock-runtime tests for the mapping
-   and `ExitRequested`. Old coordinator still compiled, unused.
+1. **Done 2026-09-17** (`machine.rs`, `runtime.rs`, 26 old scenarios rewritten, Codex 1–8,
+   fake-runner tests; slice-1 review and its nine fixes in
+   `lifecycle-slice-1-review.md`).
+2. **Done** (`properties.rs`: invariants 1–6 at 10 000 cases, no counterexample, no cell
+   changed).
+3. **Done** (`traces.rs`, `lifecycle-traces.md`: 103 rows, 79 same, 24 explained, 0
+   unexplained).
+4. **Done** (`tauri_runner.rs`, `lib.rs` rewritten as an interpreter; slice-4 review and its
+   nine fixes in `lifecycle-slice-4-review.md`, including the native-dialog fallback when no
+   window exists and the getter-free `ShowWindow`, because wry getters block on the main
+   thread). Old coordinator still compiled, unused. Follow-up: one 5 s constant serves both
+   the 2 s grace and the 5 s ask timeout until `ScheduleTimeout` carries the kind.
 5. Packaged smoke on macOS: ⌘Q before the bridge is ready, ⌘W then ⌘Q within the hide,
    Dock reopen then ⌘Q, ⌘H then ⌘Q with a dirty draft, dirty draft then Stay then close
    again, bridge reload during a request.

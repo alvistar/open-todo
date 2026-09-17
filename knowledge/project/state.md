@@ -28,7 +28,10 @@ code_refs:
 - src/ui/Shell.tsx
 - src/ui/overlayStack.tsx
 - src-tauri/src/lib.rs
-- src-tauri/src/lifecycle.rs
+- src-tauri/src/lifecycle/mod.rs
+- src-tauri/src/lifecycle/machine.rs
+- src-tauri/src/lifecycle/runtime.rs
+- src-tauri/src/lifecycle/tauri_runner.rs
 - src-tauri/tauri.conf.json
 last_updated: 2026-09-17
 stale_after: 2026-12-17
@@ -45,7 +48,7 @@ stale_after: 2026-12-17
 - Task detail edits title/description, date, priority, project and reminders; title parsing previews metadata before Save.
 - Detail supports label attach/detach/create, reading/adding comments and creating subtasks in their parent's project.
 - Portable Tauri v2 desktop shell with VERSION-derived metadata, bundled production assets, a stable application identifier, restricted CSP, standard decorations and origin-separated web storage.
-- Tauri window-state restoration with usable-geometry fallback, single-instance activation, macOS close/reopen/Command-Q lifecycle and a shared dirty/pending close guard with native recovery.
+- Tauri window-state restoration with usable-geometry fallback, single-instance activation, macOS close/reopen/Command-Q lifecycle and a shared dirty/pending close guard with native recovery, driven by an explicit state machine (`lifecycle/machine.rs`) on a single-owner event loop (`lifecycle/runtime.rs`) with a Tauri effect runner (`lifecycle/tauri_runner.rs`); six proptest invariants and trace equivalence with the previous coordinator are in the test suite.
 - Responsive shared layouts: Todoist-shaped narrow sidebar overlay/backdrop/toggle, stacked task detail, wrapped quick-add/setup/dialog controls and Escape/focus handling. The explicit overlay stack gives picker > dialog > sidebar precedence, and dialogs decline Escape while typing.
 - The shared draft/pending registry covers quick-add, title/description editors, comments, subtasks, pickers, completion, server setup and login, so close/quit sees both unsaved text and in-flight writes.
 - HTTP is still opt-in: credential headers and login bodies require origin-bound consent, and the HTTP client rejects redirects before following them.
@@ -69,10 +72,9 @@ stale_after: 2026-12-17
 - The locked native dependency graph currently requires Rust 1.88+; `tauri info` may report an older system Rust even when a rustup toolchain is available.
 - DESIGN.md still records an unresolved owner decision about shipping measured non-accent palette values verbatim.
 - The corpus-diff script defaults to git ref `d3d0a4a`, which is absent from this checkout; supply an existing compatible baseline explicitly.
-- Review-5 B1′: a close/quit begun before the bridge is ready opens the native recovery dialog; the bridge's first ready re-emits the attempt and makes that dialog inert, and the re-emitted timeout cannot open another, so the attempt stays active and later close/quit are ignored until force-quit.
-- Review-5 F2/F3: the quit queued during recreation is replayed before the new bridge is ready; the five-second timeout clears a live bridge's readiness with no way back.
-- Review-5 F4: the lifecycle notice's Dismiss can clear a draft error while a native error stays on screen.
-- The coordinator's state lives in nine independent fields; a redesign as an explicit state machine is the planned next slice.
+- The old coordinator in `lifecycle/mod.rs` is still compiled and unused until the packaged smoke of the machine passes (design slice 5) and slice 6 deletes it.
+- One 5 s timeout serves both the grace wait for a late bridge and the ask; the design asks 2 s for the first.
+- The packaged smoke of the new machine (Command-Q before ready, close then Command-Q, Dock reopen, ⌘H then ⌘Q dirty, bridge reload during a request) is not run yet.
 
 ## Related
 - [Architecture](/architecture/architecture.md) — how the working features connect

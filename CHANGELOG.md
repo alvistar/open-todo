@@ -128,6 +128,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision follows the line to the save, so what the composer shows is what
   gets created.
 
+### Changed (desktop shell, lifecycle coordinator)
+- **The close/quit coordinator is an explicit state machine.** One `State` enum, one
+  `match` over state and event returning effects, driven by a single-owner event loop;
+  `lib.rs` only maps Tauri events and commands onto it and runs effects. The five review
+  passes' races were all silent early returns between nine independent fields; the new
+  machine cannot drop an event (every step returns an effect), is checked by six property
+  invariants at 10 000 random sequences and by trace equivalence against the old
+  coordinator's 26 scenarios, and was preceded by a packaged spike that measured the
+  modal dialog, worker-thread window operations, the hidden bridge and `app.exit`
+  re-entrancy (`docs/designs/lifecycle-state-machine.md`, `lifecycle-spike.md`,
+  `lifecycle-traces.md`). Behaviour changes: a Command-Q before the bridge is ready waits
+  for it instead of alarming; a quit queued behind a successful close exits directly;
+  ⌘H then ⌘Q asks and shows the window; a recreation requested while a request is open
+  is queued; a failed recreation shows a native dialog. The bridge payloads are unchanged.
+
 ### Fixed (desktop shell, review rounds 4 and 5)
 - **Lifecycle intents are queued, not dropped.** A Command-Q that arrives while
   an authorised close is hiding the window, or while the window is being
@@ -511,24 +526,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WebSocket task events runs in parallel, off the critical path.
 
 ### Known gaps
-- **Desktop shell (2026-09-17, five independent review passes in
-  `docs/designs/tauri-desktop-shell-review*.md`).** Two fix rounds closed the
-  races found by the first three passes (a Command-Q during an authorised
-  close, a request cleared before it rendered, a decision invalidated by
-  window recreation, a stale timeout, plus the picker focus, pending-write,
-  `inert` sidebar and one-pixel geometry gaps). The fifth pass still finds one
-  deterministic defect in the native coordinator: a close or quit that starts
-  before the bridge is ready opens the native recovery dialog, the bridge's
-  first ready then re-emits the request and makes that dialog inert, and the
-  re-emitted attempt's timeout cannot open a second one, so the attempt stays
-  active and every later close or quit is ignored until force-quit. Related:
-  the quit queued during window recreation is replayed before the new bridge
-  is ready; the five-second timeout clears a live bridge's readiness with no
-  way back; the lifecycle notice's Dismiss can clear a draft error while a
-  native error stays on screen. The coordinator's state is spread over nine
-  independent fields; the next slice replaces it with an explicit state
-  machine rather than a sixth patch round. Detached native threads have no
-  cancellation on exit.
+- **Desktop shell (2026-09-17).** The lifecycle machine has replaced the coordinator's
+  logic but the old coordinator is still compiled, unused, until the packaged smoke
+  (design slice 5) passes and slice 6 deletes it. One 5 s timeout serves both the grace
+  wait for a late bridge and the ask; the design wants 2 s for the first. The packaged
+  smoke of the new machine (Command-Q before the bridge is ready, close then Command-Q,
+  Dock reopen, ⌘H then ⌘Q with a dirty draft, bridge reload during a request) has not
+  been run yet. Detached native threads have no cancellation on exit.
 - Only the packaged macOS app has been launched, closed, reopened and quit
   with Vite stopped; signing in, the WebView transport (HTTP consent, CORS,
   TLS, redirects) and storage-failure behaviour in the packaged WebView, monitor

@@ -16,6 +16,7 @@ sources:
 - resource: src/queries/client.ts
 - resource: src/api/endpoints.ts
 code_refs:
+- src-tauri/src/lifecycle/machine.rs
 - src/main.tsx
 - src/app/App.tsx
 - src/screens/AppScreen.tsx
@@ -36,7 +37,7 @@ stale_after: 2026-12-17
 - **Query boundary** — initial reads and mutations. Detail writes publish the server task into cached lists before invalidating; labels require a GET read-back, comments have their own query key, and subtask creation writes the child then the parent relation.
 - **Live boundary** — PollingSource emits reset/upsert/delete. Incremental requests are deliberately unfiltered by view; `belongs()` reconciles membership. Full fetches discover removals and invalidate other task-count queries.
 - **Interaction boundary** — ListView owns roving keyboard focus; TaskDetail owns editing/pickers/comments/subtasks. The overlay stack gives picker > dialog > sidebar Escape precedence, while dialogs decline Escape when a text control is being edited. Shell collapses at 1050px into a sidebar overlay. Completion uses a short-lived pending overlay before grouping so the Undo row survives a server refetch.
-- **Desktop boundary** — `src-tauri/src/lifecycle.rs` is a Rust-owned, attempt-id/window-generation coordinator for close and quit. `src/lifecycle/drafts.ts` registers dirty and pending React surfaces; `useDesktopLifecycle` presents the shared confirmation and native recovery handshake. Tauri's single-instance, window-state and dialog plugins remain the only native services.
+- **Desktop boundary** — `src-tauri/src/lifecycle/machine.rs` is a pure state machine for close and quit (one `State` enum, `step(Event) -> Vec<Effect>`), `lifecycle/runtime.rs` runs it on a single-owner event loop, and `lifecycle/tauri_runner.rs` performs the effects against Tauri and feeds completions back as events; `lib.rs` only maps Tauri events and commands onto that loop. `src/lifecycle/drafts.ts` registers dirty and pending React surfaces; `useDesktopLifecycle` presents the shared confirmation and native recovery handshake. Tauri's single-instance, window-state and dialog plugins remain the only native services.
 - **Transport/storage boundary** — `createHttp` rejects redirects and sensitive HTTP requests without consent from `settings/transportPolicy.ts`. `createPersistentValue` returns durable outcomes; critical auth, server and transport consumers surface failures through the transient persistence notice rather than claiming restart durability.
 
 ## External Dependencies
