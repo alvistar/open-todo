@@ -361,6 +361,94 @@ fn is_completion(event: &Event) -> bool {
     )
 }
 
+/// Feed only answer events until the machine reaches a terminal resting state.
+fn drive_to_rest(machine: &mut Machine, max: usize) -> Option<Vec<(Event, State, Vec<Effect>)>> {
+    let mut trace = Vec::new();
+
+    for _ in 0..max {
+        let state = machine.state().clone();
+        let event = match state {
+            State::Idle { .. } => return Some(trace),
+            State::AwaitingFrontend { .. } => Event::FrontendReady {
+                instance_id: "driver-frontend".into(),
+            },
+            State::Asking { attempt, .. } => Event::Decide {
+                attempt_id: attempt.id,
+                generation: attempt.generation,
+                sequence: attempt.sequence,
+                decision: Decision::Allow,
+                dirty: false,
+                pending: false,
+            },
+            State::Recovering { attempt, .. } => Event::Recovered {
+                attempt,
+                allow: true,
+            },
+            State::Finalizing { attempt, .. } => Event::Finalized { attempt, ok: true },
+            State::Recreating { id, .. } => Event::RecreationFinished { id, ok: true },
+            State::Exiting { .. } => Event::ExitRequested,
+        };
+        let effects = machine.step(event.clone());
+        let after = machine.state().clone();
+        trace.push((event, after.clone(), effects.clone()));
+
+        if matches!(after, State::Idle { .. }) {
+            return Some(trace);
+        }
+        if matches!(after, State::Exiting { .. })
+            && effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::AllowExit))
+        {
+            return Some(trace);
+        }
+    }
+
+    if matches!(machine.state(), State::Idle { .. } | State::Exiting { .. }) {
+        Some(trace)
+    } else {
+        None
+    }
+}
+
+fn pending_kind(state: &State) -> Option<Kind> {
+    match state {
+        State::AwaitingFrontend { attempt, .. }
+        | State::Asking { attempt, .. }
+        | State::Recovering { attempt, .. } => Some(attempt.kind),
+        State::Finalizing {
+            attempt,
+            queued_quit,
+            ..
+        } => (*queued_quit).then_some(Kind::Quit).or(Some(attempt.kind)),
+        State::Recreating { queued_quit, .. } => queued_quit.then_some(Kind::Quit),
+        State::Exiting { .. } => Some(Kind::Quit),
+        State::Idle { .. } => None,
+    }
+}
+
+fn count_allow_exit(trace: &[(Event, State, Vec<Effect>)]) -> usize {
+    trace
+        .iter()
+        .flat_map(|(_, _, effects)| effects)
+        .filter(|effect| matches!(effect, Effect::AllowExit))
+        .count()
+}
+
+fn count_finalized_completions(initial: &State, trace: &[(Event, State, Vec<Effect>)]) -> usize {
+    let mut previous = initial;
+    let mut count = 0;
+    for (event, after, _) in trace {
+        if matches!(event, Event::Finalized { ok: true, .. })
+            && completion_matches_state(previous, event)
+        {
+            count += 1;
+        }
+        previous = after;
+    }
+    count
+}
+
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: 10_000,
@@ -477,5 +565,37 @@ proptest! {
                 }
             }
         }
+    }
+
+    #[test]
+    fn inv3_intents_are_not_lost(seeds in prop::collection::vec(any::<u8>(), 1..=MAX_TRACE_LEN)) {
+        let events = events_from_seeds(&seeds);
+        let mut machine = Machine::new(1);
+        let prefix = run(&mut machine, events);
+        let kind = pending_kind(machine.state());
+        let drive_start = machine.state().clone();
+        let driven = drive_to_rest(&mut machine, 4);
+        prop_assert!(driven.is_some());
+        let driven = driven.unwrap_or_default();
+
+        match kind {
+            Some(Kind::Quit) => {
+                let allows = count_allow_exit(&prefix) + count_allow_exit(&driven);
+                prop_assert_eq!(allows, 1);
+            }
+            Some(Kind::Close) => {
+                prop_assert_eq!(count_finalized_completions(&drive_start, &driven), 1);
+            }
+            None => {}
+        }
+    }
+
+    #[test]
+    fn inv4_states_reach_rest(seeds in prop::collection::vec(any::<u8>(), 1..=MAX_TRACE_LEN)) {
+        let events = events_from_seeds(&seeds);
+        let mut machine = Machine::new(1);
+        let _ = run(&mut machine, events);
+
+        prop_assert!(drive_to_rest(&mut machine, 4).is_some());
     }
 }
