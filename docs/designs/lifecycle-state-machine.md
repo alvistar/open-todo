@@ -55,9 +55,10 @@ pub enum State {
     AwaitingFrontend { attempt: Attempt, recreate_pending: bool },
     /// The bridge `frontend` was asked; an ask timeout is armed.
     Asking { attempt: Attempt, frontend: Token, recreate_pending: bool },
-    /// No usable bridge; the native recovery dialog is open for `attempt`.
-    /// `upgrade_to_quit` records a ⌘Q pressed while a Close dialog is open.
-    Recovering { attempt: Attempt, upgrade_to_quit: bool, recreate_pending: bool },
+    /// No usable bridge; the native recovery dialog is open for `attempt`. The
+    /// spike (Q1) showed ⌘Q does not reach `ExitRequested` while the dialog is
+    /// modal, so there is no quit-upgrade here: the dialog is the only input.
+    Recovering { attempt: Attempt, recreate_pending: bool },
     /// The native action for `attempt` is executing (hide / destroy).
     Finalizing { attempt: Attempt, queued_quit: bool, recreate_pending: bool },
     /// The main window is being rebuilt. `reserved` is the generation the new
@@ -148,7 +149,7 @@ in `Idle` from `Finalizing{queued_quit: true, ok: true}` it continues as
 | **Idle{hbc}** | Quit & (!exists ∨ hbc) → **Exiting{None}**, ArmExitBypass(gen), Exit. Close & !exists: Log(no window). Else new attempt a: `frontend` Some → **Asking{a, f, rp:false}**, (ShowWindow if hbc), EmitRequest{a,f}, ScheduleTimeout(a); `frontend` None → **AwaitingFrontend{a, rp:false}**, ScheduleTimeout(a) | Log(stale) | Log(stale) | mint t; record; ReplyToken(t); Log | clear if equal; Log | Log(stale) | Log(stale) | Log(stale) | id=next; → **Recreating{id, reserved: gen+1, queued_quit:false, ready:None}**, Recreate(id) | Log(stale) | bypass==Some(gen) → clear, AllowExit. Else: PreventExit, then as Begin(Quit, exists:true) | Log(unexpected) |
 | **AwaitingFrontend{a, rp}** | Close: Log(dup). Quit & a.Close → a′ = a{Quit, seq+1}; → **AwaitingFrontend{a′, rp}**, ScheduleTimeout(a′) (D9/1). Quit & a.Quit: Log(dup) | Log(stale) | Log(stale) | mint t; record; ReplyToken(t); → **Asking{a.seq+1, t, rp}**, EmitRequest, ScheduleTimeout | clear if equal; Log | Log(stale) | ≠a: Log. ==a → **Recovering{a, false, rp}**, ShowRecoveryDialog(a) | Log(stale) | → same state with rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
 | **Asking{a, f, rp}** | Close: Log(dup). Quit & a.Close → supersede: a′ new Quit attempt → **Asking{a′, f, rp}**, EmitRequest{a′,f}, ScheduleTimeout(a′) (old a stale by tuple). Quit & a.Quit: Log(dup) | ≠a: Log. Cancel → **Idle{false}** (+rp composition). Allow&(dirty∨pending) ∨ Discard&pending → **Asking{a.seq+1, f, rp}**, EmitRequest, ScheduleTimeout (recheck). Otherwise authorised: Close → **Finalizing{a, false, rp}**, (ArmExitBypass on non-macOS), Finalize(a); Quit → **Exiting{a}**, ArmExitBypass(gen), Exit | Log(stale) | mint t; record; ReplyToken(t); t==f: Log. t≠f → **Asking{a.seq+1, t, rp}**, EmitRequest{·,t}, ScheduleTimeout | t==f: clear `frontend`, keep Asking, Log (timeout will recover). else Log | {a,f} match → clear `frontend`, keep Asking, EmitError, Log. else Log(stale) | ≠a: Log. ==a: `frontend`==Some(f) → **Recovering{a,false,rp}**, EmitError, ShowRecoveryDialog; `frontend`==Some(other) → **Asking{a.seq+1, other, rp}**, EmitRequest, ScheduleTimeout; None → **Recovering{a,false,rp}**, ShowRecoveryDialog | Log(stale) | rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
-| **Recovering{a, up, rp}** | Close: Log(dup). Quit & a.Close → up:true, Log(upgraded). Quit & a.Quit: Log(dup) | Log(stale: dialog owns a) | Log(stale) | mint; record; ReplyToken; Log(dialog is the authority) | clear if equal; Log | Log(stale) | Log(stale) | ≠a: Log. allow: a′ = a with Quit if up; Close → **Finalizing{a′, false, rp}**, Finalize; Quit → **Exiting{a′}**, ArmExitBypass, Exit. !allow → **Idle{false}** (+rp) | rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
+| **Recovering{a, rp}** | Log(dup: the modal dialog owns input; spike Q1 shows ⌘Q cannot arrive) | Log(stale: dialog owns a) | Log(stale) | mint; record; ReplyToken; Log(dialog is the authority) | clear if equal; Log | Log(stale) | Log(stale) | ≠a: Log. allow: a.Close → **Finalizing{a, false, rp}**, Finalize; a.Quit → **Exiting{a}**, ArmExitBypass, Exit. !allow → **Idle{false}** (+rp) | rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
 | **Finalizing{a, qq, rp}** | Quit → qq:true, Log(queued). Close: Log(finalizing) | Log(stale) | ≠a: Log. ok:true → **Idle{hidden_by_close: a.Close}**; qq → compose Begin(Quit) (→ Exiting); else rp composition. ok:false → **Idle{false}**, EmitError; qq → compose Begin(Quit, exists) through the normal path (D10/7); rp composition | mint; record; ReplyToken; Log | clear if equal; Log | Log(stale) | Log(stale) | Log(stale) | rp:true, Log(queued) | Log(stale) | PreventExit, then Log(finalizing; quit queued) with qq:true | Log(unexpected) |
 | **Recreating{id, res, qq, ready}** | Quit → qq:true, Log(queued). Close: Log(no window) | Log(stale) | Log(stale) | mint t in `res`; ready:Some(t); ReplyToken(t); Log | clear ready if equal; Log | Log(stale) | Log(stale) | Log(stale) | Log(already recreating) | ≠id: Log(stale). ok: gen=res, `frontend`=ready; qq → new Quit attempt: ready Some → **Asking**, EmitRequest, ScheduleTimeout; ready None → **AwaitingFrontend**, ScheduleTimeout (D4/D12); !qq → **Idle{false}**, Log. !ok → **Idle{false}**, EmitError; qq → **Exiting{None}**, ArmExitBypass, Exit (no window to protect) | PreventExit, qq:true, Log | Log(unexpected) |
 | **Exiting{a, gen}** | Log(exiting) | Log(stale) | Log(stale) | Log(exiting) | Log | Log | Log | Log | Log(exiting) | Log(stale) | bypass==Some(gen) → clear, AllowExit. else PreventExit, Log(unarmed exit request while exiting) | terminal: Log(exited) |
@@ -158,7 +159,7 @@ Choices that differ from today, each tied to the finding it resolves:
 - **Recovering ignores FrontendReady** (review-5 B1′). The native dialog is modal and
   cannot be dismissed programmatically; two UIs for one decision is the bug. The
   dialog answers; the ready bridge is remembered for the next attempt.
-- **⌘Q during a Close recovery dialog upgrades the attempt** instead of a second dialog.
+- **No quit upgrade during the recovery dialog**: the spike (Q1) showed the modal dialog swallows ⌘Q, so the cell is unreachable and was deleted rather than kept.
 - **An intent before any bridge is ready waits** (D1): a ⌘Q right after launch enters
   `AwaitingFrontend`; the grace timeout, not the first ready, decides recovery. An
   upgrade in that state re-arms the timeout (D9/1).
@@ -268,11 +269,8 @@ payloads (`attemptId`, `generation`, `requestSequence`, `instanceId`, token) are
 
 ## 6. Migration plan (worker slices, order from Codex 11)
 
-0. **Packaged spike** (macOS, throwaway branch): window rebuild from a worker thread,
-   the callback dialog while a request is pending, `⌘Q` delivery while the modal is
-   open, `app.exit` re-entrancy with a prevented `ExitRequested`, and whether a hidden
-   window's bridge answers a request. Each answer either confirms a table cell or
-   changes it before slice 1. One commit with a `docs/designs/lifecycle-spike.md` note.
+0. **Packaged spike** — done 2026-09-17 (`docs/designs/lifecycle-spike.md`, five
+   commits, no product code). Outcomes in §8; one cell deleted (Q1).
 1. `machine.rs` and `runtime.rs` added and compiled beside the old module (`mod
    lifecycle::{machine, runtime}` declared; nothing wired), with the ASCII diagrams, the
    27 scenarios rewritten, the Codex scenarios 1–8, and the fake-runner tests.
@@ -294,13 +292,24 @@ Bridge changes, draft registry, picker/detail behaviour, geometry, sidebar, Wind
 runtime verification, detached-thread cancellation on exit (N8: with every effect
 completing through the channel, a thread that outlives the app only logs).
 
-## 8. Open questions for the spike
+## 8. Spike answers (slice 0, `docs/designs/lifecycle-spike.md`, macOS 26.6.2)
 
-- Q1: does `⌘Q` reach `ExitRequested` while the recovery dialog is modal? If not, the
-  `upgrade_to_quit` cell is unreachable and is deleted, not kept.
-- Q2 (kept): `RecreationFinished{ok:false}` with a queued Quit exits directly.
-- Q3: must `hide`/`show`/`destroy` run on the main thread on macOS? If so the runner
-  uses `app.run_on_main_thread` for those three effects and nothing else changes.
+- Q1: `⌘Q` does **not** reach `ExitRequested` while the recovery dialog is modal. The
+  `upgrade_to_quit` cell was deleted.
+- Q2: a worker-thread rebuild succeeds; the new bridge's `lifecycle_ready` arrived
+  145 ms **after** the window-built log in the observed run. The reserved-generation
+  cell (D12) stays because the order is not guaranteed, but the common case is
+  build-then-ready. On macOS the production close path is hide-only, so `Recreating`
+  is reached only when a handle is actually gone (destroy on non-macOS close, or a
+  crashed window); the spike needed a temporary destroy to exercise it.
+- Q3: `hide`, `show`, `destroy` succeed from a spawned thread; the runner does not use
+  `run_on_main_thread`.
+- Q4: a hidden window's bridge answers in 1 ms; D11's ask-instead-of-exit is viable.
+  `ShowWindow` itself was not exercised on that path (Q3's `show` is the evidence).
+- Q5: a second `app.exit(0)` after one prevented `ExitRequested` exits; order observed:
+  call, ExitRequested prevented, call, ExitRequested allowed, Exit. The `Exiting`
+  cell (D10/8) is confirmed.
+- Q2 (design, kept): `RecreationFinished{ok:false}` with a queued Quit exits directly.
 
 ## 9. Review outputs (/plan-eng-review, 2026-09-17)
 
@@ -339,7 +348,7 @@ Sequential implementation, no parallelization opportunity: slices 0–6 all touc
 ## Implementation Tasks
 Synthesized from this review's findings. Each task derives from a specific finding above.
 
-- [ ] **T0 (P1, human: ~1 day / CC: ~30min)** — spike — Packaged macOS spike answering Q1–Q3 and the hidden-bridge question (Codex 9/11, D14)
+- [x] **T0 (P1, human: ~1 day / CC: ~25min actual)** — spike — Packaged macOS spike answering Q1–Q5 (Codex 9/11, D14); done, see §8
   - Surfaced by: Outside voice — findings 9 and 11
   - Files: throwaway branch; `docs/designs/lifecycle-spike.md`
   - Verify: each question answered with an observed result
@@ -356,7 +365,7 @@ Synthesized from this review's findings. Each task derives from a specific findi
 - [ ] **T5 (P1, human: ~1h / CC: ~5min)** — machine.rs — `recreate_pending` in Asking/Recovering/Finalizing/AwaitingFrontend, composed on return to Idle (D13, Codex 4)
   - Verify: scenario `codex4_recreation_requested_while_asking_starts_after_cancel`
 - [ ] **T6 (P1, human: ~2h / CC: ~10min)** — machine.rs — `Exiting` state, `ArmExitBypass`/`Exit`/`AllowExit`/`PreventExit` effects, `ExitRequested`/`Exited` events (D9/5, D10/8)
-  - Verify: scenarios `codex5_finalize_quit_arms_bypass_first`, `codex8_second_exit_request_while_exiting_is_prevented`; invariant 6
+  - Verify: scenarios `codex5_finalize_quit_arms_bypass_first`, `codex8_second_exit_request_while_exiting_is_prevented` (order observed in spike Q5); invariant 6
 - [ ] **T7 (P1, human: ~1h / CC: ~5min)** — machine.rs — `EmitRequest{attempt, frontend}` / `EmitFailed` with owner check (D9/6)
   - Verify: scenario `codex6_late_emit_failure_does_not_clear_replacement_bridge`
 - [ ] **T8 (P1, human: ~1 day / CC: ~30min)** — machine.rs — 27 scenarios rewritten over `step` (regression rule); proptest invariants 1–6 with ids and completion-based counting (D10/10)
