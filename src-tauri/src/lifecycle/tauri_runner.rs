@@ -1,5 +1,4 @@
 //! `EffectRunner` over `tauri::AppHandle` (slice 4). Coordinator-declared; filled by the worker.
-#![allow(dead_code)]
 
 use super::machine::{Attempt, Decision, Effect, Event, Kind, RecreationId, Token};
 use super::runtime::{EffectRunner, Envelope};
@@ -54,13 +53,7 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
         match effect {
             Effect::EmitRequest { attempt, frontend } => {
                 let Some(window) = self.app.get_webview_window(MAIN_WINDOW) else {
-                    send_event(
-                        tx,
-                        Event::EmitFailed {
-                            attempt,
-                            frontend,
-                        },
-                    );
+                    send_event(tx, Event::EmitFailed { attempt, frontend });
                     self.emit_error("The editor did not respond to the desktop close request.");
                     return;
                 };
@@ -68,13 +61,7 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
                     .emit("lifecycle:request", WireAttempt::from(&attempt))
                     .is_err()
                 {
-                    send_event(
-                        tx,
-                        Event::EmitFailed {
-                            attempt,
-                            frontend,
-                        },
-                    );
+                    send_event(tx, Event::EmitFailed { attempt, frontend });
                     self.emit_error("The editor did not respond to the desktop close request.");
                 }
             }
@@ -89,7 +76,7 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
                         send_event(&thread_tx, Event::Timeout(thread_attempt));
                     });
                 if spawn.is_err() {
-                    send_event(&tx, Event::Timeout(attempt));
+                    send_event(tx, Event::Timeout(attempt));
                 }
             }
             Effect::ShowRecoveryDialog(attempt) => {
@@ -119,10 +106,7 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
                             log::error!("could not recreate the main window: {error}");
                             return;
                         }
-                        send_event(
-                            &guard.tx,
-                            Event::RecreationFinished { id, ok: true },
-                        );
+                        send_event(&guard.tx, Event::RecreationFinished { id, ok: true });
                         guard.completed = true;
                     });
                 if spawn.is_err() {
@@ -200,48 +184,39 @@ impl<R: Runtime> TauriRunner<R> {
                 "Cancel".to_string(),
             ))
             .show(move |allow| {
-                send_event(
-                    &tx,
-                    Event::Recovered {
-                        attempt,
-                        allow,
-                    },
-                );
+                send_event(&tx, Event::Recovered { attempt, allow });
             });
     }
 
     fn finalize(&self, attempt: Attempt, tx: &Sender<Envelope>) {
         let ok = match attempt.kind {
-            Kind::Close => {
-                match self.app.get_webview_window(MAIN_WINDOW) {
-                    Some(window) => {
-                        #[cfg(target_os = "macos")]
-                        {
-                            match window.hide() {
-                                Ok(()) => {
-                                    #[cfg(not(test))]
-                                    if let Err(error) = self
-                                        .app
-                                        .save_window_state(crate::WINDOW_STATE_FLAGS)
-                                    {
-                                        log::warn!("could not persist window geometry: {error}");
-                                    }
-                                    true
+            Kind::Close => match self.app.get_webview_window(MAIN_WINDOW) {
+                Some(window) => {
+                    #[cfg(target_os = "macos")]
+                    {
+                        match window.hide() {
+                            Ok(()) => {
+                                #[cfg(not(test))]
+                                if let Err(error) =
+                                    self.app.save_window_state(crate::WINDOW_STATE_FLAGS)
+                                {
+                                    log::warn!("could not persist window geometry: {error}");
                                 }
-                                Err(error) => {
-                                    log::warn!("could not hide the main window: {error}");
-                                    false
-                                }
+                                true
+                            }
+                            Err(error) => {
+                                log::warn!("could not hide the main window: {error}");
+                                false
                             }
                         }
-                        #[cfg(not(target_os = "macos"))]
-                        {
-                            window.destroy().is_ok()
-                        }
                     }
-                    None => false,
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        window.destroy().is_ok()
+                    }
                 }
-            }
+                None => false,
+            },
             Kind::Quit => {
                 send_event(
                     tx,
@@ -254,13 +229,7 @@ impl<R: Runtime> TauriRunner<R> {
                 return;
             }
         };
-        send_event(
-            tx,
-            Event::Finalized {
-                attempt,
-                ok,
-            },
-        );
+        send_event(tx, Event::Finalized { attempt, ok });
         if !ok {
             self.emit_error("The main window could not be finalized.");
         }
@@ -579,10 +548,7 @@ mod tests {
 
         assert_eq!(
             rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
-            Event::Finalized {
-                attempt,
-                ok: true,
-            }
+            Event::Finalized { attempt, ok: true }
         );
     }
 
@@ -597,10 +563,7 @@ mod tests {
 
         assert_eq!(
             rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
-            Event::Finalized {
-                attempt,
-                ok: false,
-            }
+            Event::Finalized { attempt, ok: false }
         );
     }
 
@@ -617,10 +580,7 @@ mod tests {
 
         assert_eq!(
             rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
-            Event::Finalized {
-                attempt,
-                ok: true,
-            }
+            Event::Finalized { attempt, ok: true }
         );
     }
 
