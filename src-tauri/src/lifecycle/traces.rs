@@ -8,6 +8,7 @@ use super::{
 };
 
 /// One call on the old coordinator, in the vocabulary of `lifecycle/mod.rs`.
+#[allow(dead_code)] // some old calls intentionally have no machine counterpart
 #[derive(Debug, Clone)]
 enum OldCall {
     NewWindow,
@@ -73,7 +74,11 @@ struct Row {
 
 fn classify_old(result: OldResult) -> Outcome {
     match result {
-        OldResult::NewWindow(_) | OldResult::Unit => Outcome::NoOp,
+        OldResult::NewWindow(generation) => {
+            let _ = generation;
+            Outcome::NoOp
+        }
+        OldResult::Unit => Outcome::NoOp,
         OldResult::BeginRecreation(true) => Outcome::Other("started"),
         OldResult::BeginRecreation(false) => Outcome::Ignored,
         OldResult::FinishRecreation(result) => {
@@ -359,6 +364,42 @@ fn compare(trace: &[OldCall]) -> Vec<Row> {
         .collect()
 }
 
+fn attempt(id: u64, generation: u64, kind: LifecycleKind, sequence: u64) -> LifecycleAttempt {
+    LifecycleAttempt {
+        attempt_id: id,
+        generation,
+        kind,
+        request_sequence: sequence,
+    }
+}
+
+fn payload(
+    attempt: &LifecycleAttempt,
+    decision: LifecycleDecision,
+    dirty: bool,
+    pending: bool,
+) -> LifecycleDecisionPayload {
+    LifecycleDecisionPayload {
+        attempt_id: attempt.attempt_id,
+        generation: attempt.generation,
+        request_sequence: attempt.request_sequence,
+        decision,
+        dirty,
+        pending,
+    }
+}
+
+fn token(instance_id: &str, generation: u64) -> FrontendToken {
+    FrontendToken {
+        instance_id: instance_id.into(),
+        generation,
+    }
+}
+
+fn assert_trace(trace: &[OldCall]) {
+    assert_eq!(compare(trace).len(), trace.len());
+}
+
 #[test]
 fn asks_ready_frontend_once_trace_has_one_row_per_old_call() {
     let trace = vec![
@@ -368,4 +409,339 @@ fn asks_ready_frontend_once_trace_has_one_row_per_old_call() {
     ];
 
     assert_eq!(compare(&trace).len(), trace.len());
+}
+
+#[test]
+fn b1_timeout_reemits_an_active_attempt_after_frontend_replacement_trace() {
+    let current = attempt(1, 1, LifecycleKind::Close, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::FrontendReady("two".into()),
+        OldCall::TimeoutExpired(current),
+    ]);
+}
+
+#[test]
+fn b1_frontend_ready_reports_an_active_attempt_for_reemit_trace() {
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::FrontendReady("two".into()),
+    ]);
+}
+
+#[test]
+fn s1_decide_reserves_finalization_before_recreation_can_begin_trace() {
+    let current = attempt(1, 1, LifecycleKind::Quit, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Quit, true),
+        OldCall::Decide(payload(
+            &current,
+            LifecycleDecision::Allow,
+            false,
+            false,
+        )),
+        OldCall::BeginRecreation,
+        OldCall::FinishFinalize(current),
+        OldCall::BeginRecreation,
+    ]);
+}
+
+#[test]
+fn s2_quit_during_recreation_is_queued_and_replayed_after_success_trace() {
+    assert_trace(&[
+        OldCall::BeginRecreation,
+        OldCall::Begin(LifecycleKind::Quit, false),
+        OldCall::FinishRecreation(true),
+    ]);
+}
+
+#[test]
+fn s2_quit_during_recreation_is_replayed_after_failure_too_trace() {
+    assert_trace(&[
+        OldCall::BeginRecreation,
+        OldCall::Begin(LifecycleKind::Quit, false),
+        OldCall::FinishRecreation(false),
+    ]);
+}
+
+#[test]
+fn clean_allow_authorizes_once_trace() {
+    let current = attempt(1, 1, LifecycleKind::Quit, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Quit, true),
+        OldCall::Decide(payload(
+            &current,
+            LifecycleDecision::Allow,
+            false,
+            false,
+        )),
+        OldCall::Decide(payload(
+            &current,
+            LifecycleDecision::Allow,
+            false,
+            false,
+        )),
+    ]);
+}
+
+#[test]
+fn dirty_allow_requires_a_current_recheck_trace() {
+    let current = attempt(1, 1, LifecycleKind::Close, 0);
+    let recheck = attempt(1, 1, LifecycleKind::Close, 1);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::Decide(payload(
+            &current,
+            LifecycleDecision::Allow,
+            true,
+            false,
+        )),
+        OldCall::Decide(payload(
+            &recheck,
+            LifecycleDecision::Discard,
+            true,
+            false,
+        )),
+    ]);
+}
+
+#[test]
+fn pending_work_cannot_be_discarded_as_clean_trace() {
+    let current = attempt(1, 1, LifecycleKind::Close, 0);
+    let recheck = attempt(1, 1, LifecycleKind::Close, 1);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::Decide(payload(
+            &current,
+            LifecycleDecision::Discard,
+            true,
+            true,
+        )),
+        OldCall::Decide(payload(
+            &recheck,
+            LifecycleDecision::ExitAnyway,
+            true,
+            true,
+        )),
+    ]);
+}
+
+#[test]
+fn recovery_dialog_is_one_per_active_attempt_trace() {
+    let current = attempt(1, 1, LifecycleKind::Close, 0);
+    assert_trace(&[
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::StartRecovery(current.clone()),
+        OldCall::StartRecovery(current.clone()),
+        OldCall::Recover(current, false),
+    ]);
+}
+
+#[test]
+fn stale_generation_and_attempt_are_ignored_trace() {
+    let current = attempt(1, 3, LifecycleKind::Close, 0);
+    let mut stale_generation = payload(
+        &current,
+        LifecycleDecision::Allow,
+        false,
+        false,
+    );
+    stale_generation.generation = 2;
+    let mut stale_attempt = stale_generation.clone();
+    stale_attempt.generation = current.generation;
+    stale_attempt.attempt_id = 99;
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::Decide(stale_generation),
+        OldCall::Decide(stale_attempt),
+    ]);
+}
+
+#[test]
+fn new_window_invalidates_old_frontend_and_attempt_trace() {
+    let old = attempt(1, 1, LifecycleKind::Close, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::NewWindow,
+        OldCall::FrontendReady("two".into()),
+        OldCall::Decide(payload(
+            &old,
+            LifecycleDecision::Allow,
+            false,
+            false,
+        )),
+    ]);
+}
+
+#[test]
+fn close_then_quit_supersedes_the_close_attempt_trace() {
+    let close = attempt(1, 1, LifecycleKind::Close, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::Begin(LifecycleKind::Quit, true),
+        OldCall::Decide(payload(
+            &close,
+            LifecycleDecision::Allow,
+            false,
+            false,
+        )),
+    ]);
+}
+
+#[test]
+fn timeout_from_superseded_attempt_is_stale_trace() {
+    let old = attempt(1, 1, LifecycleKind::Close, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::Begin(LifecycleKind::Quit, true),
+        OldCall::TimeoutExpired(old),
+    ]);
+}
+
+#[test]
+fn finalization_reservation_is_taken_before_a_newer_request_can_start_trace() {
+    let old = attempt(1, 1, LifecycleKind::Close, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::Decide(payload(
+            &old,
+            LifecycleDecision::Allow,
+            false,
+            false,
+        )),
+        OldCall::BeginRecreation,
+        OldCall::Begin(LifecycleKind::Quit, true),
+    ]);
+}
+
+#[test]
+fn finalization_reservation_blocks_newer_actions_until_finished_trace() {
+    let current = attempt(1, 1, LifecycleKind::Quit, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Quit, true),
+        OldCall::Decide(payload(
+            &current,
+            LifecycleDecision::Allow,
+            false,
+            false,
+        )),
+        OldCall::Begin(LifecycleKind::Quit, true),
+        OldCall::FinishFinalize(current),
+        OldCall::Begin(LifecycleKind::Quit, true),
+    ]);
+}
+
+#[test]
+fn new_1_quit_during_close_finalization_is_not_lost_trace() {
+    let close = attempt(1, 1, LifecycleKind::Close, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::Decide(payload(
+            &close,
+            LifecycleDecision::Allow,
+            false,
+            false,
+        )),
+        OldCall::Begin(LifecycleKind::Quit, true),
+    ]);
+}
+
+#[test]
+fn new_1_recreation_does_not_clear_an_active_decision_trace() {
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::BeginRecreation,
+    ]);
+}
+
+#[test]
+fn new_3_recreation_refuses_an_active_lifecycle_attempt_trace() {
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Quit, true),
+        OldCall::BeginRecreation,
+    ]);
+}
+
+#[test]
+fn new_4_timeout_cannot_clear_a_replacement_frontend_trace() {
+    let close = attempt(1, 1, LifecycleKind::Close, 0);
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::FrontendReady("two".into()),
+        OldCall::TimeoutExpired(close),
+    ]);
+}
+
+#[test]
+fn readiness_cleanup_is_bound_to_the_native_generation_token_trace() {
+    assert_trace(&[
+        OldCall::FrontendReady("old".into()),
+        OldCall::FrontendReady("new".into()),
+        OldCall::FrontendUnready(token("old", 1)),
+        OldCall::FrontendUnready(token("new", 1)),
+    ]);
+}
+
+#[test]
+fn readiness_tokens_record_the_window_generation_trace() {
+    assert_trace(&[
+        OldCall::FrontendReady("old".into()),
+        OldCall::NewWindow,
+        OldCall::FrontendReady("current".into()),
+        OldCall::FrontendUnready(token("old", 1)),
+    ]);
+}
+
+#[test]
+fn recovery_decision_from_superseded_attempt_is_stale_trace() {
+    let old = attempt(1, 1, LifecycleKind::Close, 0);
+    let current = attempt(2, 1, LifecycleKind::Quit, 0);
+    assert_trace(&[
+        OldCall::Begin(LifecycleKind::Close, true),
+        OldCall::StartRecovery(old.clone()),
+        OldCall::Begin(LifecycleKind::Quit, true),
+        OldCall::Recover(old, true),
+        OldCall::StartRecovery(current.clone()),
+        OldCall::Recover(current, false),
+    ]);
+}
+
+#[test]
+fn recreation_is_serialized_and_generation_advances_after_success_trace() {
+    assert_trace(&[
+        OldCall::BeginRecreation,
+        OldCall::BeginRecreation,
+        OldCall::FinishRecreation(false),
+        OldCall::BeginRecreation,
+        OldCall::FinishRecreation(true),
+    ]);
+}
+
+#[test]
+fn quit_without_a_visible_window_can_exit_directly_trace() {
+    assert_trace(&[
+        OldCall::FrontendReady("one".into()),
+        OldCall::Begin(LifecycleKind::Quit, false),
+    ]);
+}
+
+#[test]
+fn bypasses_are_one_use_and_generation_bound_trace() {
+    assert_trace(&[OldCall::ArmExitBypass(4), OldCall::TakeExitBypass(4)]);
 }
