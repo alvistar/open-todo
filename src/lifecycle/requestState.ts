@@ -2,11 +2,11 @@ export interface LifecycleRequest {
   attemptId: number;
   generation: number;
   kind: "close" | "quit";
+  requestSequence: number;
 }
 
 export interface RequestState {
   current: LifecycleRequest | null;
-  received: LifecycleRequest | null;
   inFlight: { request: LifecycleRequest; responseId: number } | null;
   responseError: string | null;
 }
@@ -33,7 +33,8 @@ export function sameRequest(
     left !== null &&
     right !== null &&
     left.attemptId === right.attemptId &&
-    left.generation === right.generation
+    left.generation === right.generation &&
+    left.requestSequence === right.requestSequence
   );
 }
 
@@ -45,7 +46,6 @@ export function transitionRequest(
     return {
       ...state,
       current: event.request,
-      received: event.request,
       responseError: null,
     };
   }

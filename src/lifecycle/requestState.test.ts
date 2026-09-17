@@ -17,7 +17,7 @@ const quitB = {
 describe("lifecycle request reconciliation", () => {
   it("NEW-2 keeps B current when A settles after B was received", () => {
     const afterB = transitionRequest(
-      { current: closeA, received: closeA, inFlight: null, responseError: null },
+      { current: closeA, inFlight: null, responseError: null },
       { type: "native-request", request: quitB },
     );
     const afterA = transitionRequest(afterB, {
@@ -40,7 +40,6 @@ describe("lifecycle request reconciliation", () => {
     const settled = transitionRequest(
       {
         current: recheck,
-        received: recheck,
         inFlight: { request: closeA, responseId: 1 },
         responseError: null,
       },

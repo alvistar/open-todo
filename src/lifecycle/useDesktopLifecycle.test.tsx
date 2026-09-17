@@ -159,7 +159,7 @@ describe("DesktopLifecycleBridge", () => {
       expect(mocks.invoke).toHaveBeenCalledWith("lifecycle_ready", expect.anything()),
     );
     mocks.eventHandlers["lifecycle:request"]?.({
-      payload: { attemptId: 4, generation: 2, kind: "close" },
+      payload: { attemptId: 4, generation: 2, kind: "close", requestSequence: 0 },
     });
     await waitFor(() =>
       expect(mocks.invoke).toHaveBeenCalledWith(
@@ -177,7 +177,7 @@ describe("DesktopLifecycleBridge", () => {
       pending: false,
     });
     mocks.eventHandlers["lifecycle:request"]?.({
-      payload: { attemptId: 5, generation: 2, kind: "quit" },
+      payload: { attemptId: 5, generation: 2, kind: "quit", requestSequence: 0 },
     });
     expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
 
@@ -268,10 +268,13 @@ describe("DesktopLifecycleBridge", () => {
     mocks.eventHandlers["lifecycle:request"]?.({
       payload: { ...request, requestSequence: 1 },
     });
+    await waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Discard and close" }));
 
     await waitFor(() => {
-      const calls = mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_decision");
+      const calls = mocks.invoke.mock.calls.filter(
+        ([name]) => name === "lifecycle_decision",
+      );
       expect(calls).toHaveLength(2);
       expect(calls[1]?.[1]).toEqual(
         expect.objectContaining({

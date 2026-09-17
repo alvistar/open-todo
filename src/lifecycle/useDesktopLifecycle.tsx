@@ -19,6 +19,7 @@ export type { LifecycleRequest } from "./requestState";
 interface LifecycleDecisionPayload {
   attemptId: number;
   generation: number;
+  requestSequence: number;
   decision: LifecycleDecision;
   dirty: boolean;
   pending: boolean;
@@ -31,7 +32,6 @@ interface FrontendToken {
 
 const INITIAL_REQUEST_STATE: RequestState = {
   current: null,
-  received: null,
   inFlight: null,
   responseError: null,
 };
@@ -136,6 +136,7 @@ export function DesktopLifecycleBridge() {
     const payload: LifecycleDecisionPayload = {
       attemptId: current.attemptId,
       generation: current.generation,
+      requestSequence: current.requestSequence,
       decision,
       dirty: currentSummary.dirty,
       pending: currentSummary.pending,
