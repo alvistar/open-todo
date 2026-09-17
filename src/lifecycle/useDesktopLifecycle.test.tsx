@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OverlayStackProvider } from "../ui/overlayStack";
-import { registerDraftSource } from "./drafts";
+import { getDraftSummary, registerDraftSource, registerPendingDraft } from "./drafts";
 
 const mocks = vi.hoisted(() => ({
   eventHandlers: {} as Record<string, (event: { payload: unknown }) => void>,
@@ -286,5 +286,26 @@ describe("DesktopLifecycleBridge", () => {
     for (const resolve of decisions) resolve();
     unmount();
     remove();
+  });
+
+  it("S4 dismisses a detached write failure from the lifecycle notice", async () => {
+    let rejectWrite!: (reason: unknown) => void;
+    const release = registerPendingDraft(
+      "Detached task detail",
+      new Promise<void>((_, reject) => {
+        rejectWrite = reject;
+      }),
+    );
+    const { unmount } = render(<DesktopLifecycleBridge />);
+    rejectWrite(new Error("The detached write failed."));
+
+    try {
+      expect(await screen.findByText("The detached write failed.")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      await waitFor(() => expect(getDraftSummary().dirty).toBe(false));
+    } finally {
+      unmount();
+      release();
+    }
   });
 });

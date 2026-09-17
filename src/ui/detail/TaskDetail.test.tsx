@@ -519,6 +519,34 @@ describe("the sidebar pickers", () => {
     expect(screen.getByRole("button", { name: "P2" })).toBeInTheDocument();
   });
 
+  it("S5 keeps a mounted picker failure dirty until a retry succeeds", async () => {
+    const onSave = vi
+      .fn<(_: TaskPatch) => Promise<void>>()
+      .mockRejectedValueOnce(new Error("Vikunja rejected the mounted write."))
+      .mockResolvedValueOnce(undefined);
+    open({ priority: 0 }, { onSave });
+    openPicker("Priority");
+    fireEvent.click(screen.getByRole("button", { name: "P1" }));
+
+    try {
+      expect(
+        await screen.findByText("Vikunja rejected the mounted write."),
+      ).toBeInTheDocument();
+      const dirtyWhileError = getDraftSummary().dirty;
+
+      fireEvent.click(screen.getByRole("button", { name: "P2" }));
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(getDraftSummary().pending).toBe(false));
+
+      expect({
+        dirtyWhileError,
+        dirtyAfterRetry: getDraftSummary().dirty,
+      }).toEqual({ dirtyWhileError: true, dirtyAfterRetry: false });
+    } finally {
+      draftRegistry.clearDraftErrors();
+    }
+  });
+
   it("gives Escape to the open picker, not to the dialog behind it", () => {
     const { onClose } = open();
     openPicker("Priority");
