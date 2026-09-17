@@ -87,10 +87,13 @@ afterEach(() => {
 describe("responsive shell", () => {
   it("Orig-8 hides the closed narrow sidebar from focus and assistive technology", () => {
     renderShell();
-    const sidebar = screen.getByRole("navigation", { name: "Views and projects" });
+    const sidebarLayer = screen.getByRole("navigation", {
+      name: "Views and projects",
+      hidden: true,
+    }).parentElement;
 
-    expect(sidebar).toHaveAttribute("aria-hidden", "true");
-    expect(sidebar).toHaveAttribute("inert");
+    expect(sidebarLayer).toHaveAttribute("aria-hidden", "true");
+    expect(sidebarLayer).toHaveAttribute("inert");
   });
 
   it("starts narrow with the navigation closed and restores focus after closing", () => {

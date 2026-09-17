@@ -59,6 +59,7 @@ function ShellContents({ sidebar, children }: ShellProps) {
   }, [narrow]);
 
   useOverlayLayer("sidebar", closeSidebar, sidebarOpen && narrow);
+  const sidebarClosed = narrow && !sidebarOpen;
 
   return (
     <CloseSidebarContext.Provider value={closeSidebar}>
@@ -66,6 +67,7 @@ function ShellContents({ sidebar, children }: ShellProps) {
         <div
           className={`${styles.sidebarLayer} ${sidebarOpen ? styles.sidebarOpen : ""}`}
           data-open={sidebarOpen}
+          {...(sidebarClosed ? { inert: true, "aria-hidden": true } : {})}
         >
           {sidebar}
         </div>
