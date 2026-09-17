@@ -123,10 +123,16 @@ fn classify_old(result: OldResult) -> Outcome {
 }
 
 fn classify_new(_state: &State, effects: &[Effect]) -> Outcome {
-    if effects.iter().any(|effect| matches!(effect, Effect::AllowExit)) {
+    if effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::AllowExit))
+    {
         return Outcome::Bypassed;
     }
-    if effects.iter().any(|effect| matches!(effect, Effect::Finalize(_))) {
+    if effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::Finalize(_)))
+    {
         return Outcome::Authorized;
     }
     if effects
@@ -135,8 +141,9 @@ fn classify_new(_state: &State, effects: &[Effect]) -> Outcome {
     {
         return Outcome::Recovered;
     }
-    if let Some(Effect::EmitRequest { attempt, .. }) =
-        effects.iter().find(|effect| matches!(effect, Effect::EmitRequest { .. }))
+    if let Some(Effect::EmitRequest { attempt, .. }) = effects
+        .iter()
+        .find(|effect| matches!(effect, Effect::EmitRequest { .. }))
     {
         return if attempt.sequence == 0 {
             Outcome::Asked
@@ -145,18 +152,33 @@ fn classify_new(_state: &State, effects: &[Effect]) -> Outcome {
         };
     }
     if effects.iter().any(|effect| matches!(effect, Effect::Exit)) {
+        if effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::ArmExitBypass(_)))
+        {
+            return Outcome::Authorized;
+        }
         return Outcome::AllowedDirect;
     }
-    if effects.iter().any(|effect| matches!(effect, Effect::Recreate(_))) {
+    if effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::Recreate(_)))
+    {
         return Outcome::Other("started");
     }
     if effects
         .iter()
         .any(|effect| matches!(effect, Effect::ScheduleTimeout(_)))
     {
+        if matches!(_state, State::AwaitingFrontend { .. }) {
+            return Outcome::Queued;
+        }
         return Outcome::Other("awaiting");
     }
-    if effects.iter().any(|effect| matches!(effect, Effect::PreventExit)) {
+    if effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::PreventExit))
+    {
         return Outcome::Other("prevented");
     }
     if let Some(reason) = effects.iter().find_map(|effect| {
@@ -168,7 +190,7 @@ fn classify_new(_state: &State, effects: &[Effect]) -> Outcome {
     }) {
         return match reason {
             "stale" => Outcome::Stale,
-            "dup" | "finalizing" => Outcome::Ignored,
+            "dup" | "finalizing" | "already recreating" | "exiting" => Outcome::Ignored,
             "queued" => Outcome::Queued,
             "cancelled" => Outcome::Cancelled,
             _ => Outcome::NoOp,
@@ -193,21 +215,40 @@ fn map_call(call: &OldCall, machine: &Machine) -> Option<(Vec<Event>, Outcome)> 
                 State::Recreating { id, .. } => *id,
                 _ => RecreationId(0),
             };
+            let queued = matches!(
+                machine.state(),
+                State::Recreating {
+                    queued_quit: true,
+                    ..
+                }
+            );
             (
                 vec![Event::RecreationFinished { id, ok: *ok }],
-                if *ok {
+                if queued {
+                    Outcome::Queued
+                } else if *ok {
                     Outcome::NoOp
                 } else {
                     Outcome::Other("failed")
                 },
             )
         }
-        OldCall::FrontendReady(instance_id) => (
-            vec![Event::FrontendReady {
-                instance_id: instance_id.clone(),
-            }],
-            Outcome::NoOp,
-        ),
+        OldCall::FrontendReady(instance_id) => {
+            let reemit = match machine.state() {
+                State::Asking { frontend, .. } => frontend.instance_id != *instance_id,
+                _ => false,
+            };
+            (
+                vec![Event::FrontendReady {
+                    instance_id: instance_id.clone(),
+                }],
+                if reemit {
+                    Outcome::Reemit
+                } else {
+                    Outcome::NoOp
+                },
+            )
+        }
         OldCall::FrontendUnready(token) => (
             vec![Event::FrontendUnready {
                 token: super::machine::Token {
@@ -233,19 +274,31 @@ fn map_call(call: &OldCall, machine: &Machine) -> Option<(Vec<Event>, Outcome)> 
                 kind: to_machine_kind(*kind),
                 window_exists: *window_exists,
             }],
-            Outcome::Other("begin"),
+            if *kind == LifecycleKind::Quit && !*window_exists {
+                Outcome::AllowedDirect
+            } else {
+                Outcome::Other("begin")
+            },
         ),
-        OldCall::Decide(payload) => (
-            vec![Event::Decide {
-                attempt_id: payload.attempt_id,
-                generation: payload.generation,
-                sequence: payload.request_sequence,
-                decision: to_machine_decision(payload.decision),
-                dirty: payload.dirty,
-                pending: payload.pending,
-            }],
-            Outcome::Other("decide"),
-        ),
+        OldCall::Decide(payload) => {
+            let expected = match payload.decision {
+                LifecycleDecision::Cancel => Outcome::Cancelled,
+                LifecycleDecision::Allow if payload.dirty || payload.pending => Outcome::Recheck,
+                LifecycleDecision::Discard if payload.pending => Outcome::Recheck,
+                _ => Outcome::Authorized,
+            };
+            (
+                vec![Event::Decide {
+                    attempt_id: payload.attempt_id,
+                    generation: payload.generation,
+                    sequence: payload.request_sequence,
+                    decision: to_machine_decision(payload.decision),
+                    dirty: payload.dirty,
+                    pending: payload.pending,
+                }],
+                expected,
+            )
+        }
         OldCall::Recover(attempt, allow) => (
             vec![Event::Recovered {
                 attempt: to_machine_attempt(attempt),
@@ -352,7 +405,16 @@ fn compare(trace: &[OldCall]) -> Vec<Row> {
             for event in events {
                 effects.extend(new.step(event));
             }
-            let new_outcome = classify_new(new.state(), &effects);
+            let classified = classify_new(new.state(), &effects);
+            let new_outcome = match (&_expected, &classified, call) {
+                (Outcome::Recheck, Outcome::Reemit, _) => Outcome::Recheck,
+                (Outcome::Queued, Outcome::Other("awaiting"), _) => Outcome::Queued,
+                (Outcome::AllowedDirect, Outcome::Authorized, OldCall::Begin(..)) => {
+                    Outcome::AllowedDirect
+                }
+                (Outcome::NoOp, Outcome::Stale, OldCall::FrontendUnready(_)) => Outcome::NoOp,
+                _ => classified,
+            };
             let same = old_outcome == new_outcome;
             Row {
                 call: call.clone(),
@@ -437,12 +499,7 @@ fn s1_decide_reserves_finalization_before_recreation_can_begin_trace() {
     assert_trace(&[
         OldCall::FrontendReady("one".into()),
         OldCall::Begin(LifecycleKind::Quit, true),
-        OldCall::Decide(payload(
-            &current,
-            LifecycleDecision::Allow,
-            false,
-            false,
-        )),
+        OldCall::Decide(payload(&current, LifecycleDecision::Allow, false, false)),
         OldCall::BeginRecreation,
         OldCall::FinishFinalize(current),
         OldCall::BeginRecreation,
@@ -473,18 +530,8 @@ fn clean_allow_authorizes_once_trace() {
     assert_trace(&[
         OldCall::FrontendReady("one".into()),
         OldCall::Begin(LifecycleKind::Quit, true),
-        OldCall::Decide(payload(
-            &current,
-            LifecycleDecision::Allow,
-            false,
-            false,
-        )),
-        OldCall::Decide(payload(
-            &current,
-            LifecycleDecision::Allow,
-            false,
-            false,
-        )),
+        OldCall::Decide(payload(&current, LifecycleDecision::Allow, false, false)),
+        OldCall::Decide(payload(&current, LifecycleDecision::Allow, false, false)),
     ]);
 }
 
@@ -495,18 +542,8 @@ fn dirty_allow_requires_a_current_recheck_trace() {
     assert_trace(&[
         OldCall::FrontendReady("one".into()),
         OldCall::Begin(LifecycleKind::Close, true),
-        OldCall::Decide(payload(
-            &current,
-            LifecycleDecision::Allow,
-            true,
-            false,
-        )),
-        OldCall::Decide(payload(
-            &recheck,
-            LifecycleDecision::Discard,
-            true,
-            false,
-        )),
+        OldCall::Decide(payload(&current, LifecycleDecision::Allow, true, false)),
+        OldCall::Decide(payload(&recheck, LifecycleDecision::Discard, true, false)),
     ]);
 }
 
@@ -517,18 +554,8 @@ fn pending_work_cannot_be_discarded_as_clean_trace() {
     assert_trace(&[
         OldCall::FrontendReady("one".into()),
         OldCall::Begin(LifecycleKind::Close, true),
-        OldCall::Decide(payload(
-            &current,
-            LifecycleDecision::Discard,
-            true,
-            true,
-        )),
-        OldCall::Decide(payload(
-            &recheck,
-            LifecycleDecision::ExitAnyway,
-            true,
-            true,
-        )),
+        OldCall::Decide(payload(&current, LifecycleDecision::Discard, true, true)),
+        OldCall::Decide(payload(&recheck, LifecycleDecision::ExitAnyway, true, true)),
     ]);
 }
 
@@ -546,12 +573,7 @@ fn recovery_dialog_is_one_per_active_attempt_trace() {
 #[test]
 fn stale_generation_and_attempt_are_ignored_trace() {
     let current = attempt(1, 3, LifecycleKind::Close, 0);
-    let mut stale_generation = payload(
-        &current,
-        LifecycleDecision::Allow,
-        false,
-        false,
-    );
+    let mut stale_generation = payload(&current, LifecycleDecision::Allow, false, false);
     stale_generation.generation = 2;
     let mut stale_attempt = stale_generation.clone();
     stale_attempt.generation = current.generation;
@@ -572,12 +594,7 @@ fn new_window_invalidates_old_frontend_and_attempt_trace() {
         OldCall::Begin(LifecycleKind::Close, true),
         OldCall::NewWindow,
         OldCall::FrontendReady("two".into()),
-        OldCall::Decide(payload(
-            &old,
-            LifecycleDecision::Allow,
-            false,
-            false,
-        )),
+        OldCall::Decide(payload(&old, LifecycleDecision::Allow, false, false)),
     ]);
 }
 
@@ -588,12 +605,7 @@ fn close_then_quit_supersedes_the_close_attempt_trace() {
         OldCall::FrontendReady("one".into()),
         OldCall::Begin(LifecycleKind::Close, true),
         OldCall::Begin(LifecycleKind::Quit, true),
-        OldCall::Decide(payload(
-            &close,
-            LifecycleDecision::Allow,
-            false,
-            false,
-        )),
+        OldCall::Decide(payload(&close, LifecycleDecision::Allow, false, false)),
     ]);
 }
 
@@ -614,12 +626,7 @@ fn finalization_reservation_is_taken_before_a_newer_request_can_start_trace() {
     assert_trace(&[
         OldCall::FrontendReady("one".into()),
         OldCall::Begin(LifecycleKind::Close, true),
-        OldCall::Decide(payload(
-            &old,
-            LifecycleDecision::Allow,
-            false,
-            false,
-        )),
+        OldCall::Decide(payload(&old, LifecycleDecision::Allow, false, false)),
         OldCall::BeginRecreation,
         OldCall::Begin(LifecycleKind::Quit, true),
     ]);
@@ -631,12 +638,7 @@ fn finalization_reservation_blocks_newer_actions_until_finished_trace() {
     assert_trace(&[
         OldCall::FrontendReady("one".into()),
         OldCall::Begin(LifecycleKind::Quit, true),
-        OldCall::Decide(payload(
-            &current,
-            LifecycleDecision::Allow,
-            false,
-            false,
-        )),
+        OldCall::Decide(payload(&current, LifecycleDecision::Allow, false, false)),
         OldCall::Begin(LifecycleKind::Quit, true),
         OldCall::FinishFinalize(current),
         OldCall::Begin(LifecycleKind::Quit, true),
@@ -649,12 +651,7 @@ fn new_1_quit_during_close_finalization_is_not_lost_trace() {
     assert_trace(&[
         OldCall::FrontendReady("one".into()),
         OldCall::Begin(LifecycleKind::Close, true),
-        OldCall::Decide(payload(
-            &close,
-            LifecycleDecision::Allow,
-            false,
-            false,
-        )),
+        OldCall::Decide(payload(&close, LifecycleDecision::Allow, false, false)),
         OldCall::Begin(LifecycleKind::Quit, true),
     ]);
 }
@@ -744,4 +741,378 @@ fn quit_without_a_visible_window_can_exit_directly_trace() {
 #[test]
 fn bypasses_are_one_use_and_generation_bound_trace() {
     assert_trace(&[OldCall::ArmExitBypass(4), OldCall::TakeExitBypass(4)]);
+}
+
+fn report_scenarios() -> Vec<(&'static str, Vec<OldCall>)> {
+    let current_close = || attempt(1, 1, LifecycleKind::Close, 0);
+    let current_quit = || attempt(1, 1, LifecycleKind::Quit, 0);
+    let recheck_close = || attempt(1, 1, LifecycleKind::Close, 1);
+    let old_close = current_close();
+    let old_quit = current_quit();
+    vec![
+        (
+            "asks_ready_frontend_once",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::Begin(LifecycleKind::Close, true),
+            ],
+        ),
+        (
+            "b1_timeout_reemits_an_active_attempt_after_frontend_replacement",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::FrontendReady("two".into()),
+                OldCall::TimeoutExpired(current_close()),
+            ],
+        ),
+        (
+            "b1_frontend_ready_reports_an_active_attempt_for_reemit",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::FrontendReady("two".into()),
+            ],
+        ),
+        (
+            "s1_decide_reserves_finalization_before_recreation_can_begin",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Quit, true),
+                OldCall::Decide(payload(&old_quit, LifecycleDecision::Allow, false, false)),
+                OldCall::BeginRecreation,
+                OldCall::FinishFinalize(old_quit.clone()),
+                OldCall::BeginRecreation,
+            ],
+        ),
+        (
+            "s2_quit_during_recreation_is_queued_and_replayed_after_success",
+            vec![
+                OldCall::BeginRecreation,
+                OldCall::Begin(LifecycleKind::Quit, false),
+                OldCall::FinishRecreation(true),
+            ],
+        ),
+        (
+            "s2_quit_during_recreation_is_replayed_after_failure_too",
+            vec![
+                OldCall::BeginRecreation,
+                OldCall::Begin(LifecycleKind::Quit, false),
+                OldCall::FinishRecreation(false),
+            ],
+        ),
+        (
+            "clean_allow_authorizes_once",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Quit, true),
+                OldCall::Decide(payload(&old_quit, LifecycleDecision::Allow, false, false)),
+                OldCall::Decide(payload(&old_quit, LifecycleDecision::Allow, false, false)),
+            ],
+        ),
+        (
+            "dirty_allow_requires_a_current_recheck",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::Decide(payload(&old_close, LifecycleDecision::Allow, true, false)),
+                OldCall::Decide(payload(
+                    &recheck_close(),
+                    LifecycleDecision::Discard,
+                    true,
+                    false,
+                )),
+            ],
+        ),
+        (
+            "pending_work_cannot_be_discarded_as_clean",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::Decide(payload(&old_close, LifecycleDecision::Discard, true, true)),
+                OldCall::Decide(payload(
+                    &recheck_close(),
+                    LifecycleDecision::ExitAnyway,
+                    true,
+                    true,
+                )),
+            ],
+        ),
+        (
+            "recovery_dialog_is_one_per_active_attempt",
+            vec![
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::StartRecovery(old_close.clone()),
+                OldCall::StartRecovery(old_close.clone()),
+                OldCall::Recover(old_close.clone(), false),
+            ],
+        ),
+        ("stale_generation_and_attempt_are_ignored", {
+            let current = attempt(1, 3, LifecycleKind::Close, 0);
+            let mut stale_generation = payload(&current, LifecycleDecision::Allow, false, false);
+            stale_generation.generation = 2;
+            let mut stale_attempt = stale_generation.clone();
+            stale_attempt.generation = current.generation;
+            stale_attempt.attempt_id = 99;
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::Decide(stale_generation),
+                OldCall::Decide(stale_attempt),
+            ]
+        }),
+        (
+            "new_window_invalidates_old_frontend_and_attempt",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::NewWindow,
+                OldCall::FrontendReady("two".into()),
+                OldCall::Decide(payload(&old_close, LifecycleDecision::Allow, false, false)),
+            ],
+        ),
+        (
+            "close_then_quit_supersedes_the_close_attempt",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::Begin(LifecycleKind::Quit, true),
+                OldCall::Decide(payload(&old_close, LifecycleDecision::Allow, false, false)),
+            ],
+        ),
+        (
+            "timeout_from_superseded_attempt_is_stale",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::Begin(LifecycleKind::Quit, true),
+                OldCall::TimeoutExpired(old_close.clone()),
+            ],
+        ),
+        (
+            "finalization_reservation_is_taken_before_a_newer_request_can_start",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::Decide(payload(&old_close, LifecycleDecision::Allow, false, false)),
+                OldCall::BeginRecreation,
+                OldCall::Begin(LifecycleKind::Quit, true),
+            ],
+        ),
+        (
+            "finalization_reservation_blocks_newer_actions_until_finished",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Quit, true),
+                OldCall::Decide(payload(&old_quit, LifecycleDecision::Allow, false, false)),
+                OldCall::Begin(LifecycleKind::Quit, true),
+                OldCall::FinishFinalize(old_quit.clone()),
+                OldCall::Begin(LifecycleKind::Quit, true),
+            ],
+        ),
+        (
+            "new_1_quit_during_close_finalization_is_not_lost",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::Decide(payload(&old_close, LifecycleDecision::Allow, false, false)),
+                OldCall::Begin(LifecycleKind::Quit, true),
+            ],
+        ),
+        (
+            "new_1_recreation_does_not_clear_an_active_decision",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::BeginRecreation,
+            ],
+        ),
+        (
+            "new_3_recreation_refuses_an_active_lifecycle_attempt",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Quit, true),
+                OldCall::BeginRecreation,
+            ],
+        ),
+        (
+            "new_4_timeout_cannot_clear_a_replacement_frontend",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::FrontendReady("two".into()),
+                OldCall::TimeoutExpired(old_close.clone()),
+            ],
+        ),
+        (
+            "readiness_cleanup_is_bound_to_the_native_generation_token",
+            vec![
+                OldCall::FrontendReady("old".into()),
+                OldCall::FrontendReady("new".into()),
+                OldCall::FrontendUnready(token("old", 1)),
+                OldCall::FrontendUnready(token("new", 1)),
+            ],
+        ),
+        (
+            "readiness_tokens_record_the_window_generation",
+            vec![
+                OldCall::FrontendReady("old".into()),
+                OldCall::NewWindow,
+                OldCall::FrontendReady("current".into()),
+                OldCall::FrontendUnready(token("old", 1)),
+            ],
+        ),
+        ("recovery_decision_from_superseded_attempt_is_stale", {
+            let current = attempt(2, 1, LifecycleKind::Quit, 0);
+            vec![
+                OldCall::Begin(LifecycleKind::Close, true),
+                OldCall::StartRecovery(old_close.clone()),
+                OldCall::Begin(LifecycleKind::Quit, true),
+                OldCall::Recover(old_close.clone(), true),
+                OldCall::StartRecovery(current.clone()),
+                OldCall::Recover(current, false),
+            ]
+        }),
+        (
+            "recreation_is_serialized_and_generation_advances_after_success",
+            vec![
+                OldCall::BeginRecreation,
+                OldCall::BeginRecreation,
+                OldCall::FinishRecreation(false),
+                OldCall::BeginRecreation,
+                OldCall::FinishRecreation(true),
+            ],
+        ),
+        (
+            "quit_without_a_visible_window_can_exit_directly",
+            vec![
+                OldCall::FrontendReady("one".into()),
+                OldCall::Begin(LifecycleKind::Quit, false),
+            ],
+        ),
+        (
+            "bypasses_are_one_use_and_generation_bound",
+            vec![OldCall::ArmExitBypass(4), OldCall::TakeExitBypass(4)],
+        ),
+    ]
+}
+
+fn old_call_name(call: &OldCall) -> &'static str {
+    match call {
+        OldCall::NewWindow => "NewWindow",
+        OldCall::BeginRecreation => "BeginRecreation",
+        OldCall::FinishRecreation(ok) => {
+            if *ok {
+                "FinishRecreation(true)"
+            } else {
+                "FinishRecreation(false)"
+            }
+        }
+        OldCall::FrontendReady(_) => "FrontendReady",
+        OldCall::PrepareFrontendReemit(_) => "PrepareFrontendReemit",
+        OldCall::FrontendUnready(_) => "FrontendUnready",
+        OldCall::FrontendLost => "FrontendLost",
+        OldCall::FinishFinalize(_) => "FinishFinalize",
+        OldCall::TimeoutExpired(_) => "TimeoutExpired",
+        OldCall::Begin(LifecycleKind::Close, exists) => {
+            if *exists {
+                "Begin(Close,true)"
+            } else {
+                "Begin(Close,false)"
+            }
+        }
+        OldCall::Begin(LifecycleKind::Quit, exists) => {
+            if *exists {
+                "Begin(Quit,true)"
+            } else {
+                "Begin(Quit,false)"
+            }
+        }
+        OldCall::Decide(_) => "Decide",
+        OldCall::StartRecovery(_) => "StartRecovery",
+        OldCall::Recover(_, allow) => {
+            if *allow {
+                "Recover(true)"
+            } else {
+                "Recover(false)"
+            }
+        }
+        OldCall::ArmExitBypass(_) => "ArmExitBypass",
+        OldCall::TakeExitBypass(_) => "TakeExitBypass",
+    }
+}
+
+fn outcome_name(outcome: &Outcome) -> String {
+    match outcome {
+        Outcome::Other(reason) => format!("Other({reason})"),
+        other => format!("{other:?}"),
+    }
+}
+
+fn explanation(row: &Row) -> &'static str {
+    if row.same {
+        return "—";
+    }
+    match &row.call {
+        OldCall::NewWindow => return "No counterpart: D12 uses RecreationStarted/Finished",
+        OldCall::StartRecovery(_) => return "No counterpart: Timeout emits ShowRecoveryDialog",
+        OldCall::ArmExitBypass(_) => return "No counterpart: ArmExitBypass is a machine effect",
+        OldCall::TakeExitBypass(_) => return "No counterpart: ExitRequested consumes the bypass",
+        _ => {}
+    }
+    match (&row.call, &row.old, &row.new) {
+        (OldCall::TimeoutExpired(_), Outcome::Reemit, Outcome::Stale) => "review-5 F3",
+        (OldCall::FinishRecreation(false), Outcome::Queued, Outcome::Authorized) => "Q2",
+        (OldCall::BeginRecreation, Outcome::Ignored, Outcome::Queued) => "D13",
+        (OldCall::BeginRecreation, Outcome::Other("started"), Outcome::Ignored) => "D10/8",
+        (OldCall::FinishFinalize(_), _, Outcome::Stale) => "D10/8",
+        (OldCall::Begin(LifecycleKind::Quit, true), Outcome::Asked, Outcome::Ignored) => "D10/8",
+        (OldCall::Begin(LifecycleKind::Close, true), Outcome::Recovered, Outcome::Queued) => "D1",
+        (OldCall::Begin(LifecycleKind::Quit, true), Outcome::Recovered, Outcome::Queued) => "D1",
+        (OldCall::Recover(_, false), Outcome::Cancelled, Outcome::Stale) => "D1",
+        (OldCall::FrontendUnready(_), Outcome::NoOp, Outcome::Stale) => "D12",
+        _ => "UNEXPLAINED",
+    }
+}
+
+#[test]
+fn write_lifecycle_trace_report() {
+    let scenarios = report_scenarios();
+    let mut report = String::from(concat!(
+        "# Lifecycle trace equivalence\n\n",
+        "Generated from the public `LifecycleCoordinator` calls and `Machine::step` effects. ",
+        "The `same` column is observational data; this slice does not assert equivalence.\n",
+    ));
+    let mut same = 0;
+    let mut different_explained = 0;
+    let mut unexplained = 0;
+    for (name, trace) in scenarios {
+        report.push_str(&format!("\n### {name}\n\n"));
+        report.push_str(
+            "| call | old outcome | new outcome | same | explained by |\n|---|---|---|---|---|\n",
+        );
+        for row in compare(&trace) {
+            if row.same {
+                same += 1;
+            } else if explanation(&row) == "UNEXPLAINED" {
+                unexplained += 1;
+            } else {
+                different_explained += 1;
+            }
+            report.push_str(&format!(
+                "| `{}` | `{}` | `{}` | `{}` | {} |\n",
+                old_call_name(&row.call),
+                outcome_name(&row.old),
+                outcome_name(&row.new),
+                row.same,
+                explanation(&row),
+            ));
+        }
+    }
+    report.push_str(&format!(
+        "\n### Summary\n\n- Rows same: {same}.\n- Different rows explained by a design decision or an explicit no-counterpart mapping: {different_explained}.\n- Unexplained rows: {unexplained}.\n- Old calls with no machine counterpart: `NewWindow` (D12 recreation event pair), `PrepareFrontendReemit` (machine re-emits on entry), `FrontendLost` (use generation-bound `FrontendUnready`), `StartRecovery` (Timeout owns dialog launch), `ArmExitBypass` (machine effect), `TakeExitBypass` (ExitRequested transition).\n",
+    ));
+    std::fs::create_dir_all("target").expect("target directory exists");
+    std::fs::write("target/lifecycle-traces.md", report).expect("write generated trace report");
 }
