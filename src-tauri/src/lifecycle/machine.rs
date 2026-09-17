@@ -180,6 +180,15 @@ impl Machine {
                 frontend,
                 recreate_pending,
             } => self.asking(attempt, frontend, recreate_pending, event),
+            State::Recovering {
+                attempt,
+                recreate_pending,
+            } => self.recovering(attempt, recreate_pending, event),
+            State::Finalizing {
+                attempt,
+                queued_quit,
+                recreate_pending,
+            } => self.finalizing(attempt, queued_quit, recreate_pending, event),
             other => (other, vec![Effect::Log("unimplemented")]),
         }
     }
@@ -221,6 +230,7 @@ impl Machine {
                 kind,
                 window_exists: true,
             } => self.begin_attempt(hidden_by_close, kind),
+            Event::RecreationStarted => self.start_recreation(),
             Event::FrontendReady { instance_id } => {
                 let token = Token {
                     instance_id,
@@ -377,6 +387,13 @@ impl Machine {
                 },
                 vec![Effect::Log("queued")],
             ),
+            Event::Timeout(timeout) if same_attempt(&attempt, &timeout) => (
+                State::Recovering {
+                    attempt: attempt.clone(),
+                    recreate_pending,
+                },
+                vec![Effect::ShowRecoveryDialog(attempt)],
+            ),
             Event::ExitRequested => {
                 let (state, mut effects) = self.transition(
                     State::AwaitingFrontend {
@@ -475,12 +492,19 @@ impl Machine {
                     Decision::Cancel | Decision::ExitAnyway => false,
                 };
                 match decision {
-                    Decision::Cancel => (
-                        State::Idle {
+                    Decision::Cancel => {
+                        let idle = State::Idle {
                             hidden_by_close: false,
-                        },
-                        vec![Effect::Log("cancelled")],
-                    ),
+                        };
+                        if recreate_pending {
+                            let (state, more) = self.transition(idle, Event::RecreationStarted);
+                            let mut effects = vec![Effect::Log("cancelled")];
+                            effects.extend(more);
+                            (state, effects)
+                        } else {
+                            (idle, vec![Effect::Log("cancelled")])
+                        }
+                    }
                     _ if needs_recheck => {
                         let recheck = Self::bump_attempt(&attempt, attempt.kind);
                         (
@@ -657,6 +681,294 @@ impl Machine {
                 vec![Effect::Log("stale")],
             ),
         }
+    }
+
+    fn recovering(
+        &mut self,
+        attempt: Attempt,
+        recreate_pending: bool,
+        event: Event,
+    ) -> (State, Vec<Effect>) {
+        match event {
+            Event::Begin { .. } => (
+                State::Recovering {
+                    attempt,
+                    recreate_pending,
+                },
+                vec![Effect::Log("dialog owns input")],
+            ),
+            Event::FrontendReady { instance_id } => {
+                let token = Token {
+                    instance_id,
+                    generation: self.generation,
+                };
+                self.frontend = Some(token.clone());
+                (
+                    State::Recovering {
+                        attempt,
+                        recreate_pending,
+                    },
+                    vec![
+                        Effect::ReplyToken(token),
+                        Effect::Log("dialog is the authority"),
+                    ],
+                )
+            }
+            Event::FrontendUnready { token } => {
+                if self.frontend.as_ref() == Some(&token) {
+                    self.frontend = None;
+                }
+                (
+                    State::Recovering {
+                        attempt,
+                        recreate_pending,
+                    },
+                    vec![Effect::Log("unready")],
+                )
+            }
+            Event::Recovered {
+                attempt: recovered,
+                allow,
+            } => {
+                if !same_attempt(&attempt, &recovered) {
+                    return (
+                        State::Recovering {
+                            attempt,
+                            recreate_pending,
+                        },
+                        vec![Effect::Log("stale")],
+                    );
+                }
+                if !allow {
+                    let idle = State::Idle {
+                        hidden_by_close: false,
+                    };
+                    if recreate_pending {
+                        let (state, more) = self.transition(idle, Event::RecreationStarted);
+                        let mut effects = vec![Effect::Log("cancelled")];
+                        effects.extend(more);
+                        return (state, effects);
+                    }
+                    return (idle, vec![Effect::Log("cancelled")]);
+                }
+                self.authorize_recovered(attempt, recreate_pending)
+            }
+            Event::RecreationStarted => (
+                State::Recovering {
+                    attempt,
+                    recreate_pending: true,
+                },
+                vec![Effect::Log("queued")],
+            ),
+            Event::ExitRequested => {
+                let (state, mut effects) = self.transition(
+                    State::Recovering {
+                        attempt,
+                        recreate_pending,
+                    },
+                    Event::Begin {
+                        kind: Kind::Quit,
+                        window_exists: true,
+                    },
+                );
+                effects.insert(0, Effect::PreventExit);
+                (state, effects)
+            }
+            _ => (
+                State::Recovering {
+                    attempt,
+                    recreate_pending,
+                },
+                vec![Effect::Log("stale")],
+            ),
+        }
+    }
+
+    fn authorize_recovered(
+        &mut self,
+        attempt: Attempt,
+        recreate_pending: bool,
+    ) -> (State, Vec<Effect>) {
+        match attempt.kind {
+            Kind::Close => {
+                #[cfg(target_os = "macos")]
+                let effects = vec![Effect::Finalize(attempt.clone())];
+                #[cfg(not(target_os = "macos"))]
+                let effects = vec![
+                    Effect::ArmExitBypass(self.generation),
+                    Effect::Finalize(attempt.clone()),
+                ];
+                (
+                    State::Finalizing {
+                        attempt,
+                        queued_quit: false,
+                        recreate_pending,
+                    },
+                    effects,
+                )
+            }
+            Kind::Quit => (
+                State::Exiting {
+                    attempt: Some(attempt),
+                    generation: self.generation,
+                },
+                vec![Effect::ArmExitBypass(self.generation), Effect::Exit],
+            ),
+        }
+    }
+
+    fn finalizing(
+        &mut self,
+        attempt: Attempt,
+        queued_quit: bool,
+        recreate_pending: bool,
+        event: Event,
+    ) -> (State, Vec<Effect>) {
+        match event {
+            Event::Begin {
+                kind: Kind::Quit, ..
+            } => (
+                State::Finalizing {
+                    attempt,
+                    queued_quit: true,
+                    recreate_pending,
+                },
+                vec![Effect::Log("queued")],
+            ),
+            Event::Begin {
+                kind: Kind::Close, ..
+            } => (
+                State::Finalizing {
+                    attempt,
+                    queued_quit,
+                    recreate_pending,
+                },
+                vec![Effect::Log("finalizing")],
+            ),
+            Event::Finalized {
+                attempt: finalized,
+                ok,
+            } => {
+                if !same_attempt(&attempt, &finalized) {
+                    return (
+                        State::Finalizing {
+                            attempt,
+                            queued_quit,
+                            recreate_pending,
+                        },
+                        vec![Effect::Log("stale")],
+                    );
+                }
+                let hidden_by_close = attempt.kind == Kind::Close && ok;
+                if ok {
+                    let idle = State::Idle { hidden_by_close };
+                    if queued_quit {
+                        let (state, effects) = self.transition(
+                            idle,
+                            Event::Begin {
+                                kind: Kind::Quit,
+                                window_exists: true,
+                            },
+                        );
+                        return (state, effects);
+                    }
+                    if recreate_pending {
+                        return self.transition(idle, Event::RecreationStarted);
+                    }
+                    (idle, vec![Effect::Log("finalized")])
+                } else {
+                    let mut effects =
+                        vec![Effect::EmitError("lifecycle finalization failed".into())];
+                    let idle = State::Idle {
+                        hidden_by_close: false,
+                    };
+                    if queued_quit {
+                        let (state, more) = self.transition(
+                            idle,
+                            Event::Begin {
+                                kind: Kind::Quit,
+                                window_exists: true,
+                            },
+                        );
+                        effects.extend(more);
+                        (state, effects)
+                    } else if recreate_pending {
+                        let (state, more) = self.transition(idle, Event::RecreationStarted);
+                        effects.extend(more);
+                        (state, effects)
+                    } else {
+                        effects.push(Effect::Log("finalization failed"));
+                        (idle, effects)
+                    }
+                }
+            }
+            Event::FrontendReady { instance_id } => {
+                let token = Token {
+                    instance_id,
+                    generation: self.generation,
+                };
+                self.frontend = Some(token.clone());
+                (
+                    State::Finalizing {
+                        attempt,
+                        queued_quit,
+                        recreate_pending,
+                    },
+                    vec![Effect::ReplyToken(token), Effect::Log("ready")],
+                )
+            }
+            Event::FrontendUnready { token } => {
+                if self.frontend.as_ref() == Some(&token) {
+                    self.frontend = None;
+                }
+                (
+                    State::Finalizing {
+                        attempt,
+                        queued_quit,
+                        recreate_pending,
+                    },
+                    vec![Effect::Log("unready")],
+                )
+            }
+            Event::RecreationStarted => (
+                State::Finalizing {
+                    attempt,
+                    queued_quit,
+                    recreate_pending: true,
+                },
+                vec![Effect::Log("queued")],
+            ),
+            Event::ExitRequested => (
+                State::Finalizing {
+                    attempt,
+                    queued_quit: true,
+                    recreate_pending,
+                },
+                vec![Effect::PreventExit, Effect::Log("finalizing; quit queued")],
+            ),
+            _ => (
+                State::Finalizing {
+                    attempt,
+                    queued_quit,
+                    recreate_pending,
+                },
+                vec![Effect::Log("stale")],
+            ),
+        }
+    }
+
+    fn start_recreation(&mut self) -> (State, Vec<Effect>) {
+        self.next_recreation = self.next_recreation.saturating_add(1);
+        let id = RecreationId(self.next_recreation);
+        (
+            State::Recreating {
+                id,
+                reserved: self.generation.saturating_add(1),
+                queued_quit: false,
+                ready: None,
+            },
+            vec![Effect::Recreate(id)],
+        )
     }
 
     fn authorize(&mut self, attempt: Attempt, recreate_pending: bool) -> (State, Vec<Effect>) {
@@ -1093,6 +1405,248 @@ mod tests {
                     generation: 1,
                 },
                 vec![Effect::ArmExitBypass(1), Effect::Exit],
+            )
+        );
+    }
+
+    #[test]
+    fn new1_quit_queued_behind_close_exits_after_hide() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+
+        let close = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        let effects = machine.step(Event::Finalized {
+            attempt: close,
+            ok: true,
+        });
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Exiting {
+                    attempt: None,
+                    generation: 1,
+                },
+                vec![Effect::ArmExitBypass(1), Effect::Exit],
+            )
+        );
+    }
+
+    #[test]
+    fn codex2_cmd_h_then_quit_asks() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+
+        let effects = machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Quit,
+            sequence: 0,
+        };
+        let token = Token {
+            instance_id: "bridge".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt: attempt.clone(),
+                    frontend: token.clone(),
+                    recreate_pending: false,
+                },
+                vec![
+                    Effect::EmitRequest {
+                        attempt: attempt.clone(),
+                        frontend: token,
+                    },
+                    Effect::ScheduleTimeout(attempt),
+                ],
+            )
+        );
+    }
+
+    #[test]
+    fn codex7_failed_close_reasks_queued_quit() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+
+        let effects = machine.step(Event::Finalized {
+            attempt: Attempt {
+                id: 1,
+                generation: 1,
+                kind: Kind::Close,
+                sequence: 0,
+            },
+            ok: false,
+        });
+        let attempt = Attempt {
+            id: 2,
+            generation: 1,
+            kind: Kind::Quit,
+            sequence: 0,
+        };
+        let token = Token {
+            instance_id: "bridge".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt: attempt.clone(),
+                    frontend: token.clone(),
+                    recreate_pending: false,
+                },
+                vec![
+                    Effect::EmitError("lifecycle finalization failed".into()),
+                    Effect::EmitRequest {
+                        attempt: attempt.clone(),
+                        frontend: token,
+                    },
+                    Effect::ScheduleTimeout(attempt),
+                ],
+            )
+        );
+    }
+
+    #[test]
+    fn old_timeout_without_frontend_opens_recovery_dialog() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        let effects = machine.step(Event::Timeout(attempt.clone()));
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Recovering {
+                    attempt: attempt.clone(),
+                    recreate_pending: false,
+                },
+                vec![Effect::ShowRecoveryDialog(attempt)],
+            )
+        );
+    }
+
+    #[test]
+    fn old_recovery_dialog_authorizes_one_attempt() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        machine.step(Event::Timeout(attempt.clone()));
+        let effects = machine.step(Event::Recovered {
+            attempt: attempt.clone(),
+            allow: true,
+        });
+        #[cfg(target_os = "macos")]
+        let expected_effects = vec![Effect::Finalize(attempt.clone())];
+        #[cfg(not(target_os = "macos"))]
+        let expected_effects = vec![Effect::ArmExitBypass(1), Effect::Finalize(attempt.clone())];
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Finalizing {
+                    attempt,
+                    queued_quit: false,
+                    recreate_pending: false,
+                },
+                expected_effects,
+            )
+        );
+    }
+
+    #[test]
+    fn codex4_recreation_requested_while_asking_starts_after_cancel() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::RecreationStarted);
+
+        let effects = machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Cancel,
+            dirty: false,
+            pending: false,
+        });
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Recreating {
+                    id: RecreationId(1),
+                    reserved: 2,
+                    queued_quit: false,
+                    ready: None,
+                },
+                vec![Effect::Log("cancelled"), Effect::Recreate(RecreationId(1))],
             )
         );
     }
