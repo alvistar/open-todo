@@ -494,8 +494,51 @@ impl From<WireDecision> for Event {
 mod tests {
     use super::*;
     use crate::lifecycle::machine::{Attempt, Kind};
-    use std::sync::mpsc;
+    use std::sync::{mpsc, Arc, Mutex};
     use std::time::Duration;
+
+    #[derive(Clone, Default)]
+    struct RecordingOps {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+        dialogs: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RunnerOps<tauri::test::MockRuntime> for RecordingOps {
+        fn emit_to_window(
+            &self,
+            _app: &AppHandle<tauri::test::MockRuntime>,
+            _message: &str,
+        ) -> Option<Result<(), String>> {
+            self.calls.lock().unwrap().push("emit_to_window");
+            None
+        }
+
+        fn native_dialog(&self, _app: &AppHandle<tauri::test::MockRuntime>, message: &str) {
+            self.calls.lock().unwrap().push("native_dialog");
+            self.dialogs.lock().unwrap().push(message.to_string());
+        }
+
+        fn is_visible(
+            &self,
+            _app: &AppHandle<tauri::test::MockRuntime>,
+        ) -> Option<Result<bool, String>> {
+            self.calls.lock().unwrap().push("is_visible");
+            Some(Ok(false))
+        }
+
+        fn show_window(
+            &self,
+            _app: &AppHandle<tauri::test::MockRuntime>,
+        ) -> Option<Result<(), String>> {
+            self.calls.lock().unwrap().push("show");
+            Some(Ok(()))
+        }
+
+        fn focus_window(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> Result<(), String> {
+            self.calls.lock().unwrap().push("focus");
+            Ok(())
+        }
+    }
 
     fn attempt() -> Attempt {
         Attempt {
@@ -511,6 +554,48 @@ mod tests {
             kind: Kind::Quit,
             ..attempt()
         }
+    }
+
+    #[test]
+    fn b1_emit_error_without_main_uses_native_dialog() {
+        let app = tauri::test::mock_app();
+        let ops = RecordingOps::default();
+        let expected = "lifecycle recreation failed";
+        let mut runner =
+            TauriRunner::with_recreate_and_ops(app.handle().clone(), |_| Ok(()), ops.clone());
+        let (tx, _rx) = mpsc::channel();
+
+        runner.run(Effect::EmitError(expected.into()), &tx);
+
+        assert_eq!(*ops.dialogs.lock().unwrap(), vec![expected.to_string()]);
+    }
+
+    #[test]
+    fn b1_recreation_failure_then_error_uses_native_dialog() {
+        let app = tauri::test::mock_app();
+        let ops = RecordingOps::default();
+        let mut runner = TauriRunner::with_recreate_and_ops(
+            app.handle().clone(),
+            |_| Err("build failed".into()),
+            ops.clone(),
+        );
+        let (tx, rx) = mpsc::channel();
+
+        runner.run(Effect::Recreate(RecreationId(4)), &tx);
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+            Event::RecreationFinished {
+                id: RecreationId(4),
+                ok: false,
+            }
+        );
+        runner.run(Effect::EmitError("lifecycle recreation failed".into()), &tx);
+
+        assert_eq!(
+            *ops.dialogs.lock().unwrap(),
+            vec!["lifecycle recreation failed".to_string()]
+        );
     }
 
     #[test]
@@ -582,18 +667,46 @@ mod tests {
     }
 
     #[test]
-    fn show_window_makes_hidden_main_window_visible() {
+    fn s1_show_window_uses_nonblocking_operations_without_getter() {
         let app = tauri::test::mock_app();
-        let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
-            .build()
-            .unwrap();
-        window.hide().unwrap();
-
-        let mut runner = TauriRunner::new(app.handle().clone());
+        let ops = RecordingOps::default();
+        let mut runner =
+            TauriRunner::with_recreate_and_ops(app.handle().clone(), |_| Ok(()), ops.clone());
         let (tx, _rx) = mpsc::channel();
         runner.run(Effect::ShowWindow, &tx);
 
-        assert!(window.is_visible().unwrap());
+        assert_eq!(*ops.calls.lock().unwrap(), vec!["show", "focus"]);
+    }
+
+    #[test]
+    fn s2_show_window_test_observes_show_then_focus() {
+        let app = tauri::test::mock_app();
+        let ops = RecordingOps::default();
+        let mut runner =
+            TauriRunner::with_recreate_and_ops(app.handle().clone(), |_| Ok(()), ops.clone());
+        let (tx, _rx) = mpsc::channel();
+
+        runner.run(Effect::ShowWindow, &tx);
+
+        assert_eq!(*ops.calls.lock().unwrap(), vec!["show", "focus"]);
+    }
+
+    #[test]
+    fn s3_recreation_success_sends_one_completion() {
+        let app = tauri::test::mock_app();
+        let mut runner = TauriRunner::with_recreate(app.handle().clone(), |_| Ok(()));
+        let (tx, rx) = mpsc::channel();
+
+        runner.run(Effect::Recreate(RecreationId(4)), &tx);
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+            Event::RecreationFinished {
+                id: RecreationId(4),
+                ok: true,
+            }
+        );
+        assert!(matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
     }
 
     #[test]

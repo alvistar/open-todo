@@ -114,12 +114,7 @@ pub fn run() {
                 }
             }
             tauri::RunEvent::Exit => {
-                if let Some(state) = app.try_state::<AppState>() {
-                    state.lifecycle.send(Event::Exited);
-                }
-                if let Err(error) = app.save_window_state(WINDOW_STATE_FLAGS) {
-                    log::warn!("could not persist window geometry: {error}");
-                }
+                on_run_event_exit(app);
             }
             _ => {}
         });
@@ -127,10 +122,27 @@ pub fn run() {
 
 fn on_close_requested(api: &tauri::CloseRequestApi, lifecycle: &LifecycleHandle) {
     api.prevent_close();
+    on_close_verdict(lifecycle);
+}
+
+fn on_close_verdict(lifecycle: &LifecycleHandle) {
     lifecycle.send(Event::Begin {
         kind: Kind::Close,
         window_exists: true,
     });
+}
+
+fn on_run_event_exit<R: Runtime>(app: &AppHandle<R>) {
+    on_exited(app);
+    if let Err(error) = app.save_window_state(WINDOW_STATE_FLAGS) {
+        log::warn!("could not persist window geometry: {error}");
+    }
+}
+
+fn on_exited<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(state) = app.try_state::<AppState>() {
+        state.lifecycle.send(Event::Exited);
+    }
 }
 
 fn on_exit_requested(api: &tauri::ExitRequestApi, lifecycle: &LifecycleHandle) {
@@ -225,6 +237,40 @@ mod lifecycle_mapping_tests {
     use lifecycle::runtime::{spawn_loop, EffectRunner, Envelope, ExitVerdict};
     use std::sync::{mpsc, Arc, Mutex};
     use std::time::Duration;
+
+    #[derive(Clone, Default)]
+    struct RecordingWindowOps {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    impl RunnerOps<tauri::test::MockRuntime> for RecordingWindowOps {
+        fn show_window(
+            &self,
+            _app: &AppHandle<tauri::test::MockRuntime>,
+        ) -> Option<Result<(), String>> {
+            self.calls.lock().unwrap().push("show");
+            Some(Ok(()))
+        }
+
+        fn focus_window(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> Result<(), String> {
+            self.calls.lock().unwrap().push("focus");
+            Ok(())
+        }
+
+        fn has_main_window(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> bool {
+            true
+        }
+
+        fn is_minimized(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> Result<bool, String> {
+            self.calls.lock().unwrap().push("is_minimized");
+            Ok(false)
+        }
+
+        fn unminimize(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> Result<(), String> {
+            self.calls.lock().unwrap().push("unminimize");
+            Ok(())
+        }
+    }
 
     struct RecordingRunner {
         seen: Arc<Mutex<Vec<Effect>>>,
@@ -365,6 +411,61 @@ mod lifecycle_mapping_tests {
         assert_eq!(
             *seen.lock().unwrap(),
             vec![Effect::Recreate(RecreationId(1))]
+        );
+    }
+
+    #[test]
+    fn s4_close_requested_maps_to_close_begin() {
+        let (runner, seen, observed) = recording_runner(Vec::new());
+        let handle = spawn_loop(Machine::new(0), runner);
+
+        on_close_verdict(&handle);
+        observed
+            .recv_timeout(Duration::from_secs(1))
+            .expect("close begin effect was not observed");
+
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![Effect::ScheduleTimeout(Attempt {
+                id: 1,
+                generation: 0,
+                kind: Kind::Close,
+                sequence: 0,
+            })]
+        );
+    }
+
+    #[test]
+    fn s4_run_event_exit_maps_to_exited() {
+        let app = tauri::test::mock_app();
+        let (runner, seen, observed) = recording_runner(Vec::new());
+        let handle = spawn_loop(Machine::new(0), runner);
+        app.manage(AppState { lifecycle: handle });
+
+        on_exited(&app.handle());
+        observed
+            .recv_timeout(Duration::from_secs(1))
+            .expect("exit event was not observed");
+
+        assert_eq!(*seen.lock().unwrap(), vec![Effect::Log("unexpected")]);
+    }
+
+    #[test]
+    fn s4_activate_with_main_shows_and_focuses_without_event() {
+        let app = tauri::test::mock_app();
+        let ops = RecordingWindowOps::default();
+        let (runner, _seen, observed) = recording_runner(Vec::new());
+        let handle = spawn_loop(Machine::new(0), runner);
+
+        on_activate_with_ops(&app.handle(), &handle, &ops);
+
+        assert!(matches!(
+            observed.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert_eq!(
+            *ops.calls.lock().unwrap(),
+            vec!["unminimize", "show", "focus"]
         );
     }
 }
