@@ -1,3 +1,8 @@
+#[allow(dead_code)] // wired in slice 4
+pub mod machine;
+#[allow(dead_code)] // wired in slice 4
+pub mod runtime;
+
 use serde::{Deserialize, Serialize};
 
 /// The two native actions that must share one frontend draft decision.
