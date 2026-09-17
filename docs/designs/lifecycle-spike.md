@@ -53,3 +53,24 @@ build completed. The observation confirms the `Recreating × FrontendReady` D12 
 and keeps the reserved-generation readiness handling. It also records that the
 production macOS close path is hide-only; the rebuild path required the temporary
 destroy precondition.
+
+## Q3 — main-thread requirement
+
+Procedure: added a temporary `#[tauri::command]` that spawned a worker thread and
+called `hide`, `show`, and `destroy` sequentially on the main window. The command was
+triggered after startup in a packaged app launched from a terminal, and the worker
+logged each return value. A temporary guard prevented the destroy-induced final
+`ExitRequested` from ending the process before the last log was flushed.
+
+Raw stderr excerpt:
+
+```text
+SPIKE Q3 ThreadId(21) hide succeeded
+SPIKE Q3 ThreadId(21) show succeeded
+SPIKE Q3 ThreadId(21) destroy succeeded
+SPIKE Q3 ExitRequested prevented after destroy
+```
+
+All three operations succeeded from the spawned worker thread; no error text was
+returned. This confirms the Q3 runner choice in the current macOS packaged runtime:
+`Finalize` and `ShowWindow` do not require `run_on_main_thread` for these operations.
