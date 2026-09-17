@@ -517,6 +517,7 @@ describe("the sidebar pickers", () => {
     // Still open: with no Save button to stay behind, closing would leave the
     // old value on screen with nothing to explain it.
     expect(screen.getByRole("button", { name: "P2" })).toBeInTheDocument();
+    draftRegistry.clearDraftErrors();
   });
 
   it("S5 keeps a mounted picker failure dirty until a retry succeeds", async () => {
@@ -584,6 +585,7 @@ describe("the sidebar pickers", () => {
     rejectWrite(new Error("Vikunja rejected the priority."));
 
     expect(await screen.findByText("Vikunja rejected the priority.")).toBeInTheDocument();
+    draftRegistry.clearDraftErrors();
   });
 
   it("N7 keeps an unmounted picker write pending and reports its failure", async () => {

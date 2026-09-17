@@ -49,6 +49,7 @@ export function PickerField<TChange>({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const mountedRef = useRef(false);
+  const pendingReleaseRef = useRef<(() => void) | null>(null);
 
   useDraftSource(`picker:${label}`, label, false, busy);
 
@@ -99,19 +100,22 @@ export function PickerField<TChange>({
   }, [closePicker, open]);
 
   const commit = (change: TChange) => {
+    pendingReleaseRef.current?.();
     setBusy(true);
     setError(null);
     const operation = Promise.resolve().then(() => onCommit(change));
     const release = registerPendingDraft(label, operation);
+    pendingReleaseRef.current = release;
     void operation
       .then(() => {
+        release();
+        if (pendingReleaseRef.current === release) pendingReleaseRef.current = null;
         setOpen(false);
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : "Could not save the change.");
       })
       .finally(() => {
-        if (mountedRef.current) release();
         setBusy(false);
       });
   };

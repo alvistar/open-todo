@@ -61,12 +61,27 @@
   width: min(calc(100% - 32px), 640px);
   margin: 0;
   padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   transform: translateX(-50%);
   border-radius: var(--radius-base);
   background: color-mix(in srgb, var(--schedule-overdue) 14%, var(--bg-primary));
   color: var(--schedule-overdue);
   box-shadow: var(--shadow-modal);
   font: 400 13px / 19px var(--font-sans);
+}
+
+.errorDismiss {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-base);
+  background: transparent;
+  color: inherit;
+  font: 600 12px / 26px var(--font-sans);
 }
 
 @media (max-width: 480px) {

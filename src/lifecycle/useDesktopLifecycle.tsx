@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useOverlayLayer, useOverlayStack } from "../ui/overlayStack";
-import { getDraftSummary, useDraftSummary } from "./drafts";
+import { clearDraftErrors, getDraftSummary, useDraftSummary } from "./drafts";
 import {
   type LifecycleRequest,
   type RequestState,
@@ -61,6 +61,13 @@ export function DesktopLifecycleBridge() {
   requestStateRef.current = requestState;
   const error =
     nativeError ?? requestState.responseError ?? summary.errors[0]?.error ?? null;
+  const dismissibleDraftError = summary.errors.length > 0;
+  const errorNotice = error ? (
+    <ErrorNotice
+      message={error}
+      onDismiss={dismissibleDraftError ? clearDraftErrors : undefined}
+    />
+  ) : null;
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -177,14 +184,33 @@ export function DesktopLifecycleBridge() {
   }, [overlayStack, request, respond]);
 
   if (!request || (!summary.dirty && !summary.pending)) {
-    return error ? <p className={styles.error}>{error}</p> : null;
+    return errorNotice;
   }
 
   return (
     <>
       <CloseGuard request={request} summary={summary} onRespond={respond} />
-      {error ? <p className={styles.error}>{error}</p> : null}
+      {errorNotice}
     </>
+  );
+}
+
+function ErrorNotice({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div className={styles.error} role="status">
+      <span>{message}</span>
+      {onDismiss ? (
+        <button type="button" className={styles.errorDismiss} onClick={onDismiss}>
+          Dismiss
+        </button>
+      ) : null}
+    </div>
   );
 }
 
