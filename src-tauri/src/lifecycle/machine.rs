@@ -322,13 +322,14 @@ impl Machine {
     fn begin_attempt(&mut self, _hidden_by_close: bool, kind: Kind) -> (State, Vec<Effect>) {
         let attempt = self.new_attempt(kind);
         if let Some(frontend) = self.frontend.clone() {
-            let mut effects = Vec::with_capacity(3);
-            effects.push(Effect::ShowWindow);
-            effects.push(Effect::EmitRequest {
-                attempt: attempt.clone(),
-                frontend: frontend.clone(),
-            });
-            effects.push(Effect::ScheduleTimeout(attempt.clone()));
+            let effects = vec![
+                Effect::ShowWindow,
+                Effect::EmitRequest {
+                    attempt: attempt.clone(),
+                    frontend: frontend.clone(),
+                },
+                Effect::ScheduleTimeout(attempt.clone()),
+            ];
             (
                 State::Asking {
                     attempt,
