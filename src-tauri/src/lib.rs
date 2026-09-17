@@ -4,7 +4,7 @@ mod lifecycle;
 
 use lifecycle::machine::{Event, Kind, Machine};
 use lifecycle::runtime::{spawn_loop, ExitVerdict, LifecycleHandle};
-use lifecycle::tauri_runner::{TauriRunner, WireDecision, WireToken};
+use lifecycle::tauri_runner::{RunnerOps, TauriRunner, WireDecision, WireToken};
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime, State, WebviewWindow};
 use tauri_plugin_window_state::{AppHandleExt as WindowStateAppHandleExt, StateFlags};
 
@@ -144,16 +144,24 @@ fn on_exit_verdict(lifecycle: &LifecycleHandle) -> ExitVerdict {
 }
 
 fn on_activate<R: Runtime>(app: &AppHandle<R>, lifecycle: &LifecycleHandle) {
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        if window.is_minimized().unwrap_or(false) {
-            if let Err(error) = window.unminimize() {
+    on_activate_with_ops(app, lifecycle, &lifecycle::tauri_runner::AppRunnerOps);
+}
+
+fn on_activate_with_ops<R: Runtime, O: RunnerOps<R>>(
+    app: &AppHandle<R>,
+    lifecycle: &LifecycleHandle,
+    ops: &O,
+) {
+    if ops.has_main_window(app) {
+        if ops.is_minimized(app).unwrap_or(false) {
+            if let Err(error) = ops.unminimize(app) {
                 log::warn!("could not unminimize the main window: {error}");
             }
         }
-        if let Err(error) = window.show() {
+        if let Some(Err(error)) = ops.show_window(app) {
             log::warn!("could not show the main window: {error}");
         }
-        if let Err(error) = window.set_focus() {
+        if let Err(error) = ops.focus_window(app) {
             log::warn!("could not focus the main window: {error}");
         }
         return;

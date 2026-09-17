@@ -24,6 +24,95 @@ pub struct TauriRunner<R: Runtime> {
     app: AppHandle<R>,
     ask_timeout: Duration,
     recreate: Arc<Recreate<R>>,
+    ops: Arc<dyn RunnerOps<R>>,
+}
+
+pub(crate) trait RunnerOps<R: Runtime>: Send + Sync {
+    fn emit_to_window(&self, _app: &AppHandle<R>, _message: &str) -> Option<Result<(), String>> {
+        None
+    }
+
+    fn native_dialog(&self, _app: &AppHandle<R>, _message: &str) {}
+
+    fn is_visible(&self, _app: &AppHandle<R>) -> Option<Result<bool, String>> {
+        None
+    }
+
+    fn show_window(&self, _app: &AppHandle<R>) -> Option<Result<(), String>> {
+        None
+    }
+
+    fn focus_window(&self, _app: &AppHandle<R>) -> Result<(), String> {
+        Err("main window is unavailable".into())
+    }
+
+    fn has_main_window(&self, _app: &AppHandle<R>) -> bool {
+        false
+    }
+
+    fn is_minimized(&self, _app: &AppHandle<R>) -> Result<bool, String> {
+        Ok(false)
+    }
+
+    fn unminimize(&self, _app: &AppHandle<R>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+pub(crate) struct AppRunnerOps;
+
+impl<R: Runtime> RunnerOps<R> for AppRunnerOps {
+    fn emit_to_window(&self, app: &AppHandle<R>, message: &str) -> Option<Result<(), String>> {
+        let window = app.get_webview_window(MAIN_WINDOW)?;
+        Some(
+            window
+                .emit("lifecycle:error", LifecycleDiagnostic { message })
+                .map_err(|error| error.to_string()),
+        )
+    }
+
+    fn native_dialog(&self, app: &AppHandle<R>, message: &str) {
+        app.dialog()
+            .message(message.to_string())
+            .title("open-todo")
+            .kind(MessageDialogKind::Error)
+            .show(|_| {});
+    }
+
+    fn is_visible(&self, app: &AppHandle<R>) -> Option<Result<bool, String>> {
+        let window = app.get_webview_window(MAIN_WINDOW)?;
+        Some(window.is_visible().map_err(|error| error.to_string()))
+    }
+
+    fn show_window(&self, app: &AppHandle<R>) -> Option<Result<(), String>> {
+        let window = app.get_webview_window(MAIN_WINDOW)?;
+        Some(window.show().map_err(|error| error.to_string()))
+    }
+
+    fn focus_window(&self, app: &AppHandle<R>) -> Result<(), String> {
+        let window = app
+            .get_webview_window(MAIN_WINDOW)
+            .ok_or_else(|| "main window is unavailable".to_string())?;
+        window.set_focus().map_err(|error| error.to_string())
+    }
+
+    fn has_main_window(&self, app: &AppHandle<R>) -> bool {
+        app.get_webview_window(MAIN_WINDOW).is_some()
+    }
+
+    fn is_minimized(&self, app: &AppHandle<R>) -> Result<bool, String> {
+        let window = app
+            .get_webview_window(MAIN_WINDOW)
+            .ok_or_else(|| "main window is unavailable".to_string())?;
+        window.is_minimized().map_err(|error| error.to_string())
+    }
+
+    fn unminimize(&self, app: &AppHandle<R>) -> Result<(), String> {
+        let window = app
+            .get_webview_window(MAIN_WINDOW)
+            .ok_or_else(|| "main window is unavailable".to_string())?;
+        window.unminimize().map_err(|error| error.to_string())
+    }
 }
 
 impl<R: Runtime> TauriRunner<R> {
@@ -32,6 +121,7 @@ impl<R: Runtime> TauriRunner<R> {
             app,
             ask_timeout: Duration::from_secs(5),
             recreate: Arc::new(recreate_main_window),
+            ops: Arc::new(AppRunnerOps),
         }
     }
 
@@ -44,6 +134,21 @@ impl<R: Runtime> TauriRunner<R> {
             app,
             ask_timeout: Duration::from_secs(5),
             recreate: Arc::new(recreate),
+            ops: Arc::new(AppRunnerOps),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_recreate_and_ops<F, O>(app: AppHandle<R>, recreate: F, ops: O) -> Self
+    where
+        F: Fn(&AppHandle<R>) -> Result<(), String> + Send + Sync + 'static,
+        O: RunnerOps<R> + 'static,
+    {
+        Self {
+            app,
+            ask_timeout: Duration::from_secs(5),
+            recreate: Arc::new(recreate),
+            ops: Arc::new(ops),
         }
     }
 }
@@ -126,22 +231,24 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
 
 impl<R: Runtime> TauriRunner<R> {
     fn emit_error(&self, message: &str) {
-        if let Some(window) = self.app.get_webview_window(MAIN_WINDOW) {
-            let _ = window.emit("lifecycle:error", LifecycleDiagnostic { message });
-        }
+        let _ = self.ops.emit_to_window(&self.app, message);
     }
 
     fn show_window(&self) {
-        let Some(window) = self.app.get_webview_window(MAIN_WINDOW) else {
+        let Some(window_visible) = self.ops.is_visible(&self.app) else {
             self.emit_error("The main window could not be shown.");
             return;
         };
-        if !window.is_visible().unwrap_or(true) {
-            if let Err(error) = window.show() {
+        if !window_visible.unwrap_or(true) {
+            if let Some(show_result) = self.ops.show_window(&self.app) {
+                if let Err(error) = show_result {
+                    self.emit_error("The main window could not be shown.");
+                    log::warn!("could not show the main window: {error}");
+                }
+            } else {
                 self.emit_error("The main window could not be shown.");
-                log::warn!("could not show the main window: {error}");
             }
-            if let Err(error) = window.set_focus() {
+            if let Err(error) = self.ops.focus_window(&self.app) {
                 self.emit_error("The main window could not be focused.");
                 log::warn!("could not focus the main window: {error}");
             }
