@@ -144,6 +144,17 @@ mod tests {
         fn run(&mut self, _effect: Effect, _tx: &std::sync::mpsc::Sender<Envelope>) {}
     }
 
+    struct PanickingRunner {
+        stopped: mpsc::Sender<()>,
+    }
+
+    impl EffectRunner for PanickingRunner {
+        fn run(&mut self, _effect: Effect, _tx: &std::sync::mpsc::Sender<Envelope>) {
+            let _ = self.stopped.send(());
+            panic!("test runner stops the lifecycle loop");
+        }
+    }
+
     struct FakeRunner {
         seen: Arc<Mutex<Vec<Effect>>>,
         responses: Vec<(Effect, Event)>,
@@ -271,9 +282,15 @@ mod tests {
 
     #[test]
     fn a_gone_loop_prevents_exit() {
-        let handle = spawn_loop(Machine::new(1), NoopRunner);
-        let sender = handle.clone();
-        drop(handle);
-        assert_eq!(sender.exit_requested(), ExitVerdict::Prevent);
+        let (stopped, stopped_rx) = mpsc::channel();
+        let handle = spawn_loop(Machine::new(1), PanickingRunner { stopped });
+        handle.send(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: false,
+        });
+        stopped_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("runner did not stop the lifecycle loop");
+        assert_eq!(handle.exit_requested(), ExitVerdict::Prevent);
     }
 }
