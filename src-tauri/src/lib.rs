@@ -533,14 +533,15 @@ struct Rect {
 }
 
 fn rectangles_have_usable_intersection(window: Rect, monitor: Rect) -> bool {
-    let right = monitor.x.saturating_add(monitor.width as i32);
-    let bottom = monitor.y.saturating_add(monitor.height as i32);
-    let window_right = window.x.saturating_add(window.width as i32);
-    let window_bottom = window.y.saturating_add(window.height as i32);
-    window.x < right
-        && window_right > monitor.x
-        && window.y < bottom
-        && window_bottom > monitor.y
+    let monitor_right = monitor.x as i64 + monitor.width as i64;
+    let monitor_bottom = monitor.y as i64 + monitor.height as i64;
+    let window_right = window.x as i64 + window.width as i64;
+    let window_bottom = window.y as i64 + window.height as i64;
+    let overlap_width =
+        (window_right.min(monitor_right) - (window.x as i64).max(monitor.x as i64)).max(0);
+    let overlap_height =
+        (window_bottom.min(monitor_bottom) - (window.y as i64).max(monitor.y as i64)).max(0);
+    overlap_width >= MIN_WIDTH as i64 && overlap_height >= MIN_HEIGHT as i64
 }
 
 #[cfg(test)]
@@ -571,6 +572,9 @@ mod geometry_tests {
         // A visible window must retain at least the 360x420 minimum-size area
         // on one monitor; a 1x1 sliver cannot expose usable controls.
         assert!(!rectangles_have_usable_intersection(one_pixel, monitor));
-        assert!(rectangles_have_usable_intersection(enough_for_controls, monitor));
+        assert!(rectangles_have_usable_intersection(
+            enough_for_controls,
+            monitor
+        ));
     }
 }
