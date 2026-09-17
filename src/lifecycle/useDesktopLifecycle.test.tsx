@@ -232,5 +232,4 @@ describe("DesktopLifecycleBridge", () => {
     for (const resolve of decisions) resolve();
     remove();
   });
-
 });

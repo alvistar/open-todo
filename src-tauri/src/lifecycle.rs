@@ -25,6 +25,15 @@ pub struct LifecycleAttempt {
     pub kind: LifecycleKind,
 }
 
+/// A readiness token is issued by the native window generation that accepted
+/// the bridge. Old cleanup from another generation cannot clear a replacement.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendToken {
+    pub instance_id: String,
+    pub generation: u64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LifecycleDecisionPayload {
@@ -45,6 +54,9 @@ pub enum BeginResult {
     Recover(LifecycleAttempt),
     /// A request is already being handled. Keep one coherent guard.
     Ignore,
+    /// A quit arrived while a close is finishing; replay it after the native
+    /// close action releases its reservation.
+    Queued(LifecycleKind),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -68,10 +80,12 @@ pub enum FinalizeResult {
 pub struct LifecycleCoordinator {
     generation: u64,
     next_attempt: u64,
-    frontend_instance: Option<String>,
+    frontend_instance: Option<FrontendToken>,
     active: Option<LifecycleAttempt>,
     recovery_attempt: Option<u64>,
     finalizing: Option<LifecycleAttempt>,
+    pending_kind: Option<LifecycleKind>,
+    active_frontend: Option<FrontendToken>,
     exit_bypass_generation: Option<u64>,
     recreation_in_progress: bool,
 }
@@ -85,6 +99,8 @@ impl LifecycleCoordinator {
             active: None,
             recovery_attempt: None,
             finalizing: None,
+            pending_kind: None,
+            active_frontend: None,
             exit_bypass_generation: None,
             recreation_in_progress: false,
         }
@@ -99,13 +115,15 @@ impl LifecycleCoordinator {
         self.frontend_instance = None;
         self.active = None;
         self.recovery_attempt = None;
+        self.active_frontend = None;
+        self.pending_kind = None;
         self.recreation_in_progress = false;
         self.generation
     }
 
     /// Claims the one serialized slot for rebuilding the main window.
     pub fn begin_recreation(&mut self) -> bool {
-        if self.recreation_in_progress || self.finalizing.is_some() {
+        if self.recreation_in_progress || self.finalizing.is_some() || self.active.is_some() {
             return false;
         }
         self.recreation_in_progress = true;
@@ -122,12 +140,17 @@ impl LifecycleCoordinator {
         succeeded.then(|| self.new_window())
     }
 
-    pub fn frontend_ready(&mut self, instance: String) {
-        self.frontend_instance = Some(instance);
+    pub fn frontend_ready(&mut self, instance_id: String) -> FrontendToken {
+        let token = FrontendToken {
+            instance_id,
+            generation: self.generation,
+        };
+        self.frontend_instance = Some(token.clone());
+        token
     }
 
-    pub fn frontend_unready(&mut self, instance: &str) {
-        if self.frontend_instance.as_deref() == Some(instance) {
+    pub fn frontend_unready(&mut self, token: &FrontendToken) {
+        if self.frontend_instance.as_ref() == Some(token) {
             self.frontend_instance = None;
         }
     }
@@ -157,10 +180,12 @@ impl LifecycleCoordinator {
         FinalizeResult::Authorized
     }
 
-    pub fn finish_finalize(&mut self, attempt: &LifecycleAttempt) {
+    pub fn finish_finalize(&mut self, attempt: &LifecycleAttempt) -> Option<LifecycleKind> {
         if self.finalizing.as_ref() == Some(attempt) {
             self.finalizing = None;
+            return self.pending_kind.take();
         }
+        None
     }
 
     /// Clears frontend readiness only when this timeout still owns the active
@@ -170,12 +195,32 @@ impl LifecycleCoordinator {
         if self.active.as_ref() != Some(attempt) {
             return false;
         }
+        let frontend_changed = match (&self.active_frontend, &self.frontend_instance) {
+            (Some(owner), Some(current)) => owner != current,
+            (None, Some(_)) => true,
+            _ => false,
+        };
+        if frontend_changed {
+            return false;
+        }
         self.frontend_instance = None;
         true
     }
 
     pub fn begin(&mut self, kind: LifecycleKind, has_visible_window: bool) -> BeginResult {
         if self.finalizing.is_some() {
+            if self
+                .finalizing
+                .as_ref()
+                .is_some_and(|attempt| attempt.kind == LifecycleKind::Close)
+                && kind == LifecycleKind::Quit
+            {
+                self.pending_kind = Some(LifecycleKind::Quit);
+                return BeginResult::Queued(LifecycleKind::Quit);
+            }
+            return BeginResult::Ignore;
+        }
+        if self.recreation_in_progress {
             return BeginResult::Ignore;
         }
         if let Some(active) = &self.active {
@@ -185,6 +230,7 @@ impl LifecycleCoordinator {
                 // soon as Command-Q asks for a new attempt.
                 self.active = None;
                 self.recovery_attempt = None;
+                self.active_frontend = None;
             } else {
                 return BeginResult::Ignore;
             }
@@ -201,6 +247,7 @@ impl LifecycleCoordinator {
             kind,
         };
         self.active = Some(attempt.clone());
+        self.active_frontend = self.frontend_instance.clone();
         if self.frontend_is_ready() {
             BeginResult::Ask(attempt)
         } else {
@@ -220,6 +267,7 @@ impl LifecycleCoordinator {
             LifecycleDecision::Cancel => {
                 self.active = None;
                 self.recovery_attempt = None;
+                self.active_frontend = None;
                 DecisionResult::Cancelled
             }
             LifecycleDecision::Allow if payload.dirty || payload.pending => {
@@ -234,6 +282,7 @@ impl LifecycleCoordinator {
                 let authorized = active.clone();
                 self.active = None;
                 self.recovery_attempt = None;
+                self.active_frontend = None;
                 DecisionResult::Authorized(authorized)
             }
         }
@@ -256,6 +305,7 @@ impl LifecycleCoordinator {
         }
         self.active = None;
         self.recovery_attempt = None;
+        self.active_frontend = None;
         allow
     }
 
@@ -572,6 +622,30 @@ mod tests {
         coordinator.frontend_ready("two".into());
 
         assert!(!coordinator.timeout_expired(&close));
+        assert!(coordinator.frontend_is_ready());
+    }
+
+    #[test]
+    fn readiness_cleanup_is_bound_to_the_native_generation_token() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        let old = coordinator.frontend_ready("old".into());
+        let new = coordinator.frontend_ready("new".into());
+
+        coordinator.frontend_unready(&old);
+        assert!(coordinator.frontend_is_ready());
+        coordinator.frontend_unready(&new);
+        assert!(!coordinator.frontend_is_ready());
+    }
+
+    #[test]
+    fn readiness_tokens_record_the_window_generation() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        let old = coordinator.frontend_ready("old".into());
+        assert_eq!(old.generation, 1);
+        assert_eq!(coordinator.new_window(), 2);
+        let current = coordinator.frontend_ready("current".into());
+        assert_eq!(current.generation, 2);
+        coordinator.frontend_unready(&old);
         assert!(coordinator.frontend_is_ready());
     }
 

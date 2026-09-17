@@ -1,18 +1,20 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { useOverlayLayer, useOverlayStack } from "../ui/overlayStack";
 import { getDraftSummary, useDraftSummary } from "./drafts";
+import {
+  type LifecycleRequest,
+  type RequestState,
+  sameRequest,
+  transitionRequest,
+} from "./requestState";
 import styles from "./useDesktopLifecycle.module.css";
 
 export type LifecycleKind = "close" | "quit";
 export type LifecycleDecision = "allow" | "discard" | "cancel" | "exit-anyway";
 
-export interface LifecycleRequest {
-  attemptId: number;
-  generation: number;
-  kind: LifecycleKind;
-}
+export type { LifecycleRequest } from "./requestState";
 
 interface LifecycleDecisionPayload {
   attemptId: number;
@@ -22,40 +24,47 @@ interface LifecycleDecisionPayload {
   pending: boolean;
 }
 
-function sameRequest(
-  left: LifecycleRequest | null,
-  right: LifecycleRequest | null,
-): boolean {
-  return (
-    left !== null &&
-    right !== null &&
-    left.attemptId === right.attemptId &&
-    left.generation === right.generation
-  );
+interface FrontendToken {
+  instanceId: string;
+  generation: number;
 }
+
+const INITIAL_REQUEST_STATE: RequestState = {
+  current: null,
+  received: null,
+  inFlight: null,
+  responseError: null,
+};
 
 /**
  * Connects the native close/quit coordinator to the current React draft
  * registry. The same guard is used for a window close and Command-Q.
  */
 export function DesktopLifecycleBridge() {
-  const [request, setRequest] = useState<LifecycleRequest | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [requestState, dispatchRequest] = useReducer(
+    transitionRequest,
+    INITIAL_REQUEST_STATE,
+  );
+  const [nativeError, setNativeError] = useState<string | null>(null);
+  const request = requestState.current;
   const summary = useDraftSummary();
   const overlayStack = useOverlayStack();
   const requestRef = useRef(request);
-  const respondingRef = useRef<LifecycleRequest | null>(null);
+  const requestStateRef = useRef(requestState);
+  const responseIdRef = useRef(0);
   const instanceIdRef = useRef(
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `desktop-${Math.random().toString(36).slice(2)}`,
   );
   requestRef.current = request;
+  requestStateRef.current = requestState;
+  const error = nativeError ?? requestState.responseError;
 
   useEffect(() => {
     if (!isTauri()) return;
     let mounted = true;
-    let ready = false;
+    let readyToken: FrontendToken | null = null;
     let unlistenRequest: (() => void) | undefined;
     let unlistenError: (() => void) | undefined;
     const instanceId = instanceIdRef.current;
@@ -64,32 +73,38 @@ export function DesktopLifecycleBridge() {
       try {
         unlistenRequest = await listen<LifecycleRequest>("lifecycle:request", (event) => {
           if (!mounted) return;
-          setError(null);
+          setNativeError(null);
           // A recheck has the same attempt id. Replacing the object intentionally
           // lets the effect run again after native rejected an older snapshot.
-          setRequest(event.payload);
+          dispatchRequest({ type: "native-request", request: event.payload });
         });
         if (!mounted) {
           unlistenRequest();
           return;
         }
         unlistenError = await listen<{ message: string }>("lifecycle:error", (event) => {
-          if (mounted) setError(event.payload.message);
+          if (mounted) setNativeError(event.payload.message);
         });
         if (!mounted) {
           unlistenError();
           unlistenRequest();
           return;
         }
-        await invoke("lifecycle_ready", { instanceId });
+        const token = await invoke<FrontendToken | null>("lifecycle_ready", {
+          instanceId,
+        });
         if (!mounted) {
-          await invoke("lifecycle_unready", { instanceId }).catch(() => undefined);
+          if (token) {
+            await invoke("lifecycle_unready", { token }).catch(() => undefined);
+          }
           return;
         }
-        ready = true;
+        readyToken = token;
       } catch {
         if (mounted) {
-          setError("The desktop close guard could not connect. Try the action again.");
+          setNativeError(
+            "The desktop close guard could not connect. Try the action again.",
+          );
         }
       }
     })();
@@ -98,17 +113,24 @@ export function DesktopLifecycleBridge() {
       mounted = false;
       unlistenRequest?.();
       unlistenError?.();
-      if (ready) {
-        void invoke("lifecycle_unready", { instanceId }).catch(() => undefined);
+      if (readyToken) {
+        void invoke("lifecycle_unready", { token: readyToken }).catch(() => undefined);
       }
     };
   }, []);
 
   const respond = useRef(async (decision: LifecycleDecision) => {
     const current = requestRef.current;
-    if (!current || sameRequest(respondingRef.current, current)) return;
-    respondingRef.current = current;
-    setError(null);
+    const inFlight = requestStateRef.current.inFlight;
+    if (
+      !current ||
+      (decision !== "cancel" && inFlight && sameRequest(inFlight.request, current))
+    ) {
+      return;
+    }
+    const responseId = ++responseIdRef.current;
+    dispatchRequest({ type: "response-started", request: current, responseId });
+    setNativeError(null);
     const currentSummary = getDraftSummary();
     const payload: LifecycleDecisionPayload = {
       attemptId: current.attemptId,
@@ -119,13 +141,19 @@ export function DesktopLifecycleBridge() {
     };
     try {
       await invoke("lifecycle_decision", { payload });
-      if (sameRequest(requestRef.current, current)) setRequest(null);
+      dispatchRequest({
+        type: "response-settled",
+        request: current,
+        responseId,
+        error: null,
+      });
     } catch {
-      if (sameRequest(requestRef.current, current)) {
-        setError("The desktop action could not be completed. The window remains open.");
-      }
-    } finally {
-      if (sameRequest(respondingRef.current, current)) respondingRef.current = null;
+      dispatchRequest({
+        type: "response-settled",
+        request: current,
+        responseId,
+        error: "The desktop action could not be completed. The window remains open.",
+      });
     }
   }).current;
 

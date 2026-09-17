@@ -7,30 +7,62 @@ export interface LifecycleRequest {
 export interface RequestState {
   current: LifecycleRequest | null;
   received: LifecycleRequest | null;
+  inFlight: { request: LifecycleRequest; responseId: number } | null;
+  responseError: string | null;
 }
 
 export type RequestEvent =
   | { type: "native-request"; request: LifecycleRequest }
-  | { type: "response-settled"; request: LifecycleRequest };
+  | {
+      type: "response-started";
+      request: LifecycleRequest;
+      responseId: number;
+    }
+  | {
+      type: "response-settled";
+      request: LifecycleRequest;
+      responseId: number;
+      error: string | null;
+    };
 
-function sameRequest(left: LifecycleRequest | null, right: LifecycleRequest): boolean {
+export function sameRequest(
+  left: LifecycleRequest | null,
+  right: LifecycleRequest | null,
+): boolean {
   return (
     left !== null &&
+    right !== null &&
     left.attemptId === right.attemptId &&
     left.generation === right.generation
   );
 }
 
-/**
- * This transition intentionally models the old commit-delayed request ref;
- * the reproduction test drives the event ordering that loses request B.
- */
-export function transitionRequest(state: RequestState, event: RequestEvent): RequestState {
+export function transitionRequest(
+  state: RequestState,
+  event: RequestEvent,
+): RequestState {
   if (event.type === "native-request") {
-    return { ...state, received: event.request };
+    return {
+      ...state,
+      current: event.request,
+      received: event.request,
+      responseError: null,
+    };
   }
-  if (sameRequest(state.current, event.request)) {
-    return { ...state, current: null };
+  if (event.type === "response-started") {
+    return {
+      ...state,
+      inFlight: { request: event.request, responseId: event.responseId },
+      responseError: null,
+    };
   }
-  return state;
+  if (state.inFlight?.responseId !== event.responseId) {
+    return state;
+  }
+  return {
+    ...state,
+    current: sameRequest(state.current, event.request) ? null : state.current,
+    inFlight: null,
+    responseError: sameRequest(state.current, event.request) ? event.error : null,
+  };
 }

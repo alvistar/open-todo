@@ -3,8 +3,8 @@
 mod lifecycle;
 
 use lifecycle::{
-    BeginResult, DecisionResult, FinalizeResult, LifecycleAttempt, LifecycleCoordinator,
-    LifecycleDecisionPayload, LifecycleKind,
+    BeginResult, DecisionResult, FinalizeResult, FrontendToken, LifecycleAttempt,
+    LifecycleCoordinator, LifecycleDecisionPayload, LifecycleKind,
 };
 use serde::Serialize;
 use std::{sync::Mutex, time::Duration};
@@ -34,22 +34,27 @@ struct LifecycleDiagnostic<'a> {
 }
 
 #[tauri::command]
-fn lifecycle_ready(state: State<'_, AppState>, instance_id: String) -> Result<(), String> {
+fn lifecycle_ready(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> Result<FrontendToken, String> {
     let mut coordinator = state
         .coordinator
         .lock()
         .map_err(|_| "desktop lifecycle state is unavailable".to_string())?;
-    coordinator.frontend_ready(instance_id);
-    Ok(())
+    // A destroyed main window cannot deliver a late initial ready call. Any
+    // ready handshake that arrives here therefore belongs to this generation;
+    // the returned token makes its later cleanup generation-specific.
+    Ok(coordinator.frontend_ready(instance_id))
 }
 
 #[tauri::command]
-fn lifecycle_unready(state: State<'_, AppState>, instance_id: String) -> Result<(), String> {
+fn lifecycle_unready(state: State<'_, AppState>, token: FrontendToken) -> Result<(), String> {
     let mut coordinator = state
         .coordinator
         .lock()
         .map_err(|_| "desktop lifecycle state is unavailable".to_string())?;
-    coordinator.frontend_unready(&instance_id);
+    coordinator.frontend_unready(&token);
     Ok(())
 }
 
@@ -208,7 +213,7 @@ fn request_lifecycle<R: Runtime>(app: &AppHandle<R>, kind: LifecycleKind) {
             }
         }
         BeginResult::Recover(attempt) => show_native_recovery(app, attempt),
-        BeginResult::Ignore => {}
+        BeginResult::Ignore | BeginResult::Queued(_) => {}
     }
 }
 
@@ -368,8 +373,13 @@ fn finalize_attempt<R: Runtime>(
             Ok(())
         }
     };
-    if let Ok(mut coordinator) = state.coordinator.lock() {
-        coordinator.finish_finalize(&attempt);
+    let pending_kind = state
+        .coordinator
+        .lock()
+        .map(|mut coordinator| coordinator.finish_finalize(&attempt))
+        .unwrap_or(None);
+    if let Some(kind) = pending_kind {
+        request_lifecycle(app, kind);
     }
     result
 }
