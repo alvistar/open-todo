@@ -99,3 +99,28 @@ timeout. This confirms hidden-bridge liveness for
 `Idle{hidden_by_close:false} × Begin(Quit)` and supports D11's `ShowWindow`-then-ask
 cell. The temporary path did not itself exercise `ShowWindow`; Q3's worker-thread
 `show succeeded` observation is the evidence available for that runner effect.
+
+## Q5 — `app.exit` re-entrancy
+
+Procedure: added a temporary command that waited for startup and called `app.exit(0)`
+from two distinct worker threads, 100 ms apart. A temporary one-shot guard prevented
+the first `ExitRequested` and allowed the second; the packaged app was launched from
+a terminal and all command/event points logged to stderr.
+
+Raw stderr excerpt:
+
+```text
+SPIKE Q5 first worker calling app.exit(0)
+SPIKE Q5 first worker returned from app.exit(0)
+SPIKE Q5 ExitRequested prevented
+SPIKE Q5 second worker calling app.exit(0)
+SPIKE Q5 second worker returned from app.exit(0)
+SPIKE Q5 ExitRequested allowed
+SPIKE Q5 Exit received
+```
+
+The second `app.exit(0)` did exit the process. The observed order was first worker
+call/return, first `ExitRequested` prevented, second worker call/return, second
+`ExitRequested` allowed, then `Exit`. This confirms the `Exiting × ExitRequested`
+cell (D10/8): a second request can proceed after one prevented request, and the
+machine must own bypass/re-entrancy ordering.
