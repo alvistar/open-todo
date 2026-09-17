@@ -2,6 +2,11 @@
 pub mod machine;
 #[allow(dead_code)] // wired in slice 4
 pub mod runtime;
+#[cfg(test)]
+mod properties; // slice 2: proptest invariants over Machine::step
+#[cfg(test)]
+mod traces; // slice 3: trace equivalence old coordinator vs Machine
+pub mod tauri_runner; // slice 4: EffectRunner over tauri::AppHandle
 
 use serde::{Deserialize, Serialize};
 
