@@ -189,7 +189,16 @@ impl Machine {
                 queued_quit,
                 recreate_pending,
             } => self.finalizing(attempt, queued_quit, recreate_pending, event),
-            other => (other, vec![Effect::Log("unimplemented")]),
+            State::Recreating {
+                id,
+                reserved,
+                queued_quit,
+                ready,
+            } => self.recreating(id, reserved, queued_quit, ready, event),
+            State::Exiting {
+                attempt,
+                generation,
+            } => self.exiting(attempt, generation, event),
         }
     }
 
@@ -971,6 +980,216 @@ impl Machine {
         )
     }
 
+    fn recreating(
+        &mut self,
+        id: RecreationId,
+        reserved: u64,
+        queued_quit: bool,
+        ready: Option<Token>,
+        event: Event,
+    ) -> (State, Vec<Effect>) {
+        match event {
+            Event::Begin {
+                kind: Kind::Quit, ..
+            } => (
+                State::Recreating {
+                    id,
+                    reserved,
+                    queued_quit: true,
+                    ready,
+                },
+                vec![Effect::Log("queued")],
+            ),
+            Event::Begin {
+                kind: Kind::Close, ..
+            } => (
+                State::Recreating {
+                    id,
+                    reserved,
+                    queued_quit,
+                    ready,
+                },
+                vec![Effect::Log("no window")],
+            ),
+            Event::FrontendReady { instance_id } => {
+                let token = Token {
+                    instance_id,
+                    generation: reserved,
+                };
+                (
+                    State::Recreating {
+                        id,
+                        reserved,
+                        queued_quit,
+                        ready: Some(token.clone()),
+                    },
+                    vec![Effect::ReplyToken(token), Effect::Log("ready")],
+                )
+            }
+            Event::FrontendUnready { token } => {
+                let is_ready = ready.as_ref() == Some(&token);
+                let is_current = self.frontend.as_ref() == Some(&token);
+                if is_ready || is_current {
+                    self.frontend = None;
+                }
+                (
+                    State::Recreating {
+                        id,
+                        reserved,
+                        queued_quit,
+                        ready: if is_ready { None } else { ready },
+                    },
+                    vec![Effect::Log("unready")],
+                )
+            }
+            Event::RecreationStarted => (
+                State::Recreating {
+                    id,
+                    reserved,
+                    queued_quit,
+                    ready,
+                },
+                vec![Effect::Log("already recreating")],
+            ),
+            Event::RecreationFinished {
+                id: finished_id,
+                ok,
+            } => {
+                if id != finished_id {
+                    return (
+                        State::Recreating {
+                            id,
+                            reserved,
+                            queued_quit,
+                            ready,
+                        },
+                        vec![Effect::Log("stale")],
+                    );
+                }
+                if ok {
+                    self.generation = reserved;
+                    self.frontend = ready.clone();
+                    if queued_quit {
+                        if let Some(frontend) = ready {
+                            let attempt = self.new_attempt(Kind::Quit);
+                            return (
+                                State::Asking {
+                                    attempt: attempt.clone(),
+                                    frontend: frontend.clone(),
+                                    recreate_pending: false,
+                                },
+                                vec![
+                                    Effect::EmitRequest {
+                                        attempt: attempt.clone(),
+                                        frontend,
+                                    },
+                                    Effect::ScheduleTimeout(attempt),
+                                ],
+                            );
+                        }
+                        let attempt = self.new_attempt(Kind::Quit);
+                        return (
+                            State::AwaitingFrontend {
+                                attempt: attempt.clone(),
+                                recreate_pending: false,
+                            },
+                            vec![Effect::ScheduleTimeout(attempt)],
+                        );
+                    }
+                    (
+                        State::Idle {
+                            hidden_by_close: false,
+                        },
+                        vec![Effect::Log("recreated")],
+                    )
+                } else {
+                    self.frontend = None;
+                    let mut effects = vec![Effect::EmitError("lifecycle recreation failed".into())];
+                    if queued_quit {
+                        effects.extend([Effect::ArmExitBypass(self.generation), Effect::Exit]);
+                        (
+                            State::Exiting {
+                                attempt: None,
+                                generation: self.generation,
+                            },
+                            effects,
+                        )
+                    } else {
+                        effects.push(Effect::Log("recreation failed"));
+                        (
+                            State::Idle {
+                                hidden_by_close: false,
+                            },
+                            effects,
+                        )
+                    }
+                }
+            }
+            Event::ExitRequested => (
+                State::Recreating {
+                    id,
+                    reserved,
+                    queued_quit: true,
+                    ready,
+                },
+                vec![Effect::PreventExit, Effect::Log("queued")],
+            ),
+            _ => (
+                State::Recreating {
+                    id,
+                    reserved,
+                    queued_quit,
+                    ready,
+                },
+                vec![Effect::Log("stale")],
+            ),
+        }
+    }
+
+    fn exiting(
+        &mut self,
+        attempt: Option<Attempt>,
+        generation: u64,
+        event: Event,
+    ) -> (State, Vec<Effect>) {
+        match event {
+            Event::ExitRequested if self.exit_bypass == Some(generation) => {
+                self.exit_bypass = None;
+                (
+                    State::Exiting {
+                        attempt,
+                        generation,
+                    },
+                    vec![Effect::AllowExit],
+                )
+            }
+            Event::ExitRequested => (
+                State::Exiting {
+                    attempt,
+                    generation,
+                },
+                vec![
+                    Effect::PreventExit,
+                    Effect::Log("unarmed exit request while exiting"),
+                ],
+            ),
+            Event::Exited => (
+                State::Exiting {
+                    attempt,
+                    generation,
+                },
+                vec![Effect::Log("exited")],
+            ),
+            _ => (
+                State::Exiting {
+                    attempt,
+                    generation,
+                },
+                vec![Effect::Log("exiting")],
+            ),
+        }
+    }
+
     fn authorize(&mut self, attempt: Attempt, recreate_pending: bool) -> (State, Vec<Effect>) {
         match attempt.kind {
             Kind::Close => {
@@ -1647,6 +1866,137 @@ mod tests {
                     ready: None,
                 },
                 vec![Effect::Log("cancelled"), Effect::Recreate(RecreationId(1))],
+            )
+        );
+    }
+
+    #[test]
+    fn codex3_ready_before_recreation_finished_is_kept() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::RecreationStarted);
+
+        let effects = machine.step(Event::FrontendReady {
+            instance_id: "rebuilt".into(),
+        });
+        let token = Token {
+            instance_id: "rebuilt".into(),
+            generation: 2,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Recreating {
+                    id: RecreationId(1),
+                    reserved: 2,
+                    queued_quit: false,
+                    ready: Some(token.clone()),
+                },
+                vec![Effect::ReplyToken(token), Effect::Log("ready")],
+            )
+        );
+    }
+
+    #[test]
+    fn s2_quit_queued_during_recreation_is_asked_by_new_bridge() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::RecreationStarted);
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        machine.step(Event::FrontendReady {
+            instance_id: "rebuilt".into(),
+        });
+
+        let effects = machine.step(Event::RecreationFinished {
+            id: RecreationId(1),
+            ok: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 2,
+            kind: Kind::Quit,
+            sequence: 0,
+        };
+        let token = Token {
+            instance_id: "rebuilt".into(),
+            generation: 2,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt: attempt.clone(),
+                    frontend: token.clone(),
+                    recreate_pending: false,
+                },
+                vec![
+                    Effect::EmitRequest {
+                        attempt: attempt.clone(),
+                        frontend: token,
+                    },
+                    Effect::ScheduleTimeout(attempt),
+                ],
+            )
+        );
+    }
+
+    #[test]
+    fn codex5_finalize_quit_arms_bypass_first() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        let effects = machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Quit,
+            sequence: 0,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Exiting {
+                    attempt: Some(attempt),
+                    generation: 1,
+                },
+                vec![Effect::ArmExitBypass(1), Effect::Exit],
+            )
+        );
+    }
+
+    #[test]
+    fn codex8_second_exit_request_while_exiting_is_prevented() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: false,
+        });
+        machine.step(Event::ExitRequested);
+        let effects = machine.step(Event::ExitRequested);
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Exiting {
+                    attempt: None,
+                    generation: 1,
+                },
+                vec![
+                    Effect::PreventExit,
+                    Effect::Log("unarmed exit request while exiting"),
+                ],
             )
         );
     }
