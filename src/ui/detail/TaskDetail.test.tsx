@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskPatch } from "../../api/endpoints";
 import type { Task, TaskReminder } from "../../api/types";
+import * as draftRegistry from "../../lifecycle/drafts";
 import { getDraftSummary } from "../../lifecycle/drafts";
 import { dueDateFromPhrase } from "../../model/duePhrase";
 import { titleEdit } from "../../model/titleEdit";
@@ -526,6 +527,64 @@ describe("the sidebar pickers", () => {
 
     expect(screen.queryByRole("button", { name: "P1" })).not.toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("N6 returns focus to the picker trigger after Escape", () => {
+    open();
+    const trigger = screen.getByLabelText("Priority: change");
+    fireEvent.click(trigger);
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "P1" }), { key: "Escape" });
+
+    expect(trigger).toHaveFocus();
+  });
+
+  it("N6 keeps a failed busy picker visible when Escape is pressed", async () => {
+    let rejectWrite!: (reason: unknown) => void;
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectWrite = reject;
+        }),
+    );
+    open({ priority: 0 }, { onSave });
+    fireEvent.click(screen.getByLabelText("Priority: change"));
+    fireEvent.click(screen.getByRole("button", { name: "P1" }));
+    await waitFor(() => expect(getDraftSummary().pending).toBe(true));
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "P1" }), { key: "Escape" });
+    rejectWrite(new Error("Vikunja rejected the priority."));
+
+    expect(await screen.findByText("Vikunja rejected the priority.")).toBeInTheDocument();
+  });
+
+  it("N7 keeps an unmounted picker write pending and reports its failure", async () => {
+    let rejectWrite!: (reason: unknown) => void;
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectWrite = reject;
+        }),
+    );
+    open({ priority: 0 }, { onSave });
+    fireEvent.click(screen.getByLabelText("Priority: change"));
+    fireEvent.click(screen.getByRole("button", { name: "P1" }));
+    await waitFor(() => expect(getDraftSummary().pending).toBe(true));
+
+    cleanup();
+    expect(getDraftSummary().pending).toBe(true);
+
+    rejectWrite(new Error("Vikunja rejected the detached write."));
+    await waitFor(() =>
+      expect(getDraftSummary().sources).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            error: "Vikunja rejected the detached write.",
+          }),
+        ]),
+      ),
+    );
+    (draftRegistry as unknown as { clearDraftErrors?: () => void }).clearDraftErrors?.();
   });
 
   it("leaves an open title editor alone when the sidebar commits", async () => {
