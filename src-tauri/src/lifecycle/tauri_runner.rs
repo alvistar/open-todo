@@ -8,7 +8,6 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-#[cfg(not(test))]
 use tauri_plugin_window_state::AppHandleExt as WindowStateAppHandleExt;
 
 const MAIN_WINDOW: &str = "main";
@@ -34,10 +33,6 @@ pub(crate) trait RunnerOps<R: Runtime>: Send + Sync {
 
     fn native_dialog(&self, _app: &AppHandle<R>, _message: &str) {}
 
-    fn is_visible(&self, _app: &AppHandle<R>) -> Option<Result<bool, String>> {
-        None
-    }
-
     fn show_window(&self, _app: &AppHandle<R>) -> Option<Result<(), String>> {
         None
     }
@@ -48,10 +43,6 @@ pub(crate) trait RunnerOps<R: Runtime>: Send + Sync {
 
     fn has_main_window(&self, _app: &AppHandle<R>) -> bool {
         false
-    }
-
-    fn is_minimized(&self, _app: &AppHandle<R>) -> Result<bool, String> {
-        Ok(false)
     }
 
     fn unminimize(&self, _app: &AppHandle<R>) -> Result<(), String> {
@@ -79,11 +70,6 @@ impl<R: Runtime> RunnerOps<R> for AppRunnerOps {
             .show(|_| {});
     }
 
-    fn is_visible(&self, app: &AppHandle<R>) -> Option<Result<bool, String>> {
-        let window = app.get_webview_window(MAIN_WINDOW)?;
-        Some(window.is_visible().map_err(|error| error.to_string()))
-    }
-
     fn show_window(&self, app: &AppHandle<R>) -> Option<Result<(), String>> {
         let window = app.get_webview_window(MAIN_WINDOW)?;
         Some(window.show().map_err(|error| error.to_string()))
@@ -98,13 +84,6 @@ impl<R: Runtime> RunnerOps<R> for AppRunnerOps {
 
     fn has_main_window(&self, app: &AppHandle<R>) -> bool {
         app.get_webview_window(MAIN_WINDOW).is_some()
-    }
-
-    fn is_minimized(&self, app: &AppHandle<R>) -> Result<bool, String> {
-        let window = app
-            .get_webview_window(MAIN_WINDOW)
-            .ok_or_else(|| "main window is unavailable".to_string())?;
-        window.is_minimized().map_err(|error| error.to_string())
     }
 
     fn unminimize(&self, app: &AppHandle<R>) -> Result<(), String> {
@@ -159,7 +138,6 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
             Effect::EmitRequest { attempt, frontend } => {
                 let Some(window) = self.app.get_webview_window(MAIN_WINDOW) else {
                     send_event(tx, Event::EmitFailed { attempt, frontend });
-                    self.emit_error("The editor did not respond to the desktop close request.");
                     return;
                 };
                 if window
@@ -167,7 +145,6 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
                     .is_err()
                 {
                     send_event(tx, Event::EmitFailed { attempt, frontend });
-                    self.emit_error("The editor did not respond to the desktop close request.");
                 }
             }
             Effect::ScheduleTimeout(attempt) => {
@@ -219,7 +196,7 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
                 }
             }
             Effect::ReplyToken(token) => log::debug!(
-                "lifecycle ready reply dropped for instance {} generation {}",
+                "lifecycle ready token replied by the loop for instance {} generation {}",
                 token.instance_id,
                 token.generation
             ),
@@ -231,27 +208,23 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
 
 impl<R: Runtime> TauriRunner<R> {
     fn emit_error(&self, message: &str) {
-        let _ = self.ops.emit_to_window(&self.app, message);
+        if self.ops.emit_to_window(&self.app, message).is_none() {
+            self.ops.native_dialog(&self.app, message);
+        }
     }
 
     fn show_window(&self) {
-        let Some(window_visible) = self.ops.is_visible(&self.app) else {
+        let Some(show_result) = self.ops.show_window(&self.app) else {
             self.emit_error("The main window could not be shown.");
             return;
         };
-        if !window_visible.unwrap_or(true) {
-            if let Some(show_result) = self.ops.show_window(&self.app) {
-                if let Err(error) = show_result {
-                    self.emit_error("The main window could not be shown.");
-                    log::warn!("could not show the main window: {error}");
-                }
-            } else {
-                self.emit_error("The main window could not be shown.");
-            }
-            if let Err(error) = self.ops.focus_window(&self.app) {
-                self.emit_error("The main window could not be focused.");
-                log::warn!("could not focus the main window: {error}");
-            }
+        if let Err(error) = show_result {
+            self.emit_error("The main window could not be shown.");
+            log::warn!("could not show the main window: {error}");
+        }
+        if let Err(error) = self.ops.focus_window(&self.app) {
+            self.emit_error("The main window could not be focused.");
+            log::warn!("could not focus the main window: {error}");
         }
     }
 
@@ -303,7 +276,6 @@ impl<R: Runtime> TauriRunner<R> {
                     {
                         match window.hide() {
                             Ok(()) => {
-                                #[cfg(not(test))]
                                 if let Err(error) =
                                     self.app.save_window_state(crate::WINDOW_STATE_FLAGS)
                                 {
@@ -518,14 +490,6 @@ mod tests {
             self.dialogs.lock().unwrap().push(message.to_string());
         }
 
-        fn is_visible(
-            &self,
-            _app: &AppHandle<tauri::test::MockRuntime>,
-        ) -> Option<Result<bool, String>> {
-            self.calls.lock().unwrap().push("is_visible");
-            Some(Ok(false))
-        }
-
         fn show_window(
             &self,
             _app: &AppHandle<tauri::test::MockRuntime>,
@@ -554,6 +518,14 @@ mod tests {
             kind: Kind::Quit,
             ..attempt()
         }
+    }
+
+    fn mock_app_with_plugins() -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_window_state::Builder::default().build())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
     }
 
     #[test]
@@ -736,7 +708,7 @@ mod tests {
 
     #[test]
     fn recovery_without_main_cancels_the_native_action() {
-        let app = tauri::test::mock_app();
+        let app = mock_app_with_plugins();
         let mut runner = TauriRunner::new(app.handle().clone());
         let (tx, rx) = mpsc::channel();
         let attempt = attempt();
@@ -756,7 +728,7 @@ mod tests {
     // MockRuntime hard-codes `is_visible()` to true and `hide()` to a no-op;
     // visibility is covered by the packaged smoke and the Q3 spike.
     fn finalize_close_reports_success() {
-        let app = tauri::test::mock_app();
+        let app = mock_app_with_plugins();
         tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
@@ -774,7 +746,7 @@ mod tests {
 
     #[test]
     fn finalize_without_main_reports_failure() {
-        let app = tauri::test::mock_app();
+        let app = mock_app_with_plugins();
         let mut runner = TauriRunner::new(app.handle().clone());
         let (tx, rx) = mpsc::channel();
         let attempt = attempt();

@@ -165,10 +165,8 @@ fn on_activate_with_ops<R: Runtime, O: RunnerOps<R>>(
     ops: &O,
 ) {
     if ops.has_main_window(app) {
-        if ops.is_minimized(app).unwrap_or(false) {
-            if let Err(error) = ops.unminimize(app) {
-                log::warn!("could not unminimize the main window: {error}");
-            }
+        if let Err(error) = ops.unminimize(app) {
+            log::warn!("could not unminimize the main window: {error}");
         }
         if let Some(Err(error)) = ops.show_window(app) {
             log::warn!("could not show the main window: {error}");
@@ -259,11 +257,6 @@ mod lifecycle_mapping_tests {
 
         fn has_main_window(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> bool {
             true
-        }
-
-        fn is_minimized(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> Result<bool, String> {
-            self.calls.lock().unwrap().push("is_minimized");
-            Ok(false)
         }
 
         fn unminimize(&self, _app: &AppHandle<tauri::test::MockRuntime>) -> Result<(), String> {
@@ -442,7 +435,7 @@ mod lifecycle_mapping_tests {
         let handle = spawn_loop(Machine::new(0), runner);
         app.manage(AppState { lifecycle: handle });
 
-        on_exited(&app.handle());
+        on_exited(app.handle());
         observed
             .recv_timeout(Duration::from_secs(1))
             .expect("exit event was not observed");
@@ -457,7 +450,7 @@ mod lifecycle_mapping_tests {
         let (runner, _seen, observed) = recording_runner(Vec::new());
         let handle = spawn_loop(Machine::new(0), runner);
 
-        on_activate_with_ops(&app.handle(), &handle, &ops);
+        on_activate_with_ops(app.handle(), &handle, &ops);
 
         assert!(matches!(
             observed.try_recv(),
