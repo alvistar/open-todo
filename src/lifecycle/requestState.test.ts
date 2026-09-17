@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { type LifecycleRequest, transitionRequest } from "./requestState";
+import { transitionRequest } from "./requestState";
 
-const closeA: LifecycleRequest = { attemptId: 4, generation: 2, kind: "close" };
-const quitB: LifecycleRequest = { attemptId: 5, generation: 2, kind: "quit" };
+const closeA = {
+  attemptId: 4,
+  generation: 2,
+  kind: "close",
+  requestSequence: 0,
+} as const;
+const quitB = {
+  attemptId: 5,
+  generation: 2,
+  kind: "quit",
+  requestSequence: 0,
+} as const;
 
 describe("lifecycle request reconciliation", () => {
   it("NEW-2 keeps B current when A settles after B was received", () => {
@@ -23,5 +33,25 @@ describe("lifecycle request reconciliation", () => {
     });
 
     expect(settled.current).toEqual(quitB);
+  });
+
+  it("S3 keeps a recheck current when the first response settles", () => {
+    const recheck = { ...closeA, requestSequence: 1 } as const;
+    const settled = transitionRequest(
+      {
+        current: recheck,
+        received: recheck,
+        inFlight: { request: closeA, responseId: 1 },
+        responseError: null,
+      },
+      {
+        type: "response-settled",
+        request: closeA,
+        responseId: 1,
+        error: null,
+      },
+    );
+
+    expect(settled.current).toEqual(recheck);
   });
 });

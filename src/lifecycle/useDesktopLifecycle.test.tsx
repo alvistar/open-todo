@@ -21,7 +21,12 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 
 import { DesktopLifecycleBridge } from "./useDesktopLifecycle";
 
-const request = { attemptId: 4, generation: 2, kind: "close" as const };
+const request = {
+  attemptId: 4,
+  generation: 2,
+  kind: "close" as const,
+  requestSequence: 0,
+};
 
 beforeEach(() => {
   mocks.eventHandlers = {};
@@ -230,6 +235,53 @@ describe("DesktopLifecycleBridge", () => {
     );
 
     for (const resolve of decisions) resolve();
+    remove();
+  });
+
+  it("S3 sends Discard for a recheck while the first response is pending", async () => {
+    const decisions: Array<() => void> = [];
+    mocks.invoke.mockImplementation((name: string) => {
+      if (name === "lifecycle_decision") {
+        return new Promise<void>((resolve) => decisions.push(resolve));
+      }
+      return Promise.resolve();
+    });
+    const remove = registerDraftSource({
+      id: "bridge-s3-recheck",
+      label: "Task detail",
+      dirty: true,
+      pending: false,
+    });
+    const { unmount } = render(<DesktopLifecycleBridge />);
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("lifecycle_ready", expect.anything()),
+    );
+    mocks.eventHandlers["lifecycle:request"]?.({ payload: request });
+    fireEvent.click(await screen.findByRole("button", { name: "Discard and close" }));
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_decision"),
+      ).toHaveLength(1),
+    );
+
+    mocks.eventHandlers["lifecycle:request"]?.({
+      payload: { ...request, requestSequence: 1 },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discard and close" }));
+
+    await waitFor(() => {
+      const calls = mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_decision");
+      expect(calls).toHaveLength(2);
+      expect(calls[1]?.[1]).toEqual(
+        expect.objectContaining({
+          payload: expect.objectContaining({ decision: "discard" }),
+        }),
+      );
+    });
+
+    for (const resolve of decisions) resolve();
+    unmount();
     remove();
   });
 });
