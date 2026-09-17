@@ -320,10 +320,16 @@ impl LifecycleCoordinator {
                 DecisionResult::Cancelled
             }
             LifecycleDecision::Allow if payload.dirty || payload.pending => {
-                DecisionResult::Recheck(active.clone())
+                let mut recheck = active.clone();
+                recheck.request_sequence = recheck.request_sequence.saturating_add(1);
+                self.active = Some(recheck.clone());
+                DecisionResult::Recheck(recheck)
             }
             LifecycleDecision::Discard if payload.pending => {
-                DecisionResult::Recheck(active.clone())
+                let mut recheck = active.clone();
+                recheck.request_sequence = recheck.request_sequence.saturating_add(1);
+                self.active = Some(recheck.clone());
+                DecisionResult::Recheck(recheck)
             }
             LifecycleDecision::Allow
             | LifecycleDecision::Discard
