@@ -106,7 +106,7 @@ Generated from the public `LifecycleCoordinator` calls and `Machine::step` effec
 | `FrontendReady` | `NoOp` | `NoOp` | `true` | — |
 | `Begin(Close,true)` | `Asked` | `Asked` | `true` | — |
 | `NewWindow` | `NoOp` | `Other(no counterpart)` | `false` | No counterpart: D12 uses RecreationStarted/Finished |
-| `FrontendReady` | `NoOp` | `Reemit` | `false` | UNEXPLAINED |
+| `FrontendReady` | `NoOp` | `Reemit` | `false` | Coordinator: consequence of the unmapped `NewWindow` above, not a reachable divergence. The old coordinator had invalidated the attempt; the machine is still `Asking` because a window replacement during an ask goes through queued recreation (D13) and only then a new generation. With `NewWindow` mapped to `RecreationStarted` + `RecreationFinished{ok:true}` the ready would land in `AwaitingFrontend`/`Asking` of the new generation as designed. |
 | `Decide` | `Stale` | `Stale` | `true` | — |
 
 ### close_then_quit_supersedes_the_close_attempt
@@ -239,5 +239,5 @@ Generated from the public `LifecycleCoordinator` calls and `Machine::step` effec
 
 - Rows same: 79.
 - Different rows explained by a design decision or an explicit no-counterpart mapping: 23.
-- Unexplained rows: 1.
+- Unexplained rows: 0 (one row folded by the coordinator after the wave: see `new_window_invalidates_old_frontend_and_attempt`).
 - Old calls with no machine counterpart: `NewWindow` (D12 recreation event pair), `PrepareFrontendReemit` (machine re-emits on entry), `FrontendLost` (use generation-bound `FrontendUnready`), `StartRecovery` (Timeout owns dialog launch), `ArmExitBypass` (machine effect), `TakeExitBypass` (ExitRequested transition).
