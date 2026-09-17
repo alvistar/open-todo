@@ -9,6 +9,8 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+#[cfg(not(test))]
+use tauri_plugin_window_state::AppHandleExt as WindowStateAppHandleExt;
 
 const MAIN_WINDOW: &str = "main";
 
@@ -94,17 +96,38 @@ impl<R: Runtime> EffectRunner for TauriRunner<R> {
                 self.show_recovery_dialog(attempt, tx);
             }
             Effect::ShowWindow => self.show_window(),
-            Effect::Finalize(_) => {
-                log::debug!("lifecycle finalization is not wired yet");
-            }
+            Effect::Finalize(attempt) => self.finalize(attempt, tx),
             Effect::ArmExitBypass(generation) => {
                 log::debug!("lifecycle exit bypass armed for generation {generation}");
             }
             Effect::Exit => self.app.exit(0),
             Effect::AllowExit => log::debug!("lifecycle exit allowed"),
             Effect::PreventExit => log::debug!("lifecycle exit prevented"),
-            Effect::Recreate(_) => {
-                log::debug!("lifecycle recreation is not wired yet");
+            Effect::Recreate(id) => {
+                let app = self.app.clone();
+                let recreate = self.recreate.clone();
+                let thread_tx = tx.clone();
+                let spawn = thread::Builder::new()
+                    .name("lifecycle-recreate".into())
+                    .spawn(move || {
+                        let mut guard = RecreationGuard {
+                            tx: thread_tx,
+                            id,
+                            completed: false,
+                        };
+                        if let Err(error) = recreate(&app) {
+                            log::error!("could not recreate the main window: {error}");
+                            return;
+                        }
+                        send_event(
+                            &guard.tx,
+                            Event::RecreationFinished { id, ok: true },
+                        );
+                        guard.completed = true;
+                    });
+                if spawn.is_err() {
+                    send_event(tx, Event::RecreationFinished { id, ok: false });
+                }
             }
             Effect::ReplyToken(token) => log::debug!(
                 "lifecycle ready reply dropped for instance {} generation {}",
@@ -186,10 +209,86 @@ impl<R: Runtime> TauriRunner<R> {
                 );
             });
     }
+
+    fn finalize(&self, attempt: Attempt, tx: &Sender<Envelope>) {
+        let ok = match attempt.kind {
+            Kind::Close => {
+                match self.app.get_webview_window(MAIN_WINDOW) {
+                    Some(window) => {
+                        #[cfg(target_os = "macos")]
+                        {
+                            match window.hide() {
+                                Ok(()) => {
+                                    #[cfg(not(test))]
+                                    if let Err(error) = self
+                                        .app
+                                        .save_window_state(crate::WINDOW_STATE_FLAGS)
+                                    {
+                                        log::warn!("could not persist window geometry: {error}");
+                                    }
+                                    true
+                                }
+                                Err(error) => {
+                                    log::warn!("could not hide the main window: {error}");
+                                    false
+                                }
+                            }
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            window.destroy().is_ok()
+                        }
+                    }
+                    None => false,
+                }
+            }
+            Kind::Quit => {
+                send_event(
+                    tx,
+                    Event::Finalized {
+                        attempt: attempt.clone(),
+                        ok: true,
+                    },
+                );
+                self.app.exit(0);
+                return;
+            }
+        };
+        send_event(
+            tx,
+            Event::Finalized {
+                attempt,
+                ok,
+            },
+        );
+        if !ok {
+            self.emit_error("The main window could not be finalized.");
+        }
+    }
 }
 
 fn send_event(tx: &Sender<Envelope>, event: Event) {
     let _ = tx.send(Envelope { event, reply: None });
+}
+
+struct RecreationGuard {
+    tx: Sender<Envelope>,
+    id: RecreationId,
+    completed: bool,
+}
+
+impl Drop for RecreationGuard {
+    fn drop(&mut self) {
+        if !self.completed {
+            send_event(
+                &self.tx,
+                Event::RecreationFinished {
+                    id: self.id,
+                    ok: false,
+                },
+            );
+        }
+    }
 }
 
 fn recreate_main_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -331,6 +430,13 @@ mod tests {
         }
     }
 
+    fn quit_attempt() -> Attempt {
+        Attempt {
+            kind: Kind::Quit,
+            ..attempt()
+        }
+    }
+
     #[test]
     fn wire_attempt_round_trips_the_bridge_payload() {
         let attempt = Attempt {
@@ -453,6 +559,102 @@ mod tests {
             Event::Recovered {
                 attempt,
                 allow: false,
+            }
+        );
+    }
+
+    #[test]
+    // MockRuntime hard-codes `is_visible()` to true and `hide()` to a no-op;
+    // visibility is covered by the packaged smoke and the Q3 spike.
+    fn finalize_close_reports_success() {
+        let app = tauri::test::mock_app();
+        tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let mut runner = TauriRunner::new(app.handle().clone());
+        let (tx, rx) = mpsc::channel();
+        let attempt = attempt();
+
+        runner.run(Effect::Finalize(attempt.clone()), &tx);
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+            Event::Finalized {
+                attempt,
+                ok: true,
+            }
+        );
+    }
+
+    #[test]
+    fn finalize_without_main_reports_failure() {
+        let app = tauri::test::mock_app();
+        let mut runner = TauriRunner::new(app.handle().clone());
+        let (tx, rx) = mpsc::channel();
+        let attempt = attempt();
+
+        runner.run(Effect::Finalize(attempt.clone()), &tx);
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+            Event::Finalized {
+                attempt,
+                ok: false,
+            }
+        );
+    }
+
+    #[test]
+    fn finalize_quit_reports_before_requesting_exit() {
+        let app = tauri::test::mock_app();
+        let mut runner = TauriRunner::new(app.handle().clone());
+        let (tx, rx) = mpsc::channel();
+        let attempt = quit_attempt();
+
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runner.run(Effect::Finalize(attempt.clone()), &tx);
+        }));
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+            Event::Finalized {
+                attempt,
+                ok: true,
+            }
+        );
+    }
+
+    #[test]
+    fn schedule_timeout_sends_completion_after_configured_delay() {
+        let app = tauri::test::mock_app();
+        let mut runner = TauriRunner::new(app.handle().clone());
+        runner.ask_timeout = Duration::from_millis(10);
+        let (tx, rx) = mpsc::channel();
+        let attempt = attempt();
+
+        runner.run(Effect::ScheduleTimeout(attempt.clone()), &tx);
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+            Event::Timeout(attempt)
+        );
+    }
+
+    #[test]
+    fn recreation_panic_reports_failure_through_drop_guard() {
+        let app = tauri::test::mock_app();
+        let mut runner = TauriRunner::with_recreate(app.handle().clone(), |_| {
+            panic!("recreation failed in test");
+        });
+        let (tx, rx) = mpsc::channel();
+
+        runner.run(Effect::Recreate(RecreationId(4)), &tx);
+
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap().event,
+            Event::RecreationFinished {
+                id: RecreationId(4),
+                ok: false,
             }
         );
     }
