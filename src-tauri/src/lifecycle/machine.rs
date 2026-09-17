@@ -1730,12 +1730,110 @@ mod tests {
                     recreate_pending: false,
                 },
                 vec![
+                    Effect::ShowWindow,
                     Effect::EmitRequest {
                         attempt: attempt.clone(),
                         frontend: token,
                     },
                     Effect::ScheduleTimeout(attempt),
                 ],
+            )
+        );
+
+        let mut hidden_close_machine = Machine::new(1);
+        hidden_close_machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        hidden_close_machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        hidden_close_machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        hidden_close_machine.step(Event::Finalized {
+            attempt: Attempt {
+                id: 1,
+                generation: 1,
+                kind: Kind::Close,
+                sequence: 0,
+            },
+            ok: true,
+        });
+        let hidden_close = hidden_close_machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+
+        let mut hidden_quit_machine = Machine::new(1);
+        hidden_quit_machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        hidden_quit_machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        hidden_quit_machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        hidden_quit_machine.step(Event::Finalized {
+            attempt: Attempt {
+                id: 1,
+                generation: 1,
+                kind: Kind::Close,
+                sequence: 0,
+            },
+            ok: true,
+        });
+        let hidden_quit = hidden_quit_machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+        let close_attempt = Attempt {
+            id: 2,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+        let close_frontend = Token {
+            instance_id: "bridge".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (
+                hidden_close_machine.state(),
+                hidden_close,
+                hidden_quit_machine.state(),
+                hidden_quit,
+            ),
+            (
+                &State::Exiting {
+                    attempt: None,
+                    generation: 1,
+                },
+                vec![
+                    Effect::ShowWindow,
+                    Effect::EmitRequest {
+                        attempt: close_attempt.clone(),
+                        frontend: close_frontend,
+                    },
+                    Effect::ScheduleTimeout(close_attempt),
+                ],
+                &State::Exiting {
+                    attempt: None,
+                    generation: 1,
+                },
+                vec![Effect::ArmExitBypass(1), Effect::Exit],
             )
         );
     }
@@ -1797,6 +1895,57 @@ mod tests {
                         frontend: token,
                     },
                     Effect::ScheduleTimeout(attempt),
+                ],
+            )
+        );
+    }
+
+    #[test]
+    fn s1_failed_finalization_composes_recreation_with_queued_quit() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+        machine.step(Event::RecreationStarted);
+        machine.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: true,
+        });
+
+        let effects = machine.step(Event::Finalized {
+            attempt: Attempt {
+                id: 1,
+                generation: 1,
+                kind: Kind::Close,
+                sequence: 0,
+            },
+            ok: false,
+        });
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Recreating {
+                    id: RecreationId(1),
+                    reserved: 2,
+                    queued_quit: true,
+                    ready: None,
+                },
+                vec![
+                    Effect::EmitError("lifecycle finalization failed".into()),
+                    Effect::Recreate(RecreationId(1)),
+                    Effect::Log("queued"),
                 ],
             )
         );
@@ -2551,22 +2700,69 @@ mod tests {
             instance_id: "two".into(),
             generation: 1,
         };
-        assert_eq!(
-            (machine.state(), effects),
+        assert!(matches!(
+            (machine.state(), effects.as_slice()),
             (
                 &State::Recovering {
-                    attempt,
+                    attempt: Attempt {
+                        id: 1,
+                        generation: 1,
+                        kind: Kind::Close,
+                        sequence: 1,
+                    },
                     recreate_pending: false,
                 },
-                vec![Effect::ShowRecoveryDialog(Attempt {
-                    id: 1,
-                    generation: 1,
-                    kind: Kind::Close,
-                    sequence: 1,
-                })],
+                [
+                    Effect::EmitError(_),
+                    Effect::ShowRecoveryDialog(Attempt {
+                        id: 1,
+                        generation: 1,
+                        kind: Kind::Close,
+                        sequence: 1,
+                    }),
+                ],
+            )
+        ));
+        let _ = token;
+    }
+
+    #[test]
+    fn n3_transition_logs_use_table_reason_names() {
+        let mut idle = Machine::new(1);
+        let idle_exited = idle.step(Event::Exited);
+
+        let mut asking = Machine::new(1);
+        asking.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        asking.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let asking_exited = asking.step(Event::Exited);
+
+        let mut exiting = Machine::new(1);
+        exiting.step(Event::Begin {
+            kind: Kind::Quit,
+            window_exists: false,
+        });
+        let exiting_decide = exiting.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: false,
+            pending: false,
+        });
+
+        assert_eq!(
+            (idle_exited, asking_exited, exiting_decide),
+            (
+                vec![Effect::Log("unexpected")],
+                vec![Effect::Log("unexpected")],
+                vec![Effect::Log("stale")],
             )
         );
-        let _ = token;
     }
 
     #[test]
