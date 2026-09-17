@@ -19,7 +19,8 @@ sources:
 code_refs:
 - src/theme/tokens.css
 - src/ui/icons/paths.ts
-last_updated: 2026-09-16
+last_updated: 2026-09-17
+stale_after: 2026-12-17
 ---
 
 # Distinct brand and original assets
@@ -37,7 +38,7 @@ Teal avoids priority/date colour collisions. Indigo conflicted with blue/purple 
 Reusing red or leaving a temporary unbranded placeholder would preserve the wrong identity and require later redesign. Asset copying is prohibited, not an implementation shortcut.
 
 ## Consequences
-Measured geometry can guide implementation. Shipped CSS is authoritative for token values; DESIGN.md still flags the unresolved non-accent palette question, so this decision must not be read as settling it.
+Measured geometry can guide implementation. The shipped glyphs remain independently authored geometric path data on a 24×24 grid. Shipped CSS is authoritative for token values; DESIGN.md still flags the unresolved non-accent palette question, so this decision must not be read as settling it.
 
 ## Related
 - [Conventions](/project/conventions.md) — semantic token and asset rules

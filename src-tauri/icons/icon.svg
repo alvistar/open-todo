@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>open-todo</title>
+  <rect width="1024" height="1024" rx="224" fill="#0f766e"/>
+  <path d="M286 532c0-122 99-221 221-221 71 0 134 33 175 85" fill="none" stroke="#d1ebe7" stroke-width="86" stroke-linecap="round"/>
+  <path d="m454 552 91 91 196-212" fill="none" stroke="#fff" stroke-width="86" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

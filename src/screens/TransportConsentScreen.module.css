@@ -1,0 +1,109 @@
+.root {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg-secondary);
+}
+
+.card {
+  width: min(100%, 520px);
+  padding: 28px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-idle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+
+.icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  border-radius: 50%;
+  color: var(--schedule-overdue);
+  background: color-mix(in srgb, var(--schedule-overdue) 12%, transparent);
+}
+
+.title {
+  margin: 0 0 10px;
+  font: 700 22px / 28px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.body {
+  margin: 0 0 12px;
+  font: 400 14px / 21px var(--font-sans);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.body strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.secondary,
+.primary {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-base);
+  font: 600 13px / 34px var(--font-sans);
+}
+
+.secondary {
+  color: var(--accent);
+}
+
+.secondary:hover {
+  background: var(--hover-fill);
+}
+
+.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.primary:hover {
+  filter: brightness(1.08);
+}
+
+.error {
+  margin: 12px 0 0;
+  color: var(--schedule-overdue);
+  font: 400 13px / 19px var(--font-sans);
+}
+
+@media (max-width: 480px) {
+  .root {
+    padding: 16px;
+  }
+
+  .card {
+    padding: 20px;
+  }
+
+  .actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .secondary,
+  .primary {
+    width: 100%;
+    justify-content: center;
+  }
+}

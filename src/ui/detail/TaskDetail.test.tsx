@@ -2,8 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskPatch } from "../../api/endpoints";
 import type { Task, TaskReminder } from "../../api/types";
+import { getDraftSummary } from "../../lifecycle/drafts";
 import { dueDateFromPhrase } from "../../model/duePhrase";
 import { titleEdit } from "../../model/titleEdit";
+import { OverlayStackProvider } from "../overlayStack";
 import type { LabelChange } from "./pickers";
 import { TaskDetail } from "./TaskDetail";
 
@@ -92,28 +94,30 @@ function open(over: Partial<Task> = {}, extra: Extras = {}) {
   const onAddComment = extra.onAddComment ?? vi.fn(async () => {});
   const onAddSubtask = extra.onAddSubtask ?? vi.fn(async () => {});
   render(
-    <TaskDetail
-      task={task(over)}
-      projectName="Work"
-      projects={PROJECTS}
-      readDuePhrase={readDuePhrase}
-      now={NOW}
-      timeZone="Europe/Rome"
-      defaultDueTime={null}
-      onClose={onClose}
-      onSave={onSave}
-      onSaveReminders={onSaveReminders}
-      allLabels={ALL_LABELS}
-      onChangeLabel={onChangeLabel}
-      readTitleEdit={readTitleEdit}
-      onSaveTitle={onSaveTitle}
-      comments={COMMENTS}
-      commentsLoading={false}
-      onAddComment={onAddComment}
-      onAddSubtask={onAddSubtask}
-      {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
-      {...(extra.onNext ? { onNext: extra.onNext } : {})}
-    />,
+    <OverlayStackProvider>
+      <TaskDetail
+        task={task(over)}
+        projectName="Work"
+        projects={PROJECTS}
+        readDuePhrase={readDuePhrase}
+        now={NOW}
+        timeZone="Europe/Rome"
+        defaultDueTime={null}
+        onClose={onClose}
+        onSave={onSave}
+        onSaveReminders={onSaveReminders}
+        allLabels={ALL_LABELS}
+        onChangeLabel={onChangeLabel}
+        readTitleEdit={readTitleEdit}
+        onSaveTitle={onSaveTitle}
+        comments={COMMENTS}
+        commentsLoading={false}
+        onAddComment={onAddComment}
+        onAddSubtask={onAddSubtask}
+        {...(extra.onPrev ? { onPrev: extra.onPrev } : {})}
+        {...(extra.onNext ? { onNext: extra.onNext } : {})}
+      />
+    </OverlayStackProvider>,
   );
   return {
     onClose,
@@ -141,26 +145,28 @@ describe("the dialog frame", () => {
     outside.focus();
 
     const { unmount } = render(
-      <TaskDetail
-        task={task()}
-        projectName="Work"
-        projects={PROJECTS}
-        readDuePhrase={readDuePhrase}
-        now={NOW}
-        timeZone="Europe/Rome"
-        defaultDueTime={null}
-        onClose={vi.fn()}
-        onSave={vi.fn(async () => {})}
-        onSaveReminders={vi.fn(async () => {})}
-        allLabels={ALL_LABELS}
-        onChangeLabel={vi.fn(async () => {})}
-        readTitleEdit={readTitleEdit}
-        onSaveTitle={vi.fn(async () => {})}
-        comments={[]}
-        commentsLoading={false}
-        onAddComment={vi.fn(async () => {})}
-        onAddSubtask={vi.fn(async () => {})}
-      />,
+      <OverlayStackProvider>
+        <TaskDetail
+          task={task()}
+          projectName="Work"
+          projects={PROJECTS}
+          readDuePhrase={readDuePhrase}
+          now={NOW}
+          timeZone="Europe/Rome"
+          defaultDueTime={null}
+          onClose={vi.fn()}
+          onSave={vi.fn(async () => {})}
+          onSaveReminders={vi.fn(async () => {})}
+          allLabels={ALL_LABELS}
+          onChangeLabel={vi.fn(async () => {})}
+          readTitleEdit={readTitleEdit}
+          onSaveTitle={vi.fn(async () => {})}
+          comments={[]}
+          commentsLoading={false}
+          onAddComment={vi.fn(async () => {})}
+          onAddSubtask={vi.fn(async () => {})}
+        />
+      </OverlayStackProvider>,
     );
     expect(screen.getByLabelText("Close")).toHaveFocus();
 
@@ -173,6 +179,23 @@ describe("the dialog frame", () => {
     const { onClose } = open();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("keeps an edited title open for Escape, but closes from a button", () => {
+    const { onClose } = open();
+    fireEvent.click(screen.getByRole("button", { name: "Edit the task name" }));
+    const title = screen.getByRole("textbox", { name: "Edit the task name" });
+    fireEvent.change(title, { target: { value: "Water everything" } });
+
+    fireEvent.keyDown(title, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(title).toHaveValue("Water everything");
+
+    const close = screen.getByRole("button", { name: "Close" });
+    close.focus();
+    fireEvent.keyDown(close, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("closes on the backdrop", () => {
@@ -336,6 +359,26 @@ describe("editing the name and the description", () => {
     expect(screen.getByLabelText("Edit the task name")).toHaveValue("kept");
   });
 
+  it("disables Cancel while an editor save is in flight", () => {
+    let finish!: () => void;
+    const onSaveTitle = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    open({}, { onSaveTitle });
+
+    fireEvent.click(screen.getByLabelText("Edit the task name"));
+    fireEvent.change(screen.getByLabelText("Edit the task name"), {
+      target: { value: "keep this" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(screen.getByText("Cancel")).toBeDisabled();
+    finish();
+  });
+
   it("saves the description as the minimal HTML Vikunja stores", async () => {
     const onSave = vi.fn(async () => {});
     open({ description: "<p>old</p>" }, { onSave });
@@ -386,6 +429,26 @@ describe("the sidebar pickers", () => {
     fireEvent.click(screen.getByRole("button", { name: "P1" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ priority: 4 }));
+  });
+
+  it("reports a picker write as pending and keeps the detail open", async () => {
+    let finish!: () => void;
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { onClose } = open({ priority: 0 }, { onSave });
+    openPicker("Priority");
+    fireEvent.click(screen.getByRole("button", { name: "P1" }));
+
+    await waitFor(() => expect(getDraftSummary().pending).toBe(true));
+    fireEvent.click(screen.getByLabelText("Close the task"));
+    expect(onClose).not.toHaveBeenCalled();
+
+    finish();
+    await waitFor(() => expect(getDraftSummary().pending).toBe(false));
   });
 
   it("moves the task to the project that was picked", async () => {
@@ -629,26 +692,28 @@ describe("the label picker", () => {
 
   it("tells an instance with no labels how to get one", () => {
     render(
-      <TaskDetail
-        task={task()}
-        projectName="Work"
-        projects={PROJECTS}
-        readDuePhrase={readDuePhrase}
-        now={NOW}
-        timeZone="Europe/Rome"
-        defaultDueTime={null}
-        onClose={vi.fn()}
-        onSave={vi.fn(async () => {})}
-        onSaveReminders={vi.fn(async () => {})}
-        allLabels={[]}
-        onChangeLabel={vi.fn(async () => {})}
-        readTitleEdit={readTitleEdit}
-        onSaveTitle={vi.fn(async () => {})}
-        comments={[]}
-        commentsLoading={false}
-        onAddComment={vi.fn(async () => {})}
-        onAddSubtask={vi.fn(async () => {})}
-      />,
+      <OverlayStackProvider>
+        <TaskDetail
+          task={task()}
+          projectName="Work"
+          projects={PROJECTS}
+          readDuePhrase={readDuePhrase}
+          now={NOW}
+          timeZone="Europe/Rome"
+          defaultDueTime={null}
+          onClose={vi.fn()}
+          onSave={vi.fn(async () => {})}
+          onSaveReminders={vi.fn(async () => {})}
+          allLabels={[]}
+          onChangeLabel={vi.fn(async () => {})}
+          readTitleEdit={readTitleEdit}
+          onSaveTitle={vi.fn(async () => {})}
+          comments={[]}
+          commentsLoading={false}
+          onAddComment={vi.fn(async () => {})}
+          onAddSubtask={vi.fn(async () => {})}
+        />
+      </OverlayStackProvider>,
     );
     fireEvent.click(screen.getByLabelText("Labels: change"));
 
@@ -803,33 +868,35 @@ describe("comments", () => {
 
   it("says when a comment was written with formatting it cannot show", () => {
     render(
-      <TaskDetail
-        task={task()}
-        projectName="Work"
-        projects={PROJECTS}
-        readDuePhrase={readDuePhrase}
-        now={NOW}
-        timeZone="Europe/Rome"
-        defaultDueTime={null}
-        onClose={vi.fn()}
-        onSave={vi.fn(async () => {})}
-        onSaveReminders={vi.fn(async () => {})}
-        allLabels={ALL_LABELS}
-        onChangeLabel={vi.fn(async () => {})}
-        readTitleEdit={readTitleEdit}
-        onSaveTitle={vi.fn(async () => {})}
-        comments={[
-          {
-            id: 9,
-            comment: '<p>See <a href="https://x">this</a></p>',
-            created: "2026-09-08T09:30:00Z",
-            updated: "2026-09-08T09:30:00Z",
-          },
-        ]}
-        commentsLoading={false}
-        onAddComment={vi.fn(async () => {})}
-        onAddSubtask={vi.fn(async () => {})}
-      />,
+      <OverlayStackProvider>
+        <TaskDetail
+          task={task()}
+          projectName="Work"
+          projects={PROJECTS}
+          readDuePhrase={readDuePhrase}
+          now={NOW}
+          timeZone="Europe/Rome"
+          defaultDueTime={null}
+          onClose={vi.fn()}
+          onSave={vi.fn(async () => {})}
+          onSaveReminders={vi.fn(async () => {})}
+          allLabels={ALL_LABELS}
+          onChangeLabel={vi.fn(async () => {})}
+          readTitleEdit={readTitleEdit}
+          onSaveTitle={vi.fn(async () => {})}
+          comments={[
+            {
+              id: 9,
+              comment: '<p>See <a href="https://x">this</a></p>',
+              created: "2026-09-08T09:30:00Z",
+              updated: "2026-09-08T09:30:00Z",
+            },
+          ]}
+          commentsLoading={false}
+          onAddComment={vi.fn(async () => {})}
+          onAddSubtask={vi.fn(async () => {})}
+        />
+      </OverlayStackProvider>,
     );
 
     expect(screen.getByText(/formatting open-todo cannot show/)).toBeInTheDocument();

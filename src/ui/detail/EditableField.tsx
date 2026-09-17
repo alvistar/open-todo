@@ -1,4 +1,5 @@
 import { type ReactNode, useRef, useState } from "react";
+import { useDraftSource } from "../../lifecycle/drafts";
 import styles from "./EditableField.module.css";
 
 /**
@@ -103,6 +104,8 @@ function Editor({
   const [saving, setSaving] = useState(false);
   const focused = useRef(false);
 
+  useDraftSource(`editable:${label}`, label, draft !== initial, saving);
+
   /** Focus once, on the node itself, without an effect that outlives it. */
   const takeFocus = (node: HTMLTextAreaElement | HTMLInputElement | null) => {
     if (!node || focused.current) return;
@@ -176,6 +179,7 @@ function Editor({
         <button
           type="button"
           className={`${styles.button} ${styles.cancel}`}
+          disabled={saving}
           onClick={onClose}
         >
           Cancel

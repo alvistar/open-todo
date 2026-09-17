@@ -1,15 +1,26 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { http } from "../api/client";
 import { getInfo, getUser, login } from "../api/endpoints";
-import { isUnauthorized } from "../api/errors";
+import { VikunjaError } from "../api/errors";
 import { createHttp, normalizeBaseUrl } from "../api/http";
 import { logOut, setToken } from "../auth/authStore";
 import { isTotpRequired } from "../auth/totp";
-import { baseUrlValue, useBaseUrl } from "../settings/settingsStore";
+import { useDraftSource } from "../lifecycle/drafts";
+import { clearBaseUrl, setBaseUrl, useBaseUrl } from "../settings/settingsStore";
+import {
+  acceptTransportRisk,
+  clearTransportRisk,
+  requiresTransportConsent,
+  serverOrigin,
+  useTransportConsent,
+} from "../settings/transportPolicy";
 import { Icon } from "../ui/icons/Icon";
 import styles from "./SetupScreen.module.css";
 
 function errorMessage(error: unknown): string {
+  if (error instanceof SyntaxError) {
+    return "Could not verify the credential: the server returned invalid JSON.";
+  }
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
@@ -29,6 +40,8 @@ function ServerStep({ onDone }: { onDone: (url: string, version: string) => void
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useDraftSource("server-setup", "Server setup", url.trim().length > 0, busy);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -82,7 +95,7 @@ function ServerStep({ onDone }: { onDone: (url: string, version: string) => void
 }
 
 /** Step 2: a credential — username/password, or a pasted API token. */
-function LoginStep({
+export function LoginStep({
   baseUrl,
   initialVersion,
 }: {
@@ -98,11 +111,44 @@ function LoginStep({
   const [apiToken, setApiToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const consentOrigin = useTransportConsent();
+  const insecure = requiresTransportConsent(baseUrl);
+  const origin = serverOrigin(baseUrl);
+  const transportApproved = !insecure || origin === consentOrigin;
+  const loginDirty =
+    username.trim().length > 0 ||
+    password.length > 0 ||
+    totp.trim().length > 0 ||
+    apiToken.trim().length > 0;
+
+  useDraftSource("login", "Login", loginDirty, busy);
 
   const canSubmit =
     mode === "password"
-      ? username.trim() !== "" && password !== ""
-      : apiToken.trim() !== "";
+      ? username.trim() !== "" && password !== "" && transportApproved
+      : apiToken.trim() !== "" && transportApproved;
+
+  const allowHttp = () => {
+    const result = acceptTransportRisk(baseUrl);
+    if (!result.persisted && !serverOrigin(baseUrl)) {
+      setError("That server address is not a valid HTTP origin.");
+    }
+  };
+
+  /* Keep this branch explicit: an HTTP login body is sensitive even though the
+     request is anonymous and has no Authorization header. */
+  const transportWarning =
+    insecure && !transportApproved ? (
+      <div className={styles.transportWarning} role="alert">
+        <p>
+          This server uses unencrypted HTTP. Credentials and task data can be read by
+          anyone observing the network.
+        </p>
+        <button type="button" className={styles.transportButton} onClick={allowHttp}>
+          Use HTTP for {origin ?? baseUrl}
+        </button>
+      </div>
+    ) : null;
 
   // On a reload the URL is already stored, so re-probe to show the version.
   useEffect(() => {
@@ -160,11 +206,10 @@ function LoginStep({
       await getUser(probe);
       setToken(candidate);
     } catch (e) {
-      // 401 means the credential was rejected. Anything else - notably a 403
-      // from a scoped API token that may read tasks but not /user - means it
-      // authenticated fine, so it is accepted; the app already tolerates
-      // /user failing (see queries/useVikunja.ts).
-      if (!isUnauthorized(e)) {
+      // A scoped token may read tasks but not /user, so a 403 is the one
+      // explicitly retained limited-token exception. Network errors, 5xx
+      // responses and malformed bodies do not prove that the credential works.
+      if (e instanceof VikunjaError && e.status === 403) {
         setToken(candidate);
         return;
       }
@@ -183,6 +228,8 @@ function LoginStep({
         {baseUrl}
         {version ? ` · ${displayVersion(version)}` : ""}
       </p>
+
+      {transportWarning}
 
       <div className={styles.tabs}>
         <button
@@ -270,8 +317,9 @@ function LoginStep({
           // token in the gate, so typing a new host would skip the login form
           // entirely and send the previous server's bearer token to whatever
           // was typed - including a typo.
+          clearTransportRisk();
           logOut();
-          baseUrlValue.clear();
+          clearBaseUrl();
         }}
       >
         Use a different server
@@ -293,7 +341,7 @@ export function SetupScreen() {
           <ServerStep
             onDone={(url, probedVersion) => {
               setVersion(probedVersion);
-              baseUrlValue.set(url);
+              setBaseUrl(url);
             }}
           />
         )}

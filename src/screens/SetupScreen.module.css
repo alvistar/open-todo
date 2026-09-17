@@ -136,3 +136,39 @@
   background: var(--selected-fill);
   color: var(--selected-text);
 }
+
+.transportWarning {
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--schedule-overdue) 35%, var(--border-idle));
+  border-radius: var(--radius-base);
+  background: color-mix(in srgb, var(--schedule-overdue) 10%, var(--bg-primary));
+}
+
+.transportWarning p {
+  margin: 0 0 10px;
+  font: 400 12px / 18px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.transportButton {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-base);
+  color: var(--schedule-overdue);
+  font: 600 12px / 30px var(--font-sans);
+}
+
+.transportButton:hover {
+  background: color-mix(in srgb, var(--schedule-overdue) 14%, transparent);
+}
+
+@media (max-width: 480px) {
+  .root {
+    padding: 16px;
+  }
+
+  .card {
+    padding: 20px;
+  }
+}

@@ -8,6 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A Tauri desktop shell.** The existing React/Vite app can be developed with
+  `pnpm desktop:dev` and bundled from local `dist/` files with
+  `pnpm desktop:build`. The shell uses the stable `com.alvistar.open-todo`
+  identity, standard window decorations, an original open-todo icon, and
+  VERSION-derived native metadata. macOS is the first target; public signing,
+  notarization, installers and Windows/Linux runtime validation remain deferred.
+- **Desktop window safety.** Size and position are restored through Tauri's
+  official window-state plugin; invalid or off-monitor geometry falls back to a
+  centred usable window. The single-instance plugin activates one main window,
+  macOS close hides it for Dock/subsequent-launch reopening, and Command-Q
+  exits through the same guarded lifecycle path. A Rust coordinator owns every
+  close and quit: each attempt carries an id and a window generation, a quit
+  supersedes a pending close, a decision is finalised only if nothing newer
+  started meanwhile, a missing window is recreated on a separate thread and
+  never twice, and Command-Q with the window hidden exits directly. Unsaved
+  drafts and in-flight writes (editors, comments, sub-tasks, quick-add, pickers,
+  completion, setup) are registered in one shared registry, so closing or
+  quitting asks first; a pending save offers Stay or an explicit Exit anyway.
+  Verified on the packaged macOS app: second launch keeps one process, close
+  hides while the process lives, Command-Q then quits without a dialog.
+- **Responsive shared layouts.** At narrow widths the 280px sidebar overlays
+  the content with a dimmed backdrop and a toggle, task detail stacks and
+  scrolls, and quick-add/setup actions wrap without changing the browser path.
+  Escape is owned by one explicit overlay stack (picker above dialog above
+  sidebar): it closes the topmost layer only, a dialog declines it while you are
+  typing in a field, and the sidebar returns focus to its toggle.
+- **HTTP transport consent and redirect rejection.** HTTPS remains the default;
+  an explicitly configured HTTP origin needs an origin-bound confirmation before
+  any credential header or login body is sent. Requests reject redirects rather
+  than forwarding credentials to a destination that was not configured.
+- **Visible critical storage outcomes.** Server, credential and HTTP-consent
+  persistence now report failed writes/removals without pretending that a
+  restart will retain the value. Logout still ends the in-memory session even
+  when durable removal needs a retry.
 - **You can open a task.** Enter on a focused row, or a click, opens the detail
   at the geometry measured in `docs/layout-specs.md` §4: the project it belongs
   to, its description, its sub-tasks, and its date, priority, labels and
@@ -458,6 +492,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WebSocket task events runs in parallel, off the critical path.
 
 ### Known gaps
+- **Desktop shell (2026-09-17, three independent review passes in
+  `docs/designs/tauri-desktop-shell-review*.md`).** Open races in the native
+  lifecycle coordinator, none reproduced in the packaged app: a Command-Q that
+  lands in the milliseconds while an authorised close is hiding the window can
+  be dropped; a second request arriving while the bridge's answer to the first
+  is in flight can be cleared before it renders; a window recreation can
+  invalidate a decision the user already gave; an old timeout can clear the
+  readiness of a bridge that remounted. Still to do on the UI side: a picker
+  dismissed by Escape does not return focus and can hide a failed write; a
+  detail unmounted by view reconciliation drops its pending write from the
+  registry; the closed narrow sidebar is not `inert`; the geometry check
+  accepts a window with one pixel on a monitor. Detached native threads have
+  no cancellation on exit.
+- Only the packaged macOS app has been launched, closed, reopened and quit
+  with Vite stopped; signing in, the WebView transport (HTTP consent, CORS,
+  TLS, redirects) and storage-failure behaviour in the packaged WebView, monitor
+  changes and sleep/wake are unverified. Windows and Linux are portable source
+  only. The DMG step of `pnpm desktop:build` failed once in `bundle_dmg.sh`
+  on a repeated build (the `.app` was produced) and succeeded on the next run;
+  the cause was not identified.
 - Read-only: no task creation, editing, completion or reordering yet. The
   checkboxes render priority but do not toggle.
 - The TOTP error shape has not been seen against a real TOTP-enabled account;

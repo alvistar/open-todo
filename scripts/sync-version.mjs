@@ -1,16 +1,19 @@
 #!/usr/bin/env node
-// VERSION at the repo root is the single source of truth for the app version.
-// package.json's "version" is derived from it and must never be hand-edited.
+// VERSION at the repo root is the single source of truth for every web and
+// desktop version claim. The package and native metadata are derived from it.
 //
-//   node scripts/sync-version.mjs          write VERSION into package.json
-//   node scripts/sync-version.mjs --check  exit 1 if they disagree
-import { readFileSync, writeFileSync } from "node:fs";
+//   node scripts/sync-version.mjs          write VERSION into metadata
+//   node scripts/sync-version.mjs --check  exit 1 if any metadata disagrees
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const versionPath = join(root, "VERSION");
-const pkgPath = join(root, "package.json");
+const packagePath = join(root, "package.json");
+const tauriConfigPath = join(root, "src-tauri", "tauri.conf.json");
+const cargoPath = join(root, "src-tauri", "Cargo.toml");
+const cargoLockPath = join(root, "src-tauri", "Cargo.lock");
 
 const version = readFileSync(versionPath, "utf8").trim();
 if (!/^\d+\.\d+\.\d+$/.test(version)) {
@@ -18,27 +21,65 @@ if (!/^\d+\.\d+\.\d+$/.test(version)) {
   process.exit(1);
 }
 
-const raw = readFileSync(pkgPath, "utf8");
-const pkg = JSON.parse(raw);
 const check = process.argv.includes("--check");
+const mismatches = [];
 
-if (pkg.version === version) {
-  if (check) console.log(`version ok: ${version}`);
-  process.exit(0);
+function checkJsonVersion(path, label) {
+  if (!existsSync(path)) return;
+  const raw = readFileSync(path, "utf8");
+  const parsed = JSON.parse(raw);
+  if (parsed.version !== version) mismatches.push(`${label} is ${parsed.version}`);
+  if (check) return;
+  if (parsed.version === version) return;
+  const updated = raw.replace(
+    /("version"\s*:\s*")[^"]*(")/,
+    (_match, prefix, suffix) => `${prefix}${version}${suffix}`,
+  );
+  writeFileSync(path, updated);
+  console.log(`${label} ${parsed.version} -> ${version}`);
 }
 
-if (check) {
+function checkCargoLockVersion(path) {
+  if (!existsSync(path)) return;
+  const raw = readFileSync(path, "utf8");
+  const match = raw.match(/(\[\[package\]\]\nname = "open-todo"\nversion = ")([^"]+)(")/);
+  if (!match) {
+    console.error(`Could not find the open-todo package in ${path}`);
+    process.exit(1);
+  }
+  const current = match[2];
+  if (current !== version) mismatches.push(`src-tauri/Cargo.lock is ${current}`);
+  if (check || current === version) return;
+  writeFileSync(path, raw.replace(match[0], `${match[1]}${version}${match[3]}`));
+  console.log(`src-tauri/Cargo.lock ${current} -> ${version}`);
+}
+
+function checkCargoVersion(path) {
+  if (!existsSync(path)) return;
+  const raw = readFileSync(path, "utf8");
+  const match = raw.match(/(^\[package\][\s\S]*?^version\s*=\s*")([^"]+)(")/m);
+  if (!match) {
+    console.error(`Could not find the [package] version in ${path}`);
+    process.exit(1);
+  }
+  const current = match[2];
+  if (current !== version) mismatches.push(`src-tauri/Cargo.toml is ${current}`);
+  if (check || current === version) return;
+  writeFileSync(path, raw.replace(match[0], `${match[1]}${version}${match[3]}`));
+  console.log(`src-tauri/Cargo.toml ${current} -> ${version}`);
+}
+
+checkJsonVersion(packagePath, "package.json version");
+checkJsonVersion(tauriConfigPath, "src-tauri/tauri.conf.json version");
+checkCargoVersion(cargoPath);
+checkCargoLockVersion(cargoLockPath);
+
+if (check && mismatches.length > 0) {
   console.error(
-    `version drift: VERSION is ${version} but package.json is ${pkg.version}.\n` +
-      `Run "pnpm version:sync" (edit VERSION, never package.json).`,
+    `version drift: VERSION is ${version}, but ${mismatches.join("; ")}.\n` +
+      'Run "pnpm version:sync" (edit VERSION, never generated metadata).',
   );
   process.exit(1);
 }
 
-// Rewrite in place so the key order and formatting of package.json survive.
-const updated = raw.replace(
-  /("version"\s*:\s*")[^"]*(")/,
-  (_m, a, b) => `${a}${version}${b}`,
-);
-writeFileSync(pkgPath, updated);
-console.log(`package.json version ${pkg.version} -> ${version}`);
+if (check) console.log(`version ok: ${version}`);

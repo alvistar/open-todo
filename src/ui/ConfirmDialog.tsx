@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import styles from "./ConfirmDialog.module.css";
+import { useOverlayLayer } from "./overlayStack";
 
 export interface ConfirmDialogProps {
   title: string;
@@ -24,6 +25,7 @@ export function ConfirmDialog({
   // parent recreates on every render.
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
+  useOverlayLayer("dialog", () => onCancelRef.current());
 
   /*
    * Focus on mount, once. With `onCancel` in the dependency list this re-ran on
@@ -35,17 +37,6 @@ export function ConfirmDialog({
     const previous = document.activeElement as HTMLElement | null;
     confirmRef.current?.focus();
     return () => previous?.focus?.();
-  }, []);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCancelRef.current();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   return (

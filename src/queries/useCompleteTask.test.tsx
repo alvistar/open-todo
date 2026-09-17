@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { type ReactNode, StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Task } from "../api/types";
+import { getDraftSummary } from "../lifecycle/drafts";
 import { LINGER_MS, useCompleteTask } from "./useCompleteTask";
 
 const updateTask = vi.hoisted(() => vi.fn());
@@ -58,6 +59,19 @@ afterEach(() => {
 });
 
 describe("completing a plain task", () => {
+  it("reports a completion write as pending until the server answers", async () => {
+    updateTask.mockImplementation(() => new Promise<Task>(() => {}));
+    const { result, unmount } = setup();
+    act(() => result.current.toggle(task(), 2));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(getDraftSummary().pending).toBe(true);
+    unmount();
+    expect(getDraftSummary().pending).toBe(false);
+  });
+
   it("marks it pending the moment it is clicked, before the server answers", () => {
     const { result } = setup();
     act(() => result.current.toggle(task(), 2));

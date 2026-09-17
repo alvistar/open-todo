@@ -5,6 +5,10 @@ dist/
 .vite/
 coverage/
 
+# Native Tauri build output and generated capability schemas.
+src-tauri/target/
+src-tauri/gen/
+
 # Written and removed by scripts/quickadd-corpus-diff.mjs.
 src/model/quickadd/.datePhrase.baseline.tmp.ts
 .gstack/

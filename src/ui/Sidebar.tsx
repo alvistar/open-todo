@@ -1,5 +1,6 @@
 import { Icon } from "./icons/Icon";
 import { NavRow } from "./NavRow";
+import { useCloseSidebar } from "./Shell";
 import styles from "./Sidebar.module.css";
 
 export interface SidebarProject {
@@ -31,8 +32,14 @@ export function Sidebar({
   onLogOut,
   onAddTask,
 }: SidebarProps) {
+  const closeSidebar = useCloseSidebar();
+  const select = (route: string) => {
+    onSelect(route);
+    closeSidebar();
+  };
+
   return (
-    <nav className={styles.root} aria-label="Views and projects">
+    <nav id="open-todo-sidebar" className={styles.root} aria-label="Views and projects">
       <div className={styles.account}>
         <span className={styles.accountName}>{userName}</span>
         <div className={styles.accountActions}>
@@ -57,7 +64,7 @@ export function Sidebar({
           icon="search"
           label="Search"
           selected={selected === "search"}
-          onSelect={() => onSelect("search")}
+          onSelect={() => select("search")}
         />
         <NavRow
           icon="inbox"
@@ -65,7 +72,7 @@ export function Sidebar({
           accentCount
           {...(inboxCount === undefined ? {} : { count: inboxCount })}
           selected={selected === "inbox"}
-          onSelect={() => onSelect("inbox")}
+          onSelect={() => select("inbox")}
         />
         <NavRow
           icon="today"
@@ -73,19 +80,19 @@ export function Sidebar({
           accentCount
           {...(todayCount === undefined ? {} : { count: todayCount })}
           selected={selected === "today"}
-          onSelect={() => onSelect("today")}
+          onSelect={() => select("today")}
         />
         <NavRow
           icon="upcoming"
           label="Upcoming"
           selected={selected === "upcoming"}
-          onSelect={() => onSelect("upcoming")}
+          onSelect={() => select("upcoming")}
         />
         <NavRow
           icon="labels"
           label="Filters & labels"
           selected={selected === "labels"}
-          onSelect={() => onSelect("labels")}
+          onSelect={() => select("labels")}
         />
       </ul>
 
@@ -112,7 +119,7 @@ export function Sidebar({
               {...(project.color ? { iconColor: project.color } : {})}
               {...(project.count === undefined ? {} : { count: project.count })}
               selected={selected === `project/${project.id}`}
-              onSelect={() => onSelect(`project/${project.id}`)}
+              onSelect={() => select(`project/${project.id}`)}
             />
           ))}
         </ul>

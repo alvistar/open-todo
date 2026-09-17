@@ -19,7 +19,8 @@ code_refs:
 - src/api/endpoints.ts
 - src/queries/useUpdateTask.ts
 - src/queries/useCompleteTask.ts
-last_updated: 2026-09-16
+last_updated: 2026-09-17
+stale_after: 2026-12-17
 ---
 
 # Named-field task writes

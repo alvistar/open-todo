@@ -18,7 +18,8 @@ code_refs:
 - src/api/write.test.ts
 - src/queries/useUpdateTask.ts
 - src/ui/detail/TaskDetail.test.tsx
-last_updated: 2026-09-16
+last_updated: 2026-09-17
+stale_after: 2026-12-17
 ---
 
 # Add a task mutation

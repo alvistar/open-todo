@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { NetworkError, UnauthorizedError, VikunjaError } from "./errors";
+import {
+  InsecureTransportError,
+  NetworkError,
+  UnauthorizedError,
+  VikunjaError,
+} from "./errors";
 import { apiUrl, createHttp, normalizeBaseUrl } from "./http";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -52,6 +57,7 @@ describe("createHttp", () => {
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://vikunja.example/api/v1/user?filter=done+%3D+false&page=2");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
+    expect(init.redirect).toBe("error");
   });
 
   it("omits the Authorization header for an anonymous request", async () => {
@@ -67,6 +73,49 @@ describe("createHttp", () => {
     expect(headers.Authorization).toBeUndefined();
     expect(headers["Content-Type"]).toBe("application/json");
     expect(init.body).toBe(JSON.stringify({ username: "a" }));
+  });
+
+  it("allows an anonymous HTTP probe with no credential body", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ version: "2.5.0" }));
+    await http(fetchImpl as unknown as typeof fetch, {
+      getBaseUrl: () => "http://vikunja.lan:3456",
+      getToken: () => null,
+    }).request("/info", { anonymous: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks credential headers before an HTTP request without consent", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ id: 1 }));
+    await expect(
+      http(fetchImpl as unknown as typeof fetch, {
+        getBaseUrl: () => "http://vikunja.lan:3456",
+      }).request("/user"),
+    ).rejects.toBeInstanceOf(InsecureTransportError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("blocks an anonymous login body before an HTTP request without consent", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ token: "t" }));
+    await expect(
+      http(fetchImpl as unknown as typeof fetch, {
+        getBaseUrl: () => "http://vikunja.lan:3456",
+        getToken: () => null,
+      }).request("/login", {
+        method: "POST",
+        anonymous: true,
+        body: { username: "a", password: "secret" },
+      }),
+    ).rejects.toBeInstanceOf(InsecureTransportError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("can override transport consent in a focused test", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ id: 1 }));
+    await http(fetchImpl as unknown as typeof fetch, {
+      getBaseUrl: () => "http://vikunja.lan:3456",
+      allowSensitiveRequest: () => true,
+    }).request("/user");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("turns a Vikunja error body into a VikunjaError carrying its code", async () => {

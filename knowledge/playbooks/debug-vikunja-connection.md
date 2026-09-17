@@ -20,7 +20,8 @@ code_refs:
 - src/api/endpoints.test.ts
 - src/live/PollingSource.test.ts
 - src/screens/SetupScreen.tsx
-last_updated: 2026-09-16
+last_updated: 2026-09-17
+stale_after: 2026-12-17
 ---
 
 # Debug a Vikunja connection
@@ -30,7 +31,7 @@ Browser fetch uses the same failure path for CORS, offline and DNS. Cross-origin
 
 ## Steps
 1. Check the configured instance URL and page/API schemes; the client targets /api/v1 and GET /tasks, not /tasks/all.
-2. Probe `/api/v1/info` without a credential and inspect the browser network failure. Ask the instance operator to verify the actual SPA origin in cors.origins; do not change custody architecture to mask configuration.
+2. Probe `/api/v1/info` without a credential and inspect the browser network failure. Ask the instance operator to verify the actual SPA origin in cors.origins; do not change custody architecture to mask configuration. For an HTTP instance, this anonymous probe is allowed, but login bodies and credential-bearing requests wait for consent tied to the exact origin; redirects are rejected, so use the final server URL.
 3. Distinguish an anonymous /info or /login 401 from an authenticated 401, which clears the stored credential. Never print a token while inspecting requests.
 4. If lists stop at 50, inspect the page walk: short pages terminate, hidden total-pages headers must not. If departures take a full cadence, ensure incremental filters contain only the updated window.
 5. Run `pnpm test src/api/http.test.ts src/api/endpoints.test.ts src/live/PollingSource.test.ts`. For an authorised live read-only check, use the separate integration command in CLAUDE.md; leave the write flag unset. No live server call or timing measurement was made during setup.

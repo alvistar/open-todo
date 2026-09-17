@@ -1,6 +1,8 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useDraftSource } from "../../lifecycle/drafts";
 import { Icon } from "../icons/Icon";
 import type { IconName } from "../icons/paths";
+import { useOverlayLayer } from "../overlayStack";
 import styles from "./PickerField.module.css";
 
 /**
@@ -45,6 +47,9 @@ export function PickerField<TChange>({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  useDraftSource(`picker:${label}`, label, false, busy);
+  useOverlayLayer("picker", () => setOpen(false), open);
 
   useEffect(() => {
     if (!open) return;

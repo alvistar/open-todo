@@ -2,7 +2,7 @@
 
 **Created:** 2026-09-09
 **Status:** foundation slice built (read-only app). All owner decisions taken: D1 (web app), D5 (React + Vite SPA, direct to Vikunja, no proxy), D3 (own brand, teal accent), D4 (slice order), D6 (live refresh: polling now, WebSocket task events via upstream PR). D2 is a per-screen call during measuring.
-**Last session:** 2026-09-15. The app can complete a task (D-write), and a bare repeat adverb is offered rather than applied (D-adverb). Until then it could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. Next: keyboard navigation (D4 step 2).
+**Last session:** 2026-09-17. The app is packaged in a Tauri desktop shell (§7 step 9) with a guarded close/quit lifecycle, responsive layouts and HTTP consent; three review passes left documented races in the native coordinator. Previously (2026-09-15): The app can complete a task (D-write), and a bare repeat adverb is offered rather than applied (D-adverb). Until then it could log in, list and create and nothing else, which D4 had not noticed because it ordered the interaction slices and assumed the mutations under them existed. Next: keyboard navigation (D4 step 2).
 **Language of record:** English (the repo is intended to be open source; the
 owner's working language is Italian).
 
@@ -136,6 +136,11 @@ Consequences:
 - Being web-to-web with the reference product, the measured Todoist layout
   transfers directly instead of needing translation to native idioms.
 - Veyrn is unaffected. Nothing here is a prerequisite for it.
+- **Scope extension decided 2026-09-16:** the same web application is also
+  packaged in a portable Tauri desktop shell, with macOS as the first verified
+  target. This adds no proxy or second task implementation and does not remove
+  the browser deployment described above. Windows/Linux source portability is
+  intentional; their runtime and release builds remain unverified.
 
 ### D2 — How faithfully to copy the layout
 
@@ -685,7 +690,24 @@ public HTTP API only, which carries no such obligation.
    - One thing that run corrected, worth not rediscovering: Vikunja stores
      `due_date` to the SECOND, so a date carrying milliseconds comes back
      rounded and an exact comparison fails on noise.
-9. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
+9. ~~Package the app in a Tauri desktop shell~~ — done 2026-09-17, from
+   `docs/designs/tauri-desktop-shell.md` (D1 extended, see §4). The slice was
+   built by workers and put through three independent review passes plus a
+   packaged verification, all recorded in `docs/designs/tauri-desktop-shell-review*.md`
+   and `…-verification.md`. Notes for whoever continues:
+   - The close/quit coordinator is `src-tauri/src/lifecycle.rs` (pure state,
+     unit-tested) driven by `src-tauri/src/lib.rs` (Tauri events). Read the
+     third review before touching it: it lists the races still open, with
+     file:line, and which residuals it considers must-fix.
+   - Escape has ONE owner, `src/ui/overlayStack.tsx`. A new dismissible layer
+     registers there; do not add a window keydown listener beside it.
+   - Every draft-bearing surface registers in `src/lifecycle/drafts.ts`. A new
+     write path that forgets to is invisible to the close guard.
+   - Native builds need Rust 1.88+ (`rustup run 1.88.0`); the Homebrew cargo
+     is 1.86 and fails on MSRV before compiling anything.
+   Next: the must-fix residuals of review 3, then packaged-WebView transport
+   and storage-failure verification.
+10. Parallel, off the critical path: the upstream Vikunja PR for `task.*`
    WebSocket events (D6). Start from `pkg/websocket/listener.go` and
    `validEvents` in `connection.go`; the open question is how to resolve the
    recipients of a project-scoped event. Before the OIDC part: add the SPA's origin to `cors.origins` on

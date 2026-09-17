@@ -3,7 +3,7 @@ version = 1
 [[bindings]]
 doc = "knowledge/architecture/architecture.md"
 target = "src/app/App.tsx"
-sig = "689e1aaa60f24314"
+sig = "11d9c76a219dace7"
 
 [[bindings]]
 doc = "knowledge/architecture/architecture.md"
@@ -73,17 +73,17 @@ sig = "8f6da3d5fa0a0b68"
 [[bindings]]
 doc = "knowledge/decisions/direct-browser-api.md"
 target = "src/api/http.ts"
-sig = "1b7aae879a471d82"
+sig = "7658997862d79e66"
 
 [[bindings]]
 doc = "knowledge/decisions/direct-browser-api.md"
 target = "src/auth/authStore.ts"
-sig = "2c3d7e81024010cd"
+sig = "75532159494d09e1"
 
 [[bindings]]
 doc = "knowledge/decisions/direct-browser-api.md"
 target = "vite.config.ts"
-sig = "a316fbe8ece4375c"
+sig = "cdf5cea10f354670"
 
 [[bindings]]
 doc = "knowledge/decisions/distinct-brand.md"
@@ -93,7 +93,7 @@ sig = "001338f3f581d06a"
 [[bindings]]
 doc = "knowledge/decisions/distinct-brand.md"
 target = "src/ui/icons/paths.ts"
-sig = "199f1714a4fe558c"
+sig = "73100fd5736495ca"
 
 [[bindings]]
 doc = "knowledge/decisions/offer-repeat-adverbs.md"
@@ -108,7 +108,7 @@ sig = "8cc42ac72b7e3b33"
 [[bindings]]
 doc = "knowledge/decisions/offer-repeat-adverbs.md"
 target = "src/ui/QuickAdd.tsx"
-sig = "5dfd5e383723591c"
+sig = "85d02f2c235b8492"
 
 [[bindings]]
 doc = "knowledge/decisions/polling-live-source.md"
@@ -133,7 +133,7 @@ sig = "ca3d99bb9c28740d"
 [[bindings]]
 doc = "knowledge/decisions/safe-task-writes.md"
 target = "src/queries/useCompleteTask.ts"
-sig = "7a9f9531725b7bad"
+sig = "10413edc64865d7d"
 
 [[bindings]]
 doc = "knowledge/decisions/safe-task-writes.md"
@@ -158,7 +158,7 @@ sig = "3ec9c5569516ff4f"
 [[bindings]]
 doc = "knowledge/playbooks/add-task-mutation.md"
 target = "src/ui/detail/TaskDetail.test.tsx"
-sig = "7d17890213981500"
+sig = "05e4a45c040f2975"
 
 [[bindings]]
 doc = "knowledge/playbooks/amend-quick-add.md"
@@ -208,12 +208,12 @@ sig = "f06d33bccb8954e3"
 [[bindings]]
 doc = "knowledge/playbooks/debug-vikunja-connection.md"
 target = "src/api/http.test.ts"
-sig = "387fbf07b55ac771"
+sig = "084fb71a4b2b792c"
 
 [[bindings]]
 doc = "knowledge/playbooks/debug-vikunja-connection.md"
 target = "src/api/http.ts"
-sig = "1b7aae879a471d82"
+sig = "7658997862d79e66"
 
 [[bindings]]
 doc = "knowledge/playbooks/debug-vikunja-connection.md"
@@ -223,7 +223,7 @@ sig = "ca8a2e03bc2a16ab"
 [[bindings]]
 doc = "knowledge/playbooks/debug-vikunja-connection.md"
 target = "src/screens/SetupScreen.tsx"
-sig = "7de5c286a07023d5"
+sig = "189f80adff962b66"
 
 [[bindings]]
 doc = "knowledge/project/conventions.md"
@@ -248,37 +248,67 @@ sig = "6cb2587bb457ac24"
 [[bindings]]
 doc = "knowledge/project/setup.md"
 target = "scripts/sync-version.mjs"
-sig = "2d2303b1b543c535"
+sig = "a37025f3a3f75f19"
 
 [[bindings]]
 doc = "knowledge/project/setup.md"
 target = "src/auth/authStore.ts"
-sig = "2c3d7e81024010cd"
+sig = "75532159494d09e1"
 
 [[bindings]]
 doc = "knowledge/project/setup.md"
 target = "src/screens/SetupScreen.tsx"
-sig = "7de5c286a07023d5"
+sig = "189f80adff962b66"
 
 [[bindings]]
 doc = "knowledge/project/setup.md"
 target = "src/settings/settingsStore.ts"
-sig = "4bb016145fd0b79d"
+sig = "da1659602e37c4cf"
 
 [[bindings]]
 doc = "knowledge/project/stack.md"
 target = "package.json"
-sig = "45921d901071677b"
+sig = "1c663e9802d41c7d"
 
 [[bindings]]
 doc = "knowledge/project/stack.md"
 target = "pnpm-lock.yaml"
-sig = "07d5497bcfb4b7e4"
+sig = "e82c500420f61571"
 
 [[bindings]]
 doc = "knowledge/project/stack.md"
 target = "vite.config.ts"
-sig = "a316fbe8ece4375c"
+sig = "cdf5cea10f354670"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src-tauri/src/lib.rs"
+sig = "4f8dc62e3484f552"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src-tauri/src/lifecycle.rs"
+sig = "5a175d68875c5e6b"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src-tauri/tauri.conf.json"
+sig = "633696f53baa4929"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/app/App.tsx"
+sig = "11d9c76a219dace7"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/lifecycle/drafts.ts"
+sig = "9a627861e58132f0"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/lifecycle/useDesktopLifecycle.tsx"
+sig = "19d0c91b06259e75"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
@@ -297,10 +327,30 @@ sig = "1f8f99b296ac6d46"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
+target = "src/settings/transportPolicy.ts"
+sig = "fe91265a34c4b897"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/store/persistentValue.ts"
+sig = "c04ec85e2ac90947"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
 target = "src/ui/ListView.tsx"
 sig = "f095a3c7c3489620"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
+target = "src/ui/Shell.tsx"
+sig = "a13013c5ac604616"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
 target = "src/ui/detail/TaskDetail.tsx"
-sig = "e0901a61096f864d"
+sig = "3deb86e13412db76"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src/ui/overlayStack.tsx"
+sig = "8fd6987f639932ef"

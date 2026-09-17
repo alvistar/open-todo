@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { TaskComment } from "../../api/types";
+import { useDraftSource } from "../../lifecycle/drafts";
 import { UI_LOCALE } from "../../model/dates";
 import { isRichHtml, stripHtml, toDescriptionHtml } from "../../model/taskRow";
 import styles from "./Comments.module.css";
@@ -26,6 +27,8 @@ export function Comments({ comments, loading, onAdd }: CommentsProps) {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useDraftSource("comments", "Comment", draft.trim().length > 0, saving);
 
   const add = async () => {
     const text = draft.trim();

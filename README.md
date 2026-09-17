@@ -3,14 +3,13 @@
 A genuinely good UI for [Vikunja](https://vikunja.io), built by measuring what
 Todoist's shipped interface does and reimplementing it natively.
 
-**Status:** foundation slice plus quick-add. A static React + Vite SPA that
-talks to a self-hosted Vikunja directly from the browser: server setup, login,
-and Inbox, Today and project lists at the measured layout, kept fresh by
-polling. Tasks can be **created** through a quick-add composer that reads dates,
-times, projects, labels, priority and recurrence out of plain English and
-Italian — `dentista domenica ore 15 #Personale p3`. Editing and completing an
-existing task are not built yet, nor are keyboard navigation, drag reorder or
-undo; those are the next slices.
+**Status:** web app plus a minimal Tauri desktop shell. The same React + Vite
+application talks to a self-hosted Vikunja directly from the browser or a
+bundled macOS window: server setup, login, Inbox, Today and project lists,
+polling, quick-add, task editing and completion are shared. The desktop slice
+adds responsive navigation, persisted window geometry, single-instance
+activation and guarded close/quit behavior; notifications, offline storage,
+signing and public installers remain out of scope.
 
 Start here: [`docs/HANDOVER.md`](docs/HANDOVER.md) — purpose, findings from the
 Todoist reconnaissance pass, decisions taken and still open, and legal
@@ -27,7 +26,39 @@ pnpm dev        # http://localhost:5173
 pnpm check      # biome + tsc
 pnpm test       # vitest
 pnpm build      # -> dist/
+pnpm desktop:dev   # Tauri window + Vite
+pnpm desktop:build # local desktop bundle
 ```
+
+### Desktop development
+
+The Tauri project is portable across desktop targets, with macOS as the first
+verified target. Install Rust 1.88+ and the platform's native build tools
+(Xcode Command Line Tools on macOS), then use:
+
+```bash
+pnpm desktop:dev   # starts Vite and opens the native window
+pnpm desktop:build # runs the production web build, then bundles local assets
+pnpm exec tauri info
+```
+
+A production desktop build does not need a running Vite server: Tauri loads the
+bundled `dist/` files. Local macOS bundle output is under
+`src-tauri/target/release/bundle/`. The first shell uses standard decorations,
+restores size and position with Tauri's window-state plugin, and keeps one main
+window when a second launch or Dock reopen occurs. Closing the macOS window
+hides it while the process remains available; Command-Q quits. Unsaved task,
+comment and setup drafts are guarded by the shared close/quit confirmation.
+
+The native window uses a restricted CSP. It permits only bundled application
+assets and explicitly configured HTTP/HTTPS API connections; it does not permit
+arbitrary remote navigation. HTTP Vikunja instances require an origin-bound
+confirmation before credentials are sent. Credentials remain in the app's
+web-storage namespace, matching the web app's existing security trade-off; no
+keychain migration or automatic session import is promised.
+
+Public signing, notarization, installers, auto-update, notifications, tray or
+background services, and Windows/Linux runtime validation are deferred.
 
 `DESIGN.md` is the design system, in the open DESIGN.md format that gstack's
 design skills and impeccable read. Its front matter is **generated** from
@@ -109,7 +140,8 @@ Two more things worth knowing before you deploy it:
 | `src/api` | Vikunja client: HTTP, typed errors, endpoints, filter builders |
 | `src/model` | The conventions — priority (D-map-1), all-day dates (D-map-2), view definitions, grouping |
 | `src/live` | `LiveSource` and the polling implementation (D6) |
-| `src/ui` | Components at the geometry in `docs/layout-specs.md` |
+| `src/ui` | Components at the geometry in `docs/layout-specs.md`, including responsive layouts |
+| `src-tauri` | Cross-platform Tauri shell, window lifecycle and native packaging metadata |
 | `DESIGN.md` | The design system: tokens (generated), layout rules, components, do's and don'ts |
 | `docs/` | The specification: layout measurements, data-model mapping, handover |
 | `research/` | Reference material captured from Todoist; not shipped |

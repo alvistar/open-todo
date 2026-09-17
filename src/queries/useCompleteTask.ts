@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { http } from "../api/client";
 import { updateTask } from "../api/endpoints";
 import type { Task } from "../api/types";
+import { useDraftSource } from "../lifecycle/drafts";
 import { formatDueLabel, parseVikunjaDate } from "../model/dates";
 import { isRepeating, type PendingRow, type PendingRows } from "../model/pending";
 
@@ -44,6 +45,8 @@ export interface CompleteTaskApi {
 export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskApi {
   const queryClient = useQueryClient();
   const [pending, setPending] = useState<ReadonlyMap<number, PendingRow>>(new Map());
+  const [inFlightCount, setInFlightCount] = useState(0);
+  useDraftSource("task-completion", "Task completion", false, inFlightCount > 0);
 
   /*
    * The same map as the state, for the event handlers to read without being
@@ -98,6 +101,7 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
   const write = useCallback(
     async (task: Task, index: number, done: boolean) => {
       inFlight.current.add(task.id);
+      if (live.current) setInFlightCount(inFlight.current.size);
       try {
         const updated = await updateTask(http, task, { done });
 
@@ -135,6 +139,7 @@ export function useCompleteTask(options: UseCompleteTaskOptions): CompleteTaskAp
         );
       } finally {
         inFlight.current.delete(task.id);
+        if (live.current) setInFlightCount(inFlight.current.size);
       }
     },
     [put, forget, refreshTasks],
