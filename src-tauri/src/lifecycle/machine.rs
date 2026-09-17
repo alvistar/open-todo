@@ -2,13 +2,17 @@
    Begin(Quit, no window | hidden) ───────────────► Exiting
                     │
                     ▼
-   Idle ──Begin──► AwaitingFrontend ──Ready──► Asking
+   Idle ──Begin(frontend known) / ShowWindow──► Asking
+    │
+   Idle ──Begin(no frontend)──► AwaitingFrontend ──Ready──► Asking
     │                  │                       │
     │                  └─Timeout──► Recovering │
     │                                          │
     ├─RecreationStarted──► Recreating         ├─Decide──► Finalizing
     │                                          │             │
-    └─Begin(Quit, direct)──► Exiting           │             └─Finalized──► Idle
+   └─Begin(Quit, direct)──► Exiting           │             └─Finalized(ok:true)──► Idle
+                                              │             └─Finalized(ok:false)──► Idle
+   Idle ──ExitRequested──► Asking
        Asking ──Timeout(no replacement)──► Recovering       (queued quit → Exiting)
        Asking ──EmitFailed(owner)──► Asking
        Recovering ──Recovered(allow)──► Finalizing/Exiting
@@ -307,17 +311,19 @@ impl Machine {
                     (state, effects)
                 }
             }
+            Event::Exited => (
+                State::Idle { hidden_by_close },
+                vec![Effect::Log("unexpected")],
+            ),
             _ => (State::Idle { hidden_by_close }, vec![Effect::Log("stale")]),
         }
     }
 
-    fn begin_attempt(&mut self, hidden_by_close: bool, kind: Kind) -> (State, Vec<Effect>) {
+    fn begin_attempt(&mut self, _hidden_by_close: bool, kind: Kind) -> (State, Vec<Effect>) {
         let attempt = self.new_attempt(kind);
         if let Some(frontend) = self.frontend.clone() {
             let mut effects = Vec::with_capacity(3);
-            if hidden_by_close {
-                effects.push(Effect::ShowWindow);
-            }
+            effects.push(Effect::ShowWindow);
             effects.push(Effect::EmitRequest {
                 attempt: attempt.clone(),
                 frontend: frontend.clone(),
@@ -445,6 +451,13 @@ impl Machine {
                 effects.insert(0, Effect::PreventExit);
                 (state, effects)
             }
+            Event::Exited => (
+                State::AwaitingFrontend {
+                    attempt,
+                    recreate_pending,
+                },
+                vec![Effect::Log("unexpected")],
+            ),
             _ => (
                 State::AwaitingFrontend {
                     attempt,
@@ -677,6 +690,16 @@ impl Machine {
                             ],
                         )
                     }
+                    Some(_) => (
+                        State::Recovering {
+                            attempt: attempt.clone(),
+                            recreate_pending,
+                        },
+                        vec![
+                            Effect::EmitError("lifecycle request timed out".into()),
+                            Effect::ShowRecoveryDialog(attempt),
+                        ],
+                    ),
                     _ => (
                         State::Recovering {
                             attempt: attempt.clone(),
@@ -709,6 +732,14 @@ impl Machine {
                 effects.insert(0, Effect::PreventExit);
                 (state, effects)
             }
+            Event::Exited => (
+                State::Asking {
+                    attempt,
+                    frontend,
+                    recreate_pending,
+                },
+                vec![Effect::Log("unexpected")],
+            ),
             _ => (
                 State::Asking {
                     attempt,
@@ -788,7 +819,7 @@ impl Machine {
                     }
                     return (idle, vec![Effect::Log("cancelled")]);
                 }
-                self.authorize_recovered(attempt, recreate_pending)
+                self.authorize(attempt, recreate_pending)
             }
             Event::RecreationStarted => (
                 State::Recovering {
@@ -811,42 +842,19 @@ impl Machine {
                 effects.insert(0, Effect::PreventExit);
                 (state, effects)
             }
+            Event::Exited => (
+                State::Recovering {
+                    attempt,
+                    recreate_pending,
+                },
+                vec![Effect::Log("unexpected")],
+            ),
             _ => (
                 State::Recovering {
                     attempt,
                     recreate_pending,
                 },
                 vec![Effect::Log("stale")],
-            ),
-        }
-    }
-
-    fn authorize_recovered(
-        &mut self,
-        attempt: Attempt,
-        recreate_pending: bool,
-    ) -> (State, Vec<Effect>) {
-        match attempt.kind {
-            Kind::Close => {
-                #[cfg(target_os = "macos")]
-                let effects = vec![Effect::Finalize(attempt.clone())];
-                #[cfg(not(target_os = "macos"))]
-                let effects = vec![self.arm_exit_bypass(), Effect::Finalize(attempt.clone())];
-                (
-                    State::Finalizing {
-                        attempt,
-                        queued_quit: false,
-                        recreate_pending,
-                    },
-                    effects,
-                )
-            }
-            Kind::Quit => (
-                State::Exiting {
-                    attempt: Some(attempt),
-                    generation: self.generation,
-                },
-                vec![self.arm_exit_bypass(), Effect::Exit],
             ),
         }
     }
@@ -916,6 +924,22 @@ impl Machine {
                     let idle = State::Idle {
                         hidden_by_close: false,
                     };
+                    if recreate_pending {
+                        let (state, more) = self.transition(idle, Event::RecreationStarted);
+                        effects.extend(more);
+                        if queued_quit {
+                            let (state, more) = self.transition(
+                                state,
+                                Event::Begin {
+                                    kind: Kind::Quit,
+                                    window_exists: true,
+                                },
+                            );
+                            effects.extend(more);
+                            return (state, effects);
+                        }
+                        return (state, effects);
+                    }
                     if queued_quit {
                         let (state, more) = self.transition(
                             idle,
@@ -924,10 +948,6 @@ impl Machine {
                                 window_exists: true,
                             },
                         );
-                        effects.extend(more);
-                        (state, effects)
-                    } else if recreate_pending {
-                        let (state, more) = self.transition(idle, Event::RecreationStarted);
                         effects.extend(more);
                         (state, effects)
                     } else {
@@ -979,6 +999,14 @@ impl Machine {
                     recreate_pending,
                 },
                 vec![Effect::PreventExit, Effect::Log("finalizing; quit queued")],
+            ),
+            Event::Exited => (
+                State::Finalizing {
+                    attempt,
+                    queued_quit,
+                    recreate_pending,
+                },
+                vec![Effect::Log("unexpected")],
             ),
             _ => (
                 State::Finalizing {
@@ -1159,6 +1187,15 @@ impl Machine {
                 },
                 vec![Effect::PreventExit, Effect::Log("queued")],
             ),
+            Event::Exited => (
+                State::Recreating {
+                    id,
+                    reserved,
+                    queued_quit,
+                    ready,
+                },
+                vec![Effect::Log("unexpected")],
+            ),
             _ => (
                 State::Recreating {
                     id,
@@ -1204,6 +1241,13 @@ impl Machine {
                     generation,
                 },
                 vec![Effect::Log("exited")],
+            ),
+            Event::Decide { .. } | Event::Finalized { .. } | Event::RecreationFinished { .. } => (
+                State::Exiting {
+                    attempt,
+                    generation,
+                },
+                vec![Effect::Log("stale")],
             ),
             _ => (
                 State::Exiting {
@@ -1817,15 +1861,16 @@ mod tests {
                 hidden_quit,
             ),
             (
-                &State::Exiting {
-                    attempt: None,
-                    generation: 1,
+                &State::Asking {
+                    attempt: close_attempt.clone(),
+                    frontend: close_frontend.clone(),
+                    recreate_pending: false,
                 },
                 vec![
                     Effect::ShowWindow,
                     Effect::EmitRequest {
                         attempt: close_attempt.clone(),
-                        frontend: close_frontend,
+                        frontend: close_frontend.clone(),
                     },
                     Effect::ScheduleTimeout(close_attempt),
                 ],
@@ -1890,6 +1935,7 @@ mod tests {
                 },
                 vec![
                     Effect::EmitError("lifecycle finalization failed".into()),
+                    Effect::ShowWindow,
                     Effect::EmitRequest {
                         attempt: attempt.clone(),
                         frontend: token,
@@ -2851,6 +2897,7 @@ mod tests {
                     recreate_pending: false,
                 },
                 vec![
+                    Effect::ShowWindow,
                     Effect::EmitRequest {
                         attempt: attempt.clone(),
                         frontend: token,
