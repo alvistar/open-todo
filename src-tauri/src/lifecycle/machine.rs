@@ -216,7 +216,7 @@ impl Machine {
                     attempt: None,
                     generation: self.generation,
                 },
-                vec![Effect::ArmExitBypass(self.generation), Effect::Exit],
+                vec![self.arm_exit_bypass(), Effect::Exit],
             ),
             Event::Begin {
                 kind: Kind::Quit,
@@ -226,7 +226,7 @@ impl Machine {
                     attempt: None,
                     generation: self.generation,
                 },
-                vec![Effect::ArmExitBypass(self.generation), Effect::Exit],
+                vec![self.arm_exit_bypass(), Effect::Exit],
             ),
             Event::Begin {
                 kind: Kind::Close,
@@ -803,10 +803,7 @@ impl Machine {
                 #[cfg(target_os = "macos")]
                 let effects = vec![Effect::Finalize(attempt.clone())];
                 #[cfg(not(target_os = "macos"))]
-                let effects = vec![
-                    Effect::ArmExitBypass(self.generation),
-                    Effect::Finalize(attempt.clone()),
-                ];
+                let effects = vec![self.arm_exit_bypass(), Effect::Finalize(attempt.clone())];
                 (
                     State::Finalizing {
                         attempt,
@@ -821,7 +818,7 @@ impl Machine {
                     attempt: Some(attempt),
                     generation: self.generation,
                 },
-                vec![Effect::ArmExitBypass(self.generation), Effect::Exit],
+                vec![self.arm_exit_bypass(), Effect::Exit],
             ),
         }
     }
@@ -1106,7 +1103,7 @@ impl Machine {
                     self.frontend = None;
                     let mut effects = vec![Effect::EmitError("lifecycle recreation failed".into())];
                     if queued_quit {
-                        effects.extend([Effect::ArmExitBypass(self.generation), Effect::Exit]);
+                        effects.extend([self.arm_exit_bypass(), Effect::Exit]);
                         (
                             State::Exiting {
                                 attempt: None,
@@ -1196,10 +1193,7 @@ impl Machine {
                 #[cfg(target_os = "macos")]
                 let effects = vec![Effect::Finalize(attempt.clone())];
                 #[cfg(not(target_os = "macos"))]
-                let effects = vec![
-                    Effect::ArmExitBypass(self.generation),
-                    Effect::Finalize(attempt.clone()),
-                ];
+                let effects = vec![self.arm_exit_bypass(), Effect::Finalize(attempt.clone())];
                 (
                     State::Finalizing {
                         attempt,
@@ -1214,7 +1208,7 @@ impl Machine {
                     attempt: Some(attempt),
                     generation: self.generation,
                 },
-                vec![Effect::ArmExitBypass(self.generation), Effect::Exit],
+                vec![self.arm_exit_bypass(), Effect::Exit],
             ),
         }
     }
@@ -1227,6 +1221,11 @@ impl Machine {
             kind,
             sequence: 0,
         }
+    }
+
+    fn arm_exit_bypass(&mut self) -> Effect {
+        self.exit_bypass = Some(self.generation);
+        Effect::ArmExitBypass(self.generation)
     }
 
     fn bump_attempt(attempt: &Attempt, kind: Kind) -> Attempt {
