@@ -303,6 +303,13 @@ mod lifecycle_mapping_tests {
         )
     }
 
+    fn mock_app_with_window_state() -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .plugin(tauri_plugin_window_state::Builder::default().build())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
+    }
+
     #[test]
     fn exit_requested_without_bypass_prevents_and_begins_quit() {
         let seen = Arc::new(Mutex::new(Vec::new()));
@@ -430,12 +437,12 @@ mod lifecycle_mapping_tests {
 
     #[test]
     fn s4_run_event_exit_maps_to_exited() {
-        let app = tauri::test::mock_app();
+        let app = mock_app_with_window_state();
         let (runner, seen, observed) = recording_runner(Vec::new());
         let handle = spawn_loop(Machine::new(0), runner);
         app.manage(AppState { lifecycle: handle });
 
-        on_exited(app.handle());
+        on_run_event_exit(app.handle());
         observed
             .recv_timeout(Duration::from_secs(1))
             .expect("exit event was not observed");
