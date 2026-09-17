@@ -351,6 +351,88 @@ mod tests {
     }
 
     #[test]
+    fn b1_timeout_reemits_an_active_attempt_after_frontend_replacement() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        coordinator.frontend_ready("one".into());
+        let close = match coordinator.begin(LifecycleKind::Close, true) {
+            BeginResult::Ask(attempt) => attempt,
+            other => panic!("unexpected {other:?}"),
+        };
+        coordinator.frontend_ready("two".into());
+
+        assert_eq!(
+            coordinator.timeout_expired(&close),
+            TimeoutOutcome::Reemit(close.clone())
+        );
+    }
+
+    #[test]
+    fn b1_frontend_ready_reports_an_active_attempt_for_reemit() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        coordinator.frontend_ready("one".into());
+        let close = match coordinator.begin(LifecycleKind::Close, true) {
+            BeginResult::Ask(attempt) => attempt,
+            other => panic!("unexpected {other:?}"),
+        };
+
+        let ready = coordinator.frontend_ready("two".into());
+
+        assert_eq!(ready.reemit, Some(close));
+    }
+
+    #[test]
+    fn s1_decide_reserves_finalization_before_recreation_can_begin() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        coordinator.frontend_ready("one".into());
+        let current = match coordinator.begin(LifecycleKind::Quit, true) {
+            BeginResult::Ask(attempt) => attempt,
+            other => panic!("unexpected {other:?}"),
+        };
+
+        let authorized = match coordinator.decide(&payload(
+            &current,
+            LifecycleDecision::Allow,
+            false,
+            false,
+        )) {
+            DecisionResult::Authorized(attempt) => attempt,
+            other => panic!("unexpected {other:?}"),
+        };
+
+        assert!(!coordinator.begin_recreation());
+        assert_eq!(coordinator.finish_finalize(&authorized), None);
+        assert!(coordinator.begin_recreation());
+    }
+
+    #[test]
+    fn s2_quit_during_recreation_is_queued_and_replayed_after_success() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        assert!(coordinator.begin_recreation());
+
+        assert_eq!(
+            coordinator.begin(LifecycleKind::Quit, false),
+            BeginResult::Queued(LifecycleKind::Quit)
+        );
+        let result = coordinator.finish_recreation(true);
+
+        assert_eq!(result.pending_kind, Some(LifecycleKind::Quit));
+    }
+
+    #[test]
+    fn s2_quit_during_recreation_is_replayed_after_failure_too() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        assert!(coordinator.begin_recreation());
+        assert_eq!(
+            coordinator.begin(LifecycleKind::Quit, false),
+            BeginResult::Queued(LifecycleKind::Quit)
+        );
+
+        let result = coordinator.finish_recreation(false);
+
+        assert_eq!(result.pending_kind, Some(LifecycleKind::Quit));
+    }
+
+    #[test]
     fn asks_ready_frontend_once() {
         let mut coordinator = LifecycleCoordinator::new(1);
         coordinator.frontend_ready("one".into());
