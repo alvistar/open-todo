@@ -291,6 +291,7 @@ mod tests {
         stopped_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("runner did not stop the lifecycle loop");
+        assert!(handle.ready("gone".into()).is_err());
         assert_eq!(handle.exit_requested(), ExitVerdict::Prevent);
     }
 }
