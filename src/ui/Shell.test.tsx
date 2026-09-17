@@ -85,6 +85,14 @@ afterEach(() => {
 });
 
 describe("responsive shell", () => {
+  it("Orig-8 hides the closed narrow sidebar from focus and assistive technology", () => {
+    renderShell();
+    const sidebar = screen.getByRole("navigation", { name: "Views and projects" });
+
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    expect(sidebar).toHaveAttribute("inert");
+  });
+
   it("starts narrow with the navigation closed and restores focus after closing", () => {
     renderShell();
     const toggle = screen.getByRole("button", { name: "Toggle navigation" });
