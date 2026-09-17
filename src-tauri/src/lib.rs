@@ -3,8 +3,8 @@
 mod lifecycle;
 
 use lifecycle::{
-    BeginResult, DecisionResult, FinalizeResult, FrontendToken, LifecycleAttempt,
-    LifecycleCoordinator, LifecycleDecisionPayload, LifecycleKind,
+    BeginResult, DecisionResult, FrontendToken, LifecycleAttempt, LifecycleCoordinator,
+    LifecycleDecisionPayload, LifecycleKind, TimeoutOutcome,
 };
 use serde::Serialize;
 use std::{sync::Mutex, time::Duration};
@@ -35,17 +35,31 @@ struct LifecycleDiagnostic<'a> {
 
 #[tauri::command]
 fn lifecycle_ready(
+    app: AppHandle,
     state: State<'_, AppState>,
     instance_id: String,
 ) -> Result<FrontendToken, String> {
-    let mut coordinator = state
-        .coordinator
-        .lock()
-        .map_err(|_| "desktop lifecycle state is unavailable".to_string())?;
-    // A destroyed main window cannot deliver a late initial ready call. Any
-    // ready handshake that arrives here therefore belongs to this generation;
-    // the returned token makes its later cleanup generation-specific.
-    Ok(coordinator.frontend_ready(instance_id))
+    let outcome = {
+        let mut coordinator = state
+            .coordinator
+            .lock()
+            .map_err(|_| "desktop lifecycle state is unavailable".to_string())?;
+        // A destroyed main window cannot deliver a late initial ready call. Any
+        // ready handshake that arrives here therefore belongs to this generation;
+        // the returned token makes its later cleanup generation-specific.
+        coordinator.frontend_ready(instance_id)
+    };
+    if let Some(attempt) = outcome.reemit {
+        let should_send = state
+            .coordinator
+            .lock()
+            .map(|mut coordinator| coordinator.prepare_frontend_reemit(&attempt))
+            .unwrap_or(false);
+        if should_send {
+            send_lifecycle_request(&app, &state, attempt);
+        }
+    }
+    Ok(outcome.token)
 }
 
 #[tauri::command]
@@ -76,15 +90,7 @@ fn lifecycle_decision(
         DecisionResult::Authorized(attempt) => finalize_attempt(&app, &state, attempt),
         DecisionResult::Cancelled | DecisionResult::Stale => Ok(()),
         DecisionResult::Recheck(attempt) => {
-            if let Err(error) = emit_lifecycle_request(&app, &attempt) {
-                mark_frontend_unready(&state);
-                emit_lifecycle_error(
-                    &app,
-                    "The editor did not respond to the desktop close request.",
-                );
-                log::warn!("could not send lifecycle recheck: {error}");
-                show_native_recovery(&app, attempt);
-            }
+            send_lifecycle_request(&app, &state, attempt);
             Ok(())
         }
     }
@@ -200,20 +206,28 @@ fn request_lifecycle<R: Runtime>(app: &AppHandle<R>, kind: LifecycleKind) {
             app.exit(0);
         }
         BeginResult::Ask(attempt) => {
-            if let Err(error) = emit_lifecycle_request(app, &attempt) {
-                mark_frontend_unready(&state);
-                emit_lifecycle_error(
-                    app,
-                    "The editor did not respond to the desktop close request.",
-                );
-                log::warn!("could not send lifecycle request: {error}");
-                show_native_recovery(app, attempt);
-            } else {
-                schedule_recovery_timeout(app, attempt);
-            }
+            send_lifecycle_request(app, &state, attempt);
         }
         BeginResult::Recover(attempt) => show_native_recovery(app, attempt),
         BeginResult::Ignore | BeginResult::Queued(_) => {}
+    }
+}
+
+fn send_lifecycle_request<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    attempt: LifecycleAttempt,
+) {
+    if let Err(error) = emit_lifecycle_request(app, &attempt) {
+        mark_frontend_unready(state);
+        emit_lifecycle_error(
+            app,
+            "The editor did not respond to the desktop close request.",
+        );
+        log::warn!("could not send lifecycle request: {error}");
+        show_native_recovery(app, attempt);
+    } else {
+        schedule_recovery_timeout(app, attempt);
     }
 }
 
@@ -242,19 +256,22 @@ fn schedule_recovery_timeout<R: Runtime>(app: &AppHandle<R>, attempt: LifecycleA
         let Some(state) = app_handle.try_state::<AppState>() else {
             return;
         };
-        let expired = state
+        let outcome = state
             .coordinator
             .lock()
             .map(|mut coordinator| coordinator.timeout_expired(&attempt))
-            .unwrap_or(false);
-        if !expired {
-            return;
+            .unwrap_or(TimeoutOutcome::Stale);
+        match outcome {
+            TimeoutOutcome::Stale => (),
+            TimeoutOutcome::Reemit(attempt) => send_lifecycle_request(&app_handle, &state, attempt),
+            TimeoutOutcome::Expired => {
+                emit_lifecycle_error(
+                    &app_handle,
+                    "The editor did not respond to the desktop close request.",
+                );
+                show_native_recovery(&app_handle, attempt);
+            }
         }
-        emit_lifecycle_error(
-            &app_handle,
-            "The editor did not respond to the desktop close request.",
-        );
-        show_native_recovery(&app_handle, attempt);
     });
 }
 
@@ -305,14 +322,14 @@ fn show_native_recovery<R: Runtime>(app: &AppHandle<R>, attempt: LifecycleAttemp
                 log::error!("desktop lifecycle state missing during recovery");
                 return;
             };
-            let authorized = match state.coordinator.lock() {
+            let reservation = match state.coordinator.lock() {
                 Ok(mut coordinator) => coordinator.recover(&attempt, allow_exit),
                 Err(_) => {
                     log::error!("desktop lifecycle state lock failed during recovery");
-                    false
+                    None
                 }
             };
-            if authorized {
+            if let Some(attempt) = reservation {
                 finalize_attempt(&app_handle, &state, attempt).unwrap_or_else(|error| {
                     log::error!("desktop recovery action failed: {error}");
                 });
@@ -325,19 +342,6 @@ fn finalize_attempt<R: Runtime>(
     state: &AppState,
     attempt: LifecycleAttempt,
 ) -> Result<(), String> {
-    let authorization = match state.coordinator.lock() {
-        Ok(mut coordinator) => coordinator.authorize_finalize(&attempt),
-        Err(_) => return Err("desktop lifecycle state lock failed while finalizing".to_string()),
-    };
-    if authorization == FinalizeResult::Stale {
-        log::warn!(
-            "discarding stale lifecycle attempt {} at generation {}",
-            attempt.attempt_id,
-            attempt.generation
-        );
-        return Ok(());
-    }
-
     let result = match attempt.kind {
         LifecycleKind::Close => match app.get_webview_window(MAIN_WINDOW) {
             None => Ok(()),
@@ -436,10 +440,14 @@ fn recreate_main_window<R: Runtime>(app: &AppHandle<R>) {
         .find(|window| window.label == MAIN_WINDOW)
         .cloned()
     else {
-        if let Some(state) = app.try_state::<AppState>() {
-            if let Ok(mut coordinator) = state.coordinator.lock() {
-                coordinator.finish_recreation(false);
-            }
+        let pending_kind =
+            app.try_state::<AppState>()
+                .and_then(|state| match state.coordinator.lock() {
+                    Ok(mut coordinator) => coordinator.finish_recreation(false).pending_kind,
+                    Err(_) => None,
+                });
+        if let Some(kind) = pending_kind {
+            request_lifecycle(app, kind);
         }
         emit_recreation_error(app);
         log::error!("main window configuration is missing");
@@ -449,10 +457,14 @@ fn recreate_main_window<R: Runtime>(app: &AppHandle<R>) {
     let result =
         tauri::WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build());
     let succeeded = result.is_ok();
-    if let Some(state) = app.try_state::<AppState>() {
-        if let Ok(mut coordinator) = state.coordinator.lock() {
-            coordinator.finish_recreation(succeeded);
-        }
+    let pending_kind =
+        app.try_state::<AppState>()
+            .and_then(|state| match state.coordinator.lock() {
+                Ok(mut coordinator) => coordinator.finish_recreation(succeeded).pending_kind,
+                Err(_) => None,
+            });
+    if let Some(kind) = pending_kind {
+        request_lifecycle(app, kind);
     }
 
     match result {

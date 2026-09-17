@@ -23,6 +23,7 @@ pub struct LifecycleAttempt {
     pub attempt_id: u64,
     pub generation: u64,
     pub kind: LifecycleKind,
+    pub request_sequence: u64,
 }
 
 /// A readiness token is issued by the native window generation that accepted
@@ -39,9 +40,29 @@ pub struct FrontendToken {
 pub struct LifecycleDecisionPayload {
     pub attempt_id: u64,
     pub generation: u64,
+    pub request_sequence: u64,
     pub decision: LifecycleDecision,
     pub dirty: bool,
     pub pending: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct FrontendReadyOutcome {
+    pub token: FrontendToken,
+    pub reemit: Option<LifecycleAttempt>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TimeoutOutcome {
+    Expired,
+    Stale,
+    Reemit(LifecycleAttempt),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct RecreationOutcome {
+    pub generation: Option<u64>,
+    pub pending_kind: Option<LifecycleKind>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -67,13 +88,6 @@ pub enum DecisionResult {
     Stale,
     /// The frontend must send its current state again before native action.
     Recheck(LifecycleAttempt),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum FinalizeResult {
-    Authorized,
-    /// The attempt no longer owns the current lifecycle state.
-    Stale,
 }
 
 #[derive(Debug)]
@@ -132,21 +146,58 @@ impl LifecycleCoordinator {
 
     /// Completes a rebuild. A successful build is the only event that creates
     /// a new window generation and invalidates the old frontend state.
-    pub fn finish_recreation(&mut self, succeeded: bool) -> Option<u64> {
+    pub fn finish_recreation(&mut self, succeeded: bool) -> RecreationOutcome {
         if !self.recreation_in_progress {
-            return None;
+            return RecreationOutcome {
+                generation: None,
+                pending_kind: None,
+            };
         }
         self.recreation_in_progress = false;
-        succeeded.then(|| self.new_window())
+        let pending_kind = self.pending_kind.take();
+        let generation = succeeded.then(|| self.new_window());
+        RecreationOutcome {
+            generation,
+            pending_kind,
+        }
     }
 
-    pub fn frontend_ready(&mut self, instance_id: String) -> FrontendToken {
+    pub fn frontend_ready(&mut self, instance_id: String) -> FrontendReadyOutcome {
         let token = FrontendToken {
             instance_id,
             generation: self.generation,
         };
         self.frontend_instance = Some(token.clone());
-        token
+        let reemit = self.active.as_ref().and_then(|active| {
+            if self.active_frontend.as_ref() == Some(&token) {
+                return None;
+            }
+            let mut reemit = active.clone();
+            reemit.request_sequence = reemit.request_sequence.saturating_add(1);
+            Some(reemit)
+        });
+        FrontendReadyOutcome { token, reemit }
+    }
+
+    /// Moves an active request onto the frontend that just became ready. The
+    /// caller must do this before emitting the returned request so an older
+    /// timeout or response cannot overtake the replacement bridge.
+    pub fn prepare_frontend_reemit(&mut self, attempt: &LifecycleAttempt) -> bool {
+        let Some(active) = self.active.as_ref() else {
+            return false;
+        };
+        if active.attempt_id != attempt.attempt_id
+            || active.generation != attempt.generation
+            || active.request_sequence >= attempt.request_sequence
+        {
+            return false;
+        }
+        let Some(frontend) = self.frontend_instance.clone() else {
+            return false;
+        };
+        self.active = Some(attempt.clone());
+        self.active_frontend = Some(frontend);
+        true
     }
 
     pub fn frontend_unready(&mut self, token: &FrontendToken) {
@@ -163,23 +214,6 @@ impl LifecycleCoordinator {
         self.frontend_instance.is_some()
     }
 
-    /// Reserves the native-action slot after a frontend decision. The caller
-    /// must hold the coordinator mutex while invoking this immediately before
-    /// the native action; the reservation prevents a newer request or window
-    /// recreation from overtaking the authorized attempt between the check and
-    /// that action.
-    pub fn authorize_finalize(&mut self, attempt: &LifecycleAttempt) -> FinalizeResult {
-        if self.generation != attempt.generation
-            || self.active.is_some()
-            || self.recreation_in_progress
-            || self.finalizing.is_some()
-        {
-            return FinalizeResult::Stale;
-        }
-        self.finalizing = Some(attempt.clone());
-        FinalizeResult::Authorized
-    }
-
     pub fn finish_finalize(&mut self, attempt: &LifecycleAttempt) -> Option<LifecycleKind> {
         if self.finalizing.as_ref() == Some(attempt) {
             self.finalizing = None;
@@ -191,9 +225,9 @@ impl LifecycleCoordinator {
     /// Clears frontend readiness only when this timeout still owns the active
     /// request. This keeps a superseded timeout from taking down a newer
     /// frontend instance.
-    pub fn timeout_expired(&mut self, attempt: &LifecycleAttempt) -> bool {
+    pub fn timeout_expired(&mut self, attempt: &LifecycleAttempt) -> TimeoutOutcome {
         if self.active.as_ref() != Some(attempt) {
-            return false;
+            return TimeoutOutcome::Stale;
         }
         let frontend_changed = match (&self.active_frontend, &self.frontend_instance) {
             (Some(owner), Some(current)) => owner != current,
@@ -201,10 +235,17 @@ impl LifecycleCoordinator {
             _ => false,
         };
         if frontend_changed {
-            return false;
+            let Some(current_frontend) = self.frontend_instance.clone() else {
+                return TimeoutOutcome::Expired;
+            };
+            let mut reemit = attempt.clone();
+            reemit.request_sequence = reemit.request_sequence.saturating_add(1);
+            self.active = Some(reemit.clone());
+            self.active_frontend = Some(current_frontend);
+            return TimeoutOutcome::Reemit(reemit);
         }
         self.frontend_instance = None;
-        true
+        TimeoutOutcome::Expired
     }
 
     pub fn begin(&mut self, kind: LifecycleKind, has_visible_window: bool) -> BeginResult {
@@ -221,6 +262,10 @@ impl LifecycleCoordinator {
             return BeginResult::Ignore;
         }
         if self.recreation_in_progress {
+            if kind == LifecycleKind::Quit {
+                self.pending_kind = Some(LifecycleKind::Quit);
+                return BeginResult::Queued(LifecycleKind::Quit);
+            }
             return BeginResult::Ignore;
         }
         if let Some(active) = &self.active {
@@ -245,6 +290,7 @@ impl LifecycleCoordinator {
             attempt_id: self.next_attempt,
             generation: self.generation,
             kind,
+            request_sequence: 0,
         };
         self.active = Some(attempt.clone());
         self.active_frontend = self.frontend_instance.clone();
@@ -259,7 +305,10 @@ impl LifecycleCoordinator {
         let Some(active) = &self.active else {
             return DecisionResult::Stale;
         };
-        if active.attempt_id != payload.attempt_id || active.generation != payload.generation {
+        if active.attempt_id != payload.attempt_id
+            || active.generation != payload.generation
+            || active.request_sequence != payload.request_sequence
+        {
             return DecisionResult::Stale;
         }
 
@@ -283,6 +332,7 @@ impl LifecycleCoordinator {
                 self.active = None;
                 self.recovery_attempt = None;
                 self.active_frontend = None;
+                self.finalizing = Some(authorized.clone());
                 DecisionResult::Authorized(authorized)
             }
         }
@@ -297,16 +347,21 @@ impl LifecycleCoordinator {
         true
     }
 
-    pub fn recover(&mut self, attempt: &LifecycleAttempt, allow: bool) -> bool {
+    pub fn recover(&mut self, attempt: &LifecycleAttempt, allow: bool) -> Option<LifecycleAttempt> {
         let matches = self.active.as_ref().is_some_and(|active| active == attempt)
             && self.recovery_attempt == Some(attempt.attempt_id);
         if !matches {
-            return false;
+            return None;
         }
         self.active = None;
         self.recovery_attempt = None;
         self.active_frontend = None;
-        allow
+        if allow {
+            self.finalizing = Some(attempt.clone());
+            Some(attempt.clone())
+        } else {
+            None
+        }
     }
 
     pub fn arm_exit_bypass(&mut self, generation: u64) {
@@ -332,6 +387,7 @@ mod tests {
             attempt_id: id,
             generation,
             kind,
+            request_sequence: 0,
         }
     }
 
@@ -344,6 +400,7 @@ mod tests {
         LifecycleDecisionPayload {
             attempt_id: current.attempt_id,
             generation: current.generation,
+            request_sequence: current.request_sequence,
             decision,
             dirty,
             pending,
@@ -360,9 +417,13 @@ mod tests {
         };
         coordinator.frontend_ready("two".into());
 
+        let expected = attempt(1, 1, LifecycleKind::Close);
         assert_eq!(
             coordinator.timeout_expired(&close),
-            TimeoutOutcome::Reemit(close.clone())
+            TimeoutOutcome::Reemit(LifecycleAttempt {
+                request_sequence: 1,
+                ..expected
+            })
         );
     }
 
@@ -377,7 +438,13 @@ mod tests {
 
         let ready = coordinator.frontend_ready("two".into());
 
-        assert_eq!(ready.reemit, Some(close));
+        assert_eq!(
+            ready.reemit,
+            Some(LifecycleAttempt {
+                request_sequence: 1,
+                ..close
+            })
+        );
     }
 
     #[test]
@@ -389,15 +456,11 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         };
 
-        let authorized = match coordinator.decide(&payload(
-            &current,
-            LifecycleDecision::Allow,
-            false,
-            false,
-        )) {
-            DecisionResult::Authorized(attempt) => attempt,
-            other => panic!("unexpected {other:?}"),
-        };
+        let authorized =
+            match coordinator.decide(&payload(&current, LifecycleDecision::Allow, false, false)) {
+                DecisionResult::Authorized(attempt) => attempt,
+                other => panic!("unexpected {other:?}"),
+            };
 
         assert!(!coordinator.begin_recreation());
         assert_eq!(coordinator.finish_finalize(&authorized), None);
@@ -473,13 +536,14 @@ mod tests {
             BeginResult::Ask(attempt) => attempt,
             other => panic!("unexpected {other:?}"),
         };
+        let recheck =
+            match coordinator.decide(&payload(&current, LifecycleDecision::Allow, true, false)) {
+                DecisionResult::Recheck(attempt) => attempt,
+                other => panic!("unexpected {other:?}"),
+            };
         assert_eq!(
-            coordinator.decide(&payload(&current, LifecycleDecision::Allow, true, false)),
-            DecisionResult::Recheck(current.clone())
-        );
-        assert_eq!(
-            coordinator.decide(&payload(&current, LifecycleDecision::Discard, true, false)),
-            DecisionResult::Authorized(current)
+            coordinator.decide(&payload(&recheck, LifecycleDecision::Discard, true, false,)),
+            DecisionResult::Authorized(recheck)
         );
     }
 
@@ -491,18 +555,19 @@ mod tests {
             BeginResult::Ask(attempt) => attempt,
             other => panic!("unexpected {other:?}"),
         };
-        assert_eq!(
-            coordinator.decide(&payload(&current, LifecycleDecision::Discard, true, true)),
-            DecisionResult::Recheck(current.clone())
-        );
+        let recheck =
+            match coordinator.decide(&payload(&current, LifecycleDecision::Discard, true, true)) {
+                DecisionResult::Recheck(attempt) => attempt,
+                other => panic!("unexpected {other:?}"),
+            };
         assert_eq!(
             coordinator.decide(&payload(
-                &current,
+                &recheck,
                 LifecycleDecision::ExitAnyway,
                 true,
                 true
             )),
-            DecisionResult::Authorized(current)
+            DecisionResult::Authorized(recheck)
         );
     }
 
@@ -515,7 +580,7 @@ mod tests {
         };
         assert!(coordinator.start_recovery(&current));
         assert!(!coordinator.start_recovery(&current));
-        assert!(!coordinator.recover(&current, false));
+        assert!(coordinator.recover(&current, false).is_none());
         assert!(coordinator.active.is_none());
     }
 
@@ -589,12 +654,12 @@ mod tests {
 
         assert_ne!(coordinator.active.as_ref(), Some(&old));
         assert_eq!(coordinator.active.as_ref(), Some(&current));
-        assert!(!coordinator.timeout_expired(&old));
+        assert_eq!(coordinator.timeout_expired(&old), TimeoutOutcome::Stale);
         assert!(coordinator.frontend_is_ready());
     }
 
     #[test]
-    fn finalization_rechecks_an_attempt_after_a_newer_request_starts() {
+    fn finalization_reservation_is_taken_before_a_newer_request_can_start() {
         let mut coordinator = LifecycleCoordinator::new(1);
         coordinator.frontend_ready("one".into());
         let old = match coordinator.begin(LifecycleKind::Close, true) {
@@ -606,14 +671,13 @@ mod tests {
             DecisionResult::Authorized(old.clone())
         );
 
-        // Model the pause between decide() and the native finalization: a
-        // newer request takes ownership before the old attempt is checked.
-        let current = match coordinator.begin(LifecycleKind::Quit, true) {
-            BeginResult::Ask(attempt) => attempt,
-            other => panic!("unexpected {other:?}"),
-        };
-        assert_eq!(coordinator.authorize_finalize(&old), FinalizeResult::Stale);
-        assert_eq!(coordinator.active.as_ref(), Some(&current));
+        // The reservation is now taken by decide() while the coordinator
+        // mutex is held, so neither recreation nor a newer action can race it.
+        assert!(!coordinator.begin_recreation());
+        assert_eq!(
+            coordinator.begin(LifecycleKind::Quit, true),
+            BeginResult::Queued(LifecycleKind::Quit)
+        );
     }
 
     #[test]
@@ -627,10 +691,6 @@ mod tests {
         assert_eq!(
             coordinator.decide(&payload(&current, LifecycleDecision::Allow, false, false)),
             DecisionResult::Authorized(current.clone())
-        );
-        assert_eq!(
-            coordinator.authorize_finalize(&current),
-            FinalizeResult::Authorized
         );
         assert_eq!(
             coordinator.begin(LifecycleKind::Quit, true),
@@ -655,11 +715,6 @@ mod tests {
             coordinator.decide(&payload(&close, LifecycleDecision::Allow, false, false)),
             DecisionResult::Authorized(close.clone())
         );
-        assert_eq!(
-            coordinator.authorize_finalize(&close),
-            FinalizeResult::Authorized
-        );
-
         // Command-Q is a legitimate event while macOS is completing Close A;
         // it must have a queued/superseding result rather than disappearing.
         assert!(!matches!(
@@ -703,15 +758,21 @@ mod tests {
 
         coordinator.frontend_ready("two".into());
 
-        assert!(!coordinator.timeout_expired(&close));
+        assert!(matches!(
+            coordinator.timeout_expired(&close),
+            TimeoutOutcome::Reemit(LifecycleAttempt {
+                request_sequence: 1,
+                ..
+            })
+        ));
         assert!(coordinator.frontend_is_ready());
     }
 
     #[test]
     fn readiness_cleanup_is_bound_to_the_native_generation_token() {
         let mut coordinator = LifecycleCoordinator::new(1);
-        let old = coordinator.frontend_ready("old".into());
-        let new = coordinator.frontend_ready("new".into());
+        let old = coordinator.frontend_ready("old".into()).token;
+        let new = coordinator.frontend_ready("new".into()).token;
 
         coordinator.frontend_unready(&old);
         assert!(coordinator.frontend_is_ready());
@@ -722,10 +783,10 @@ mod tests {
     #[test]
     fn readiness_tokens_record_the_window_generation() {
         let mut coordinator = LifecycleCoordinator::new(1);
-        let old = coordinator.frontend_ready("old".into());
+        let old = coordinator.frontend_ready("old".into()).token;
         assert_eq!(old.generation, 1);
         assert_eq!(coordinator.new_window(), 2);
-        let current = coordinator.frontend_ready("current".into());
+        let current = coordinator.frontend_ready("current".into()).token;
         assert_eq!(current.generation, 2);
         coordinator.frontend_unready(&old);
         assert!(coordinator.frontend_is_ready());
@@ -744,9 +805,9 @@ mod tests {
             BeginResult::Recover(attempt) => attempt,
             other => panic!("unexpected {other:?}"),
         };
-        assert!(!coordinator.recover(&old, true));
+        assert!(coordinator.recover(&old, true).is_none());
         assert!(coordinator.start_recovery(&current));
-        assert!(!coordinator.recover(&current, false));
+        assert!(coordinator.recover(&current, false).is_none());
     }
 
     #[test]
@@ -754,10 +815,14 @@ mod tests {
         let mut coordinator = LifecycleCoordinator::new(1);
         assert!(coordinator.begin_recreation());
         assert!(!coordinator.begin_recreation());
-        assert_eq!(coordinator.finish_recreation(false), None);
+        let failed = coordinator.finish_recreation(false);
+        assert_eq!(failed.generation, None);
+        assert_eq!(failed.pending_kind, None);
         assert_eq!(coordinator.generation(), 1);
         assert!(coordinator.begin_recreation());
-        assert_eq!(coordinator.finish_recreation(true), Some(2));
+        let succeeded = coordinator.finish_recreation(true);
+        assert_eq!(succeeded.generation, Some(2));
+        assert_eq!(succeeded.pending_kind, None);
         assert_eq!(coordinator.generation(), 2);
     }
 
