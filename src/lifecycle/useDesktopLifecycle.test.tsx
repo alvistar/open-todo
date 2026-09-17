@@ -192,4 +192,45 @@ describe("DesktopLifecycleBridge", () => {
     removeDirty();
     removeClean();
   });
+
+  it("NEW-2 sends Cancel for a recheck while the first response is pending", async () => {
+    const decisions: Array<() => void> = [];
+    mocks.invoke.mockImplementation((name: string) => {
+      if (name === "lifecycle_decision") {
+        return new Promise<void>((resolve) => decisions.push(resolve));
+      }
+      return Promise.resolve();
+    });
+    const remove = registerDraftSource({
+      id: "bridge-new-2-recheck",
+      label: "Task detail",
+      dirty: true,
+      pending: false,
+    });
+    render(<DesktopLifecycleBridge />);
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("lifecycle_ready", expect.anything()),
+    );
+    mocks.eventHandlers["lifecycle:request"]?.({ payload: request });
+    fireEvent.click(await screen.findByRole("button", { name: "Stay" }));
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_decision"),
+      ).toHaveLength(1),
+    );
+
+    mocks.eventHandlers["lifecycle:request"]?.({ payload: request });
+    fireEvent.click(screen.getByRole("button", { name: "Stay" }));
+
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_decision"),
+      ).toHaveLength(2),
+    );
+
+    for (const resolve of decisions) resolve();
+    remove();
+  });
+
 });

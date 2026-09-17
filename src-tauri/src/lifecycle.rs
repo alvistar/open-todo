@@ -512,6 +512,70 @@ mod tests {
     }
 
     #[test]
+    fn new_1_quit_during_close_finalization_is_not_lost() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        coordinator.frontend_ready("one".into());
+        let close = match coordinator.begin(LifecycleKind::Close, true) {
+            BeginResult::Ask(attempt) => attempt,
+            other => panic!("unexpected {other:?}"),
+        };
+        assert_eq!(
+            coordinator.decide(&payload(&close, LifecycleDecision::Allow, false, false)),
+            DecisionResult::Authorized(close.clone())
+        );
+        assert_eq!(
+            coordinator.authorize_finalize(&close),
+            FinalizeResult::Authorized
+        );
+
+        // Command-Q is a legitimate event while macOS is completing Close A;
+        // it must have a queued/superseding result rather than disappearing.
+        assert!(!matches!(
+            coordinator.begin(LifecycleKind::Quit, true),
+            BeginResult::Ignore
+        ));
+    }
+
+    #[test]
+    fn new_1_recreation_does_not_clear_an_active_decision() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        coordinator.frontend_ready("one".into());
+        assert!(matches!(
+            coordinator.begin(LifecycleKind::Close, true),
+            BeginResult::Ask(_)
+        ));
+
+        assert!(!coordinator.begin_recreation());
+    }
+
+    #[test]
+    fn new_3_recreation_refuses_an_active_lifecycle_attempt() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        coordinator.frontend_ready("one".into());
+        assert!(matches!(
+            coordinator.begin(LifecycleKind::Quit, true),
+            BeginResult::Ask(_)
+        ));
+
+        assert!(!coordinator.begin_recreation());
+    }
+
+    #[test]
+    fn new_4_timeout_cannot_clear_a_replacement_frontend() {
+        let mut coordinator = LifecycleCoordinator::new(1);
+        coordinator.frontend_ready("one".into());
+        let close = match coordinator.begin(LifecycleKind::Close, true) {
+            BeginResult::Ask(attempt) => attempt,
+            other => panic!("unexpected {other:?}"),
+        };
+
+        coordinator.frontend_ready("two".into());
+
+        assert!(!coordinator.timeout_expired(&close));
+        assert!(coordinator.frontend_is_ready());
+    }
+
+    #[test]
     fn recovery_decision_from_superseded_attempt_is_stale() {
         let mut coordinator = LifecycleCoordinator::new(1);
         let old = match coordinator.begin(LifecycleKind::Close, true) {
