@@ -1680,6 +1680,7 @@ mod tests {
         );
     }
 
+    /// D11: a quit with no visible window takes the direct exit path.
     #[test]
     fn old_quit_without_a_visible_window_can_exit_directly() {
         let mut machine = Machine::new(1);
@@ -1998,7 +1999,7 @@ mod tests {
     }
 
     #[test]
-    fn old_timeout_without_frontend_opens_recovery_dialog() {
+    fn timeout_without_frontend_opens_recovery_dialog() {
         let mut machine = Machine::new(1);
         machine.step(Event::Begin {
             kind: Kind::Close,
@@ -2024,7 +2025,7 @@ mod tests {
     }
 
     #[test]
-    fn old_recovery_dialog_authorizes_one_attempt() {
+    fn recovery_dialog_authorizes_one_attempt() {
         let mut machine = Machine::new(1);
         machine.step(Event::Begin {
             kind: Kind::Close,
@@ -2378,6 +2379,7 @@ mod tests {
         );
     }
 
+    /// Q2: a quit queued during recreation exits through the bypass after failure.
     #[test]
     fn old_s2_quit_during_recreation_is_replayed_after_failure_too() {
         let mut machine = Machine::new(1);
@@ -2613,6 +2615,7 @@ mod tests {
         );
     }
 
+    /// D2: a quit queued behind close finalization is replayed after the close.
     #[test]
     fn old_new_1_quit_during_close_finalization_is_not_lost() {
         let mut machine = Machine::new(1);
@@ -2688,8 +2691,9 @@ mod tests {
         );
     }
 
+    /// D13: recreation requested during an active lifecycle attempt is queued.
     #[test]
-    fn old_new_3_recreation_refuses_an_active_lifecycle_attempt() {
+    fn new3_recreation_queues_active_lifecycle_attempt() {
         let mut machine = Machine::new(1);
         machine.step(Event::FrontendReady {
             instance_id: "bridge".into(),
@@ -2722,6 +2726,7 @@ mod tests {
         );
     }
 
+    /// D1/F3: timeout recovery reports the live frontend failure without clearing its replacement.
     #[test]
     fn old_new_4_timeout_cannot_clear_a_replacement_frontend() {
         let mut machine = Machine::new(1);
@@ -2742,10 +2747,6 @@ mod tests {
             sequence: 1,
         };
         let effects = machine.step(Event::Timeout(attempt.clone()));
-        let token = Token {
-            instance_id: "two".into(),
-            generation: 1,
-        };
         assert!(matches!(
             (machine.state(), effects.as_slice()),
             (
@@ -2769,7 +2770,6 @@ mod tests {
                 ],
             )
         ));
-        let _ = token;
     }
 
     #[test]
