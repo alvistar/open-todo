@@ -128,6 +128,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision follows the line to the save, so what the composer shows is what
   gets created.
 
+### Fixed (desktop shell, review rounds 4 and 5)
+- **Lifecycle intents are queued, not dropped.** A Command-Q that arrives while
+  an authorised close is hiding the window, or while the window is being
+  recreated, is queued and replayed. The finalisation reservation is taken in
+  the same lock as the decision, so a recreation can no longer slip between
+  them. Readiness carries a native token (instance and window generation); a
+  timeout owned by a replaced bridge re-emits the request to the current one
+  instead of clearing its readiness.
+- **Rechecks are answerable.** Native requests carry a sequence number, so a
+  recheck of the same attempt is a distinct request: the user's answer to it
+  is sent, and the settling of the original response no longer hides it.
+- **Failed writes stay guarded.** A picker whose write is rejected keeps its
+  entry dirty until a retry succeeds or the error is dismissed; a write whose
+  detail unmounted keeps its pending state until the promise settles and
+  surfaces its failure in the lifecycle notice, which can dismiss it. Escape
+  returns focus to the picker trigger and does not hide a busy or failed write.
+- **Closed narrow sidebar is `inert`**, and the usable-geometry check requires
+  a minimum overlap with a monitor rather than one pixel.
+
 ### Changed
 - **A bare repeat adverb is now offered rather than applied.** `report
   mensilmente` and `standup daily` used to become repeating tasks on sight. So
@@ -492,19 +511,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WebSocket task events runs in parallel, off the critical path.
 
 ### Known gaps
-- **Desktop shell (2026-09-17, three independent review passes in
-  `docs/designs/tauri-desktop-shell-review*.md`).** Open races in the native
-  lifecycle coordinator, none reproduced in the packaged app: a Command-Q that
-  lands in the milliseconds while an authorised close is hiding the window can
-  be dropped; a second request arriving while the bridge's answer to the first
-  is in flight can be cleared before it renders; a window recreation can
-  invalidate a decision the user already gave; an old timeout can clear the
-  readiness of a bridge that remounted. Still to do on the UI side: a picker
-  dismissed by Escape does not return focus and can hide a failed write; a
-  detail unmounted by view reconciliation drops its pending write from the
-  registry; the closed narrow sidebar is not `inert`; the geometry check
-  accepts a window with one pixel on a monitor. Detached native threads have
-  no cancellation on exit.
+- **Desktop shell (2026-09-17, five independent review passes in
+  `docs/designs/tauri-desktop-shell-review*.md`).** Two fix rounds closed the
+  races found by the first three passes (a Command-Q during an authorised
+  close, a request cleared before it rendered, a decision invalidated by
+  window recreation, a stale timeout, plus the picker focus, pending-write,
+  `inert` sidebar and one-pixel geometry gaps). The fifth pass still finds one
+  deterministic defect in the native coordinator: a close or quit that starts
+  before the bridge is ready opens the native recovery dialog, the bridge's
+  first ready then re-emits the request and makes that dialog inert, and the
+  re-emitted attempt's timeout cannot open a second one, so the attempt stays
+  active and every later close or quit is ignored until force-quit. Related:
+  the quit queued during window recreation is replayed before the new bridge
+  is ready; the five-second timeout clears a live bridge's readiness with no
+  way back; the lifecycle notice's Dismiss can clear a draft error while a
+  native error stays on screen. The coordinator's state is spread over nine
+  independent fields; the next slice replaces it with an explicit state
+  machine rather than a sixth patch round. Detached native threads have no
+  cancellation on exit.
 - Only the packaged macOS app has been launched, closed, reopened and quit
   with Vite stopped; signing in, the WebView transport (HTTP consent, CORS,
   TLS, redirects) and storage-failure behaviour in the packaged WebView, monitor

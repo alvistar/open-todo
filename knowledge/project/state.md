@@ -69,15 +69,10 @@ stale_after: 2026-12-17
 - The locked native dependency graph currently requires Rust 1.88+; `tauri info` may report an older system Rust even when a rustup toolchain is available.
 - DESIGN.md still records an unresolved owner decision about shipping measured non-accent palette values verbatim.
 - The corpus-diff script defaults to git ref `d3d0a4a`, which is absent from this checkout; supply an existing compatible baseline explicitly.
-- NEW-1: Command-Q arriving while an authorized macOS close is in `hide()` can be dropped, leaving the process running in the background.
-- NEW-2: A React A/B lifecycle-request commit race can clear a newly emitted request; a same-attempt Cancel can also be dropped while an invoke is pending.
-- NEW-3: Window recreation can invalidate a pending close/quit decision before native finalization.
-- NEW-4: An old lifecycle timeout can clear a remounted bridge's readiness because timeout ownership is not tied to the frontend instance.
-- N6: Picker Escape has no focus return and can hide a failed write/error.
-- N7: View reconciliation can unregister a pending detail write while its promise is unresolved.
-- N9: Lifecycle readiness has no mount/window-generation token to reject stale bridge signals.
-- Usable-geometry accepts a one-pixel monitor overlap as visible.
-- A closed sidebar is not inert, so off-screen navigation remains focusable/visible to assistive technology.
+- Review-5 B1′: a close/quit begun before the bridge is ready opens the native recovery dialog; the bridge's first ready re-emits the attempt and makes that dialog inert, and the re-emitted timeout cannot open another, so the attempt stays active and later close/quit are ignored until force-quit.
+- Review-5 F2/F3: the quit queued during recreation is replayed before the new bridge is ready; the five-second timeout clears a live bridge's readiness with no way back.
+- Review-5 F4: the lifecycle notice's Dismiss can clear a draft error while a native error stays on screen.
+- The coordinator's state lives in nine independent fields; a redesign as an explicit state machine is the planned next slice.
 
 ## Related
 - [Architecture](/architecture/architecture.md) — how the working features connect

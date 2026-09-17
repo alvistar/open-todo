@@ -158,7 +158,7 @@ sig = "3ec9c5569516ff4f"
 [[bindings]]
 doc = "knowledge/playbooks/add-task-mutation.md"
 target = "src/ui/detail/TaskDetail.test.tsx"
-sig = "05e4a45c040f2975"
+sig = "8b222b0237377880"
 
 [[bindings]]
 doc = "knowledge/playbooks/amend-quick-add.md"
@@ -283,12 +283,12 @@ sig = "cdf5cea10f354670"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lib.rs"
-sig = "4f8dc62e3484f552"
+sig = "173b97b55e52033f"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lifecycle.rs"
-sig = "5a175d68875c5e6b"
+sig = "598ccfb13bae4fa8"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
@@ -303,12 +303,12 @@ sig = "11d9c76a219dace7"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src/lifecycle/drafts.ts"
-sig = "9a627861e58132f0"
+sig = "ca19fa5dfe049f49"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src/lifecycle/useDesktopLifecycle.tsx"
-sig = "19d0c91b06259e75"
+sig = "b15bf952cbcbcf39"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
@@ -343,7 +343,7 @@ sig = "f095a3c7c3489620"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src/ui/Shell.tsx"
-sig = "a13013c5ac604616"
+sig = "99b91f79d397ae6a"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
