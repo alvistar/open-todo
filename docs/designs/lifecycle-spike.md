@@ -74,3 +74,28 @@ SPIKE Q3 ExitRequested prevented after destroy
 All three operations succeeded from the spawned worker thread; no error text was
 returned. This confirms the Q3 runner choice in the current macOS packaged runtime:
 `Finalize` and `ShowWindow` do not require `run_on_main_thread` for these operations.
+
+## Q4 — hidden window's bridge
+
+Procedure: launched the packaged app with a temporary watcher, brought it frontmost,
+and pressed `⌘W`. The production close flow hid the window while retaining its
+WebView handle. Once hidden, the watcher invoked a temporary command that called the
+old coordinator with `window_exists=true` (the normal old helper would direct-exit
+when visibility is false) and emitted `lifecycle:request`. The temporary
+`lifecycle_decision` log included the attempt and sequence; stderr was read from the
+launching terminal.
+
+Raw stderr excerpt (Unix epoch milliseconds):
+
+```text
+SPIKE Q4 lifecycle_decision received for attempt 1 sequence 0 at 1789668023694 ms
+SPIKE Q4 hidden window detected at 1789668023730 ms
+SPIKE Q4 lifecycle:request emitted for attempt 2 at 1789668023730 ms
+SPIKE Q4 lifecycle_decision received for attempt 2 sequence 0 at 1789668023731 ms
+```
+
+The hidden WebView bridge answered the request in 1 ms, well within the 5 s ask
+timeout. This confirms hidden-bridge liveness for
+`Idle{hidden_by_close:false} × Begin(Quit)` and supports D11's `ShowWindow`-then-ask
+cell. The temporary path did not itself exercise `ShowWindow`; Q3's worker-thread
+`show succeeded` observation is the evidence available for that runner effect.
