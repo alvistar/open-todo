@@ -59,7 +59,8 @@ export function DesktopLifecycleBridge() {
   );
   requestRef.current = request;
   requestStateRef.current = requestState;
-  const error = nativeError ?? requestState.responseError;
+  const error =
+    nativeError ?? requestState.responseError ?? summary.errors[0]?.error ?? null;
 
   useEffect(() => {
     if (!isTauri()) return;

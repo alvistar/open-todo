@@ -1,5 +1,5 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useDraftSource } from "../../lifecycle/drafts";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { registerPendingDraft, useDraftSource } from "../../lifecycle/drafts";
 import { Icon } from "../icons/Icon";
 import type { IconName } from "../icons/paths";
 import { useOverlayLayer } from "../overlayStack";
@@ -47,9 +47,26 @@ export function PickerField<TChange>({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const mountedRef = useRef(false);
 
   useDraftSource(`picker:${label}`, label, false, busy);
-  useOverlayLayer("picker", () => setOpen(false), open);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const closePicker = useCallback(() => {
+    if (busy) return false;
+    setOpen(false);
+    triggerRef.current?.focus();
+    return true;
+  }, [busy]);
+
+  useOverlayLayer("picker", closePicker, open);
 
   useEffect(() => {
     if (!open) return;
@@ -57,7 +74,7 @@ export function PickerField<TChange>({
 
     /* A click anywhere else closes the picker; the dialog behind stays live. */
     const onPointerDown = (event: MouseEvent) => {
-      if (!root?.contains(event.target as Node)) setOpen(false);
+      if (!root?.contains(event.target as Node)) closePicker();
     };
     /*
      * Escape closes the picker and must not reach the dialog, which would close
@@ -70,7 +87,7 @@ export function PickerField<TChange>({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.stopPropagation();
-      setOpen(false);
+      closePicker();
     };
 
     document.addEventListener("mousedown", onPointerDown);
@@ -79,25 +96,31 @@ export function PickerField<TChange>({
       document.removeEventListener("mousedown", onPointerDown);
       root?.removeEventListener("keydown", onKeyDown);
     };
-  }, [open]);
+  }, [closePicker, open]);
 
   const commit = (change: TChange) => {
     setBusy(true);
     setError(null);
-    void onCommit(change)
+    const operation = Promise.resolve().then(() => onCommit(change));
+    const release = registerPendingDraft(label, operation);
+    void operation
       .then(() => {
         setOpen(false);
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : "Could not save the change.");
       })
-      .finally(() => setBusy(false));
+      .finally(() => {
+        if (mountedRef.current) release();
+        setBusy(false);
+      });
   };
 
   return (
     <div ref={rootRef} className={styles.field}>
       <div className={styles.label}>{label}</div>
       <button
+        ref={triggerRef}
         type="button"
         className={`${styles.value} ${empty ? styles.empty : ""}`}
         aria-haspopup="true"

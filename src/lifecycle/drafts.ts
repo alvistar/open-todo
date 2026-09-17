@@ -5,26 +5,30 @@ export interface DraftSource {
   label: string;
   dirty: boolean;
   pending: boolean;
+  error?: string;
 }
 
 export interface DraftSummary {
   dirty: boolean;
   pending: boolean;
   sources: readonly DraftSource[];
+  errors: readonly DraftSource[];
 }
 
 const sources = new Map<string, DraftSource>();
 const listeners = new Set<() => void>();
-let snapshot: DraftSummary = { dirty: false, pending: false, sources: [] };
+let nextPendingId = 0;
+let snapshot: DraftSummary = { dirty: false, pending: false, sources: [], errors: [] };
 
 function emit(): void {
   const nextSources = [...sources.values()].filter(
-    (source) => source.dirty || source.pending,
+    (source) => source.dirty || source.pending || source.error !== undefined,
   );
   const next: DraftSummary = {
     dirty: nextSources.some((source) => source.dirty),
     pending: nextSources.some((source) => source.pending),
     sources: nextSources,
+    errors: nextSources.filter((source) => source.error !== undefined),
   };
   if (
     next.dirty === snapshot.dirty &&
@@ -56,6 +60,56 @@ export function updateDraftSource(
   if (current.dirty === state.dirty && current.pending === state.pending) return;
   sources.set(id, { ...current, ...state });
   emit();
+}
+
+/**
+ * Keeps an in-flight write in the lifecycle registry after its component has
+ * unmounted. Rejected detached writes remain as dirty errors until the next
+ * write or an explicit lifecycle cleanup clears them; successful writes leave
+ * no registry entry.
+ */
+export function registerPendingDraft(
+  label: string,
+  promise: Promise<unknown>,
+): () => void {
+  const id = `pending:${nextPendingId++}`;
+  sources.set(id, { id, label, dirty: false, pending: true });
+  emit();
+
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    if (sources.delete(id)) emit();
+  };
+  void promise.then(
+    () => {
+      if (sources.delete(id)) emit();
+    },
+    (reason: unknown) => {
+      const current = sources.get(id);
+      if (!current) return;
+      sources.set(id, {
+        ...current,
+        dirty: true,
+        pending: false,
+        error: reason instanceof Error ? reason.message : "Could not save the change.",
+      });
+      emit();
+    },
+  );
+  return release;
+}
+
+/** Clears detached write failures after the user has acknowledged them. */
+export function clearDraftErrors(): void {
+  let changed = false;
+  for (const [id, source] of sources) {
+    if (source.error === undefined) continue;
+    sources.delete(id);
+    changed = true;
+  }
+  if (changed) emit();
 }
 
 export function getDraftSummary(): DraftSummary {
