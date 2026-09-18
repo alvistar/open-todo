@@ -34,7 +34,11 @@ mod imp {
             log::error!("lifecycle: applicationShouldTerminate called before install");
             return TerminateReply::Now as usize;
         };
-        let state = app.state::<crate::AppState>();
+        // No state means teardown is under way; never hold up a quit on that.
+        let Some(state) = app.try_state::<crate::AppState>() else {
+            log::error!("lifecycle: applicationShouldTerminate with no app state");
+            return TerminateReply::Now as usize;
+        };
         reply_for(state.lifecycle.exit_requested()) as usize
     }
 
