@@ -3,7 +3,12 @@ version = 1
 [[bindings]]
 doc = "knowledge/architecture/architecture.md"
 target = "src-tauri/src/lifecycle/machine.rs"
-sig = "80c789f910db08b5"
+sig = "f74359c146478e4b"
+
+[[bindings]]
+doc = "knowledge/architecture/architecture.md"
+target = "src-tauri/src/lifecycle/terminate.rs"
+sig = "afee8f4f87c6f14a"
 
 [[bindings]]
 doc = "knowledge/architecture/architecture.md"
@@ -288,17 +293,17 @@ sig = "cdf5cea10f354670"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lib.rs"
-sig = "8dc5dda9753f2ca6"
+sig = "bab940f4783b6a17"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lifecycle/machine.rs"
-sig = "80c789f910db08b5"
+sig = "f74359c146478e4b"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lifecycle/mod.rs"
-sig = "0a57c4e8b18a72cf"
+sig = "97ddaf82708ccfc1"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
@@ -308,7 +313,12 @@ sig = "149bc5c5288b6d61"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lifecycle/tauri_runner.rs"
-sig = "b8fba4a1f76f640f"
+sig = "9727a8dfe3bcadbd"
+
+[[bindings]]
+doc = "knowledge/project/state.md"
+target = "src-tauri/src/lifecycle/terminate.rs"
+sig = "afee8f4f87c6f14a"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
@@ -328,7 +338,7 @@ sig = "ca19fa5dfe049f49"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src/lifecycle/useDesktopLifecycle.tsx"
-sig = "b15bf952cbcbcf39"
+sig = "25682a535efb9f49"
 
 [[bindings]]
 doc = "knowledge/project/state.md"

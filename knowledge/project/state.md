@@ -32,6 +32,7 @@ code_refs:
 - src-tauri/src/lifecycle/machine.rs
 - src-tauri/src/lifecycle/runtime.rs
 - src-tauri/src/lifecycle/tauri_runner.rs
+- src-tauri/src/lifecycle/terminate.rs
 - src-tauri/tauri.conf.json
 last_updated: 2026-09-18
 stale_after: 2026-12-17
@@ -48,7 +49,9 @@ stale_after: 2026-12-17
 - Task detail edits title/description, date, priority, project and reminders; title parsing previews metadata before Save.
 - Detail supports label attach/detach/create, reading/adding comments and creating subtasks in their parent's project.
 - Portable Tauri v2 desktop shell with VERSION-derived metadata, bundled production assets, a stable application identifier, restricted CSP, standard decorations and origin-separated web storage.
-- Tauri window-state restoration with usable-geometry fallback, single-instance activation, macOS close/reopen/Command-Q lifecycle and a shared dirty/pending close guard with native recovery, driven by an explicit state machine (`lifecycle/machine.rs`) on a single-owner event loop (`lifecycle/runtime.rs`) with a Tauri effect runner (`lifecycle/tauri_runner.rs`); six proptest invariants and trace equivalence with the previous coordinator are in the test suite.
+- Tauri window-state restoration with usable-geometry fallback, single-instance activation, macOS close/reopen/quit lifecycle and a shared dirty/pending close guard with native recovery, driven by an explicit state machine (`lifecycle/machine.rs`) on a single-owner event loop (`lifecycle/runtime.rs`) with a Tauri effect runner (`lifecycle/tauri_runner.rs`); six proptest invariants and trace equivalence with the previous coordinator are in the test suite.
+- Every macOS quit path reaches the machine: `lifecycle/terminate.rs` adds AppKit's `applicationShouldTerminate:` at runtime (objc2 0.6.4, macOS only), so ⌘Q, File → Quit, Dock → Quit, the App Switcher and `osascript … to quit` take the blocking `exit_requested()` round-trip — `Allow` answers NSTerminateNow, `Prevent` answers NSTerminateCancel with a Quit attempt already begun, and an authorised quit ends in `Effect::Exit` → `app.exit(0)` → a second `ExitRequested` answered Allow. No custom menu was added.
+- The ask no longer times out while the person reads it: the bridge sends `lifecycle_acknowledge` (a Tauri command) once per (attemptId, requestSequence) when its dialog mounts, `Event::Acknowledged` sets `acknowledged: true` on `State::Asking`, and `Asking × Timeout` while acknowledged only logs "acknowledged; waiting for the person" instead of raising the native dialog. Every re-emit resets the flag.
 - Responsive shared layouts: Todoist-shaped narrow sidebar overlay/backdrop/toggle, stacked task detail, wrapped quick-add/setup/dialog controls and Escape/focus handling. The explicit overlay stack gives picker > dialog > sidebar precedence, and dialogs decline Escape while typing.
 - The shared draft/pending registry covers quick-add, title/description editors, comments, subtasks, pickers, completion, server setup and login, so close/quit sees both unsaved text and in-flight writes.
 - HTTP is still opt-in: credential headers and login bodies require origin-bound consent, and the HTTP client rejects redirects before following them.
@@ -72,9 +75,9 @@ stale_after: 2026-12-17
 - The locked native dependency graph currently requires Rust 1.88+; `tauri info` may report an older system Rust even when a rustup toolchain is available.
 - DESIGN.md still records an unresolved owner decision about shipping measured non-accent palette values verbatim.
 - The corpus-diff script defaults to git ref `d3d0a4a`, which is absent from this checkout; supply an existing compatible baseline explicitly.
-- The old coordinator in `lifecycle/mod.rs` is still compiled and unused until the packaged smoke of the machine passes (design slice 5) and slice 6 deletes it.
+- The old coordinator in `lifecycle/mod.rs` is still compiled and unused; design slice 6 deletes it and its 26 tests.
 - One 5 s timeout serves both the grace wait for a late bridge and the ask; the design asks 2 s for the first.
-- The packaged smoke ran on 2026-09-18 (`docs/designs/lifecycle-slice-5-smoke.md`): close (⌘W) passes; every quit path (⌘Q, File → Quit, Dock → Quit, `osascript … to quit`) bypasses the machine because the default menu's Quit item is AppKit's `terminate:` and tao does not implement `applicationShouldTerminate:`, so a dirty draft is lost; and the 5 s ask timeout races the person because the bridge never acknowledges a request. Both are design slice 7, before slice 6.
+- Slice 7 (commits `0818b3c`, `f9bfac5`) fixed both packaged-smoke findings and was verified by 134 Rust tests, 6 proptest invariants at 10 000 cases, clean `clippy -D warnings`, `pnpm check`, the Vitest lifecycle suite and `pnpm desktop:build` (both bundles). Packaged check on 2026-09-18: File → Quit and Dock → Quit on a clean app log `lifecycle exit prevented`, `lifecycle exit bypass armed`, `lifecycle exit allowed`, `lifecycle: exited`, and the owner confirmed by hand that ⌘Q with a dirty draft shows the web dialog. Smoke sequence 5b (a slow answer must no longer raise the native dialog) has not yet been re-run with the scripted checklist.
 - The packaged bundle logs to stderr with `RUST_LOG` (`env_logger`); `.claude/skills/desktop-qa/SKILL.md` drives it through System Events.
 
 ## Related
