@@ -47,8 +47,11 @@ bundled `dist/` files. Local macOS bundle output is under
 `src-tauri/target/release/bundle/`. The first shell uses standard decorations,
 restores size and position with Tauri's window-state plugin, and keeps one main
 window when a second launch or Dock reopen occurs. Closing the macOS window
-hides it while the process remains available; Command-Q quits. Unsaved task,
-comment and setup drafts are guarded by the shared close/quit confirmation.
+hides it while the process remains available. Every quit path — Command-Q,
+File → Quit, Dock → Quit, the App Switcher, `osascript … to quit` — goes
+through the same lifecycle state machine as closing, so unsaved task, comment
+and setup drafts and in-flight writes are reported before anything is lost.
+The design is `docs/designs/lifecycle-state-machine.md`.
 
 The native window uses a restricted CSP. It permits only bundled application
 assets and explicitly configured HTTP/HTTPS API connections; it does not permit
@@ -141,9 +144,10 @@ Two more things worth knowing before you deploy it:
 | `src/model` | The conventions — priority (D-map-1), all-day dates (D-map-2), view definitions, grouping |
 | `src/live` | `LiveSource` and the polling implementation (D6) |
 | `src/ui` | Components at the geometry in `docs/layout-specs.md`, including responsive layouts |
-| `src-tauri` | Cross-platform Tauri shell, window lifecycle and native packaging metadata |
+| `src/lifecycle` | Draft registry and the desktop lifecycle bridge used by the close/quit guard |
+| `src-tauri` | Cross-platform Tauri shell, the close/quit state machine (`src/lifecycle/`) and native packaging metadata |
 | `DESIGN.md` | The design system: tokens (generated), layout rules, components, do's and don'ts |
-| `docs/` | The specification: layout measurements, data-model mapping, handover |
+| `docs/` | The specification: layout measurements, data-model mapping, handover, and `designs/` (feature designs, slice plans, review records) |
 | `research/` | Reference material captured from Todoist; not shipped |
 
 ## Licence

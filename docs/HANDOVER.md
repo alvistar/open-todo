@@ -695,10 +695,15 @@ public HTTP API only, which carries no such obligation.
    built by workers and put through three independent review passes plus a
    packaged verification, all recorded in `docs/designs/tauri-desktop-shell-review*.md`
    and `…-verification.md`. Notes for whoever continues:
-   - The close/quit coordinator is `src-tauri/src/lifecycle.rs` (pure state,
-     unit-tested) driven by `src-tauri/src/lib.rs` (Tauri events). Read the
-     third review before touching it: it lists the races still open, with
-     file:line, and which residuals it considers must-fix.
+   - The close/quit coordinator is now an explicit state machine under
+     `src-tauri/src/lifecycle/` — `machine.rs` (pure transitions), `runtime.rs`
+     (serialized loop), `tauri_runner.rs` (window effects), `terminate.rs`
+     (AppKit `applicationShouldTerminate:`), with `properties.rs` and
+     `traces.rs` holding the proptest invariants and the trace equivalence
+     against the original coordinator, which still lives in `mod.rs` until
+     slice 6 deletes it. Read `docs/designs/lifecycle-state-machine.md` first,
+     and the third review after it: that review lists the races it found with
+     file:line and which residuals it considers must-fix.
    - Escape has ONE owner, `src/ui/overlayStack.tsx`. A new dismissible layer
      registers there; do not add a window keydown listener beside it.
    - Every draft-bearing surface registers in `src/lifecycle/drafts.ts`. A new

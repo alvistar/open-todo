@@ -36,6 +36,8 @@ pnpm test src/model/quickadd/parse.test.ts       # Single test file
 pnpm test src/model/quickadd/parse.test.ts -t 'pattern' # Filter test names
 pnpm build                       # Version drift check + TypeScript + Vite -> dist/
 pnpm preview                     # Serve the built bundle locally
+pnpm desktop:dev                 # Tauri window + Vite (needs Rust 1.88+)
+pnpm desktop:build               # Production web build, then a local desktop bundle
 ```
 
 Vitest uses jsdom, globals and `src/test/setup.ts` (jest-dom matchers); it discovers
@@ -55,6 +57,17 @@ Vitest uses jsdom, globals and `src/test/setup.ts` (jest-dom matchers); it disco
 - `src/api/` owns the HTTP protocol; `src/model/` holds pure domain logic;
   `src/queries/` coordinates TanStack Query and mutations; `src/live/` reconciles
   server changes into the cache; `src/ui/` renders lists, the composer and detail.
+- The desktop shell lives in `src-tauri/`. Its close/quit coordinator is an
+  explicit state machine: `src-tauri/src/lifecycle/machine.rs` holds the pure
+  transitions, `runtime.rs` serializes them, `tauri_runner.rs` performs the
+  window effects, `terminate.rs` installs AppKit's `applicationShouldTerminate:`
+  so every macOS quit path goes through the machine, and `properties.rs` /
+  `traces.rs` hold the proptest invariants and the trace equivalence against the
+  old coordinator in `mod.rs`. Read `docs/designs/lifecycle-state-machine.md`
+  before changing any of it. On the web side, `src/lifecycle/drafts.ts` is the
+  single registry of unsaved work: a new write path that does not register there
+  is invisible to the close guard, and `src/ui/overlayStack.tsx` is the one owner
+  of Escape.
 - A `ViewDef` in `src/model/views.ts` pairs a server filter with a client
   `belongs()` predicate. Keep them consistent. Tasks with parents are excluded
   from top-level lists and shown under their parent instead.
