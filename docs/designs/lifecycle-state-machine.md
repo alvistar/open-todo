@@ -381,27 +381,27 @@ Synthesized from this review's findings. Each task derives from a specific findi
   - Surfaced by: Outside voice — findings 9 and 11
   - Files: throwaway branch; `docs/designs/lifecycle-spike.md`
   - Verify: each question answered with an observed result
-- [ ] **T1 (P1, human: ~2h / CC: ~10min)** — machine.rs — `AwaitingFrontend` with grace timeout; upgrade re-arms it (D1, D9/1)
+- [x] **T1 (P1, human: ~2h / CC: ~10min)** — machine.rs — `AwaitingFrontend` with grace timeout; upgrade re-arms it (D1, D9/1)
   - Files: src-tauri/src/lifecycle/machine.rs
   - Verify: scenarios `b1prime_quit_before_bridge_ready_waits_then_asks`, `codex1_upgrade_in_waiting_rearms_timeout`
-- [ ] **T2 (P1, human: ~1h / CC: ~5min)** — machine.rs — `Idle{hidden_by_close}`; direct exit only from it or with no window; queued quit after a successful close exits, after a failed close is asked (D2, D11, D10/7)
+- [x] **T2 (P1, human: ~1h / CC: ~5min)** — machine.rs — `Idle{hidden_by_close}`; direct exit only from it or with no window; queued quit after a successful close exits, after a failed close is asked (D2, D11, D10/7)
   - Verify: scenarios `new1_quit_queued_behind_close_exits_after_hide`, `codex2_cmd_h_then_quit_asks`, `codex7_failed_close_reasks_queued_quit`
-- [ ] **T3 (P1, human: ~1 day / CC: ~20min)** — runtime.rs — Single-owner event loop, oneshot reply for `lifecycle_ready`, blocking round-trip for `ExitRequested`, effect→event table with `Drop` guard and `thread::Builder` (D3, D14, Codex 9)
+- [x] **T3 (P1, human: ~1 day / CC: ~20min)** — runtime.rs — Single-owner event loop, oneshot reply for `lifecycle_ready`, blocking round-trip for `ExitRequested`, effect→event table with `Drop` guard and `thread::Builder` (D3, D14, Codex 9)
   - Files: src-tauri/src/lifecycle/runtime.rs, src-tauri/src/lib.rs
   - Verify: fake-runner tests, one per row of the §5 table
-- [ ] **T4 (P1, human: ~2h / CC: ~10min)** — machine.rs — `Recreating{id, reserved, ready}`: readiness before completion is minted in the reserved generation (D12, Codex 3); queued quit → Asking/AwaitingFrontend (D4)
+- [x] **T4 (P1, human: ~2h / CC: ~10min)** — machine.rs — `Recreating{id, reserved, ready}`: readiness before completion is minted in the reserved generation (D12, Codex 3); queued quit → Asking/AwaitingFrontend (D4)
   - Verify: scenarios `codex3_ready_before_recreation_finished_is_kept`, `s2_quit_queued_during_recreation_is_asked_by_new_bridge`
-- [ ] **T5 (P1, human: ~1h / CC: ~5min)** — machine.rs — `recreate_pending` in Asking/Recovering/Finalizing/AwaitingFrontend, composed on return to Idle (D13, Codex 4)
+- [x] **T5 (P1, human: ~1h / CC: ~5min)** — machine.rs — `recreate_pending` in Asking/Recovering/Finalizing/AwaitingFrontend, composed on return to Idle (D13, Codex 4)
   - Verify: scenario `codex4_recreation_requested_while_asking_starts_after_cancel`
-- [ ] **T6 (P1, human: ~2h / CC: ~10min)** — machine.rs — `Exiting` state, `ArmExitBypass`/`Exit`/`AllowExit`/`PreventExit` effects, `ExitRequested`/`Exited` events (D9/5, D10/8)
+- [x] **T6 (P1, human: ~2h / CC: ~10min)** — machine.rs — `Exiting` state, `ArmExitBypass`/`Exit`/`AllowExit`/`PreventExit` effects, `ExitRequested`/`Exited` events (D9/5, D10/8)
   - Verify: scenarios `codex5_finalize_quit_arms_bypass_first`, `codex8_second_exit_request_while_exiting_is_prevented` (order observed in spike Q5); invariant 6
-- [ ] **T7 (P1, human: ~1h / CC: ~5min)** — machine.rs — `EmitRequest{attempt, frontend}` / `EmitFailed` with owner check (D9/6)
+- [x] **T7 (P1, human: ~1h / CC: ~5min)** — machine.rs — `EmitRequest{attempt, frontend}` / `EmitFailed` with owner check (D9/6)
   - Verify: scenario `codex6_late_emit_failure_does_not_clear_replacement_bridge`
-- [ ] **T8 (P1, human: ~1 day / CC: ~30min)** — machine.rs — 27 scenarios rewritten over `step` (regression rule); proptest invariants 1–6 with ids and completion-based counting (D10/10)
+- [x] **T8 (P1, human: ~1 day / CC: ~30min)** — machine.rs — 27 scenarios rewritten over `step` (regression rule); proptest invariants 1–6 with ids and completion-based counting (D10/10)
   - Verify: `cargo test`, 10 000 cases
-- [ ] **T9 (P1, human: ~half day / CC: ~15min)** — tests — Trace equivalence old vs new; mock-runtime tests for event mapping and `ExitRequested` (D6, Codex 11)
+- [x] **T9 (P1, human: ~half day / CC: ~15min)** — tests — Trace equivalence old vs new; mock-runtime tests for event mapping and `ExitRequested` (D6, Codex 11)
   - Files: src-tauri/src/lifecycle/, src-tauri/Cargo.toml (dev-dependencies: tauri `test`, proptest exact pin)
-- [ ] **T10 (P2, human: ~1h / CC: ~5min)** — machine.rs, runtime.rs — ASCII state and loop diagrams in file headers (D5)
+- [x] **T10 (P2, human: ~1h / CC: ~5min)** — machine.rs, runtime.rs — ASCII state and loop diagrams in file headers (D5)
 _No new tasks from Performance review._
 
 ## GSTACK REVIEW REPORT

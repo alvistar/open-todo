@@ -293,7 +293,7 @@ sig = "cdf5cea10f354670"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lib.rs"
-sig = "bab940f4783b6a17"
+sig = "0263033ea67166fe"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
@@ -308,12 +308,12 @@ sig = "97ddaf82708ccfc1"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lifecycle/runtime.rs"
-sig = "149bc5c5288b6d61"
+sig = "c2a73b72b647f8d4"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lifecycle/tauri_runner.rs"
-sig = "9727a8dfe3bcadbd"
+sig = "be914fa348df3189"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
@@ -333,12 +333,12 @@ sig = "11d9c76a219dace7"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src/lifecycle/drafts.ts"
-sig = "ca19fa5dfe049f49"
+sig = "c73a6f22ebb26369"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src/lifecycle/useDesktopLifecycle.tsx"
-sig = "25682a535efb9f49"
+sig = "7143e6ec490f1cfe"
 
 [[bindings]]
 doc = "knowledge/project/state.md"
@@ -383,4 +383,4 @@ sig = "3deb86e13412db76"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src/ui/overlayStack.tsx"
-sig = "8fd6987f639932ef"
+sig = "282122f9dd2b20e7"

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   machine as closing the window, so an unsaved draft or an in-flight write is
   reported and you can stay instead of losing it. Previously every quit path ended
   the process without asking.
+- **Escape kept reaching the right overlay.** The overlay stack rebuilt its
+  registrations on every app re-render, which reshuffled Escape precedence from
+  render recency instead of the order things were opened, so Escape could reach
+  the sidebar underneath an open picker.
 - **The close dialog no longer times out while you read it.** The web dialog now
   tells the machine it is on screen, so taking more than five seconds to answer no
   longer brings up the native "the application did not respond" dialog whose
