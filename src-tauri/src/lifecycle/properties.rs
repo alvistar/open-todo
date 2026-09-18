@@ -148,16 +148,34 @@ fn event_from_seed(state: &State, generation: u64, seed: u8) -> Event {
                 ok: false,
             },
         },
-        _ => match attempt {
-            Some(attempt) => Event::Finalized {
-                attempt: stale_attempt_from(attempt, seed),
-                ok: true,
-            },
-            None => Event::Begin {
-                kind,
-                window_exists,
+        15 => match attempt {
+            Some(attempt) => {
+                let stale = seed & 16 == 0;
+                Event::Acknowledged {
+                    attempt_id: if stale {
+                        attempt.id.saturating_add(1)
+                    } else {
+                        attempt.id
+                    },
+                    generation: if stale {
+                        attempt.generation.saturating_add(1)
+                    } else {
+                        attempt.generation
+                    },
+                    sequence: if stale {
+                        attempt.sequence.saturating_add(1)
+                    } else {
+                        attempt.sequence
+                    },
+                }
+            }
+            None => Event::Acknowledged {
+                attempt_id: 0,
+                generation: generation.saturating_add(1),
+                sequence: u64::from(seed),
             },
         },
+        _ => unreachable!("choice is reduced modulo 16"),
     }
 }
 
@@ -276,6 +294,15 @@ fn event_owner_matches(state: &State, event: &Event) -> bool {
         | Event::EmitFailed { attempt, .. }
         | Event::Timeout(attempt)
         | Event::Recovered { attempt, .. } => same_owner(state_attempt, attempt),
+        Event::Acknowledged {
+            attempt_id,
+            generation,
+            sequence,
+        } => {
+            state_attempt.id == *attempt_id
+                && state_attempt.generation == *generation
+                && state_attempt.sequence == *sequence
+        }
         Event::Begin { .. }
         | Event::FrontendReady { .. }
         | Event::FrontendUnready { .. }

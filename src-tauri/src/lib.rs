@@ -4,7 +4,7 @@ mod lifecycle;
 
 use lifecycle::machine::{Event, Kind, Machine};
 use lifecycle::runtime::{spawn_loop, ExitVerdict, LifecycleHandle};
-use lifecycle::tauri_runner::{RunnerOps, TauriRunner, WireDecision, WireToken};
+use lifecycle::tauri_runner::{RunnerOps, TauriRunner, WireAttempt, WireDecision, WireToken};
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime, State, WebviewWindow};
 use tauri_plugin_window_state::{AppHandleExt as WindowStateAppHandleExt, StateFlags};
 
@@ -43,6 +43,13 @@ fn lifecycle_decision(state: State<'_, AppState>, payload: WireDecision) {
     state.lifecycle.send(payload.into());
 }
 
+#[tauri::command]
+fn lifecycle_acknowledge(state: State<'_, AppState>, attempt: WireAttempt) {
+    state
+        .lifecycle
+        .send(lifecycle::tauri_runner::acknowledged_event(attempt));
+}
+
 pub fn run() {
     // Logs reach stderr only when `RUST_LOG` is set; the packaged smoke
     // (.claude/skills/desktop-qa) reads the lifecycle lines from there.
@@ -68,11 +75,13 @@ pub fn run() {
             lifecycle_ready,
             lifecycle_unready,
             lifecycle_decision,
+            lifecycle_acknowledge,
         ])
         .setup(|app| {
             app.manage(AppState {
                 lifecycle: spawn_loop(Machine::new(0), TauriRunner::new(app.handle().clone())),
             });
+            lifecycle::terminate::install(app.handle());
             if cfg!(debug_assertions) {
                 log::debug!("open-todo desktop shell started");
             }
@@ -451,6 +460,57 @@ mod lifecycle_mapping_tests {
             .expect("exit event was not observed");
 
         assert_eq!(*seen.lock().unwrap(), vec![Effect::Log("unexpected")]);
+    }
+
+    #[test]
+    fn lifecycle_acknowledge_maps_wire_attempt_to_machine_event() {
+        let app = tauri::test::mock_app();
+        let (runner, seen, observed) = recording_runner(Vec::new());
+        let handle = spawn_loop(Machine::new(1), runner);
+        app.manage(AppState {
+            lifecycle: handle.clone(),
+        });
+
+        let token = lifecycle_ready(app.state(), "bridge".into()).unwrap();
+        assert_eq!(token.instance_id, "bridge");
+        assert_eq!(token.generation, 1);
+        handle.send(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        for _ in 0..5 {
+            observed
+                .recv_timeout(Duration::from_secs(1))
+                .expect("begin effects were not observed");
+            if seen
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|effect| matches!(effect, Effect::ScheduleTimeout(_)))
+            {
+                break;
+            }
+        }
+
+        lifecycle_acknowledge(
+            app.state(),
+            WireAttempt {
+                attempt_id: 1,
+                generation: 1,
+                kind: lifecycle::tauri_runner::WireKind::Close,
+                request_sequence: 0,
+            },
+        );
+        for _ in 0..5 {
+            observed
+                .recv_timeout(Duration::from_secs(1))
+                .expect("acknowledgement effect was not observed");
+            if seen.lock().unwrap().contains(&Effect::Log("acknowledged")) {
+                break;
+            }
+        }
+
+        assert!(seen.lock().unwrap().contains(&Effect::Log("acknowledged")));
     }
 
     #[test]

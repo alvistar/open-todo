@@ -53,6 +53,11 @@ describe("DesktopLifecycleBridge", () => {
     );
     mocks.eventHandlers["lifecycle:request"]?.({ payload: request });
     expect(await screen.findByRole("alertdialog")).toHaveTextContent("unsaved changes");
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_acknowledge"),
+      ).toEqual([["lifecycle_acknowledge", { attempt: request }]]),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Stay" }));
     await waitFor(() =>
@@ -129,6 +134,9 @@ describe("DesktopLifecycleBridge", () => {
         }),
       ),
     );
+    expect(
+      mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_acknowledge"),
+    ).toEqual([]);
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     remove();
   });
@@ -264,11 +272,24 @@ describe("DesktopLifecycleBridge", () => {
         mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_decision"),
       ).toHaveLength(1),
     );
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_acknowledge"),
+      ).toHaveLength(1),
+    );
 
     mocks.eventHandlers["lifecycle:request"]?.({
       payload: { ...request, requestSequence: 1 },
     });
     await waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(([name]) => name === "lifecycle_acknowledge"),
+      ).toEqual([
+        ["lifecycle_acknowledge", { attempt: request }],
+        ["lifecycle_acknowledge", { attempt: { ...request, requestSequence: 1 } }],
+      ]),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Discard and close" }));
 
     await waitFor(() => {

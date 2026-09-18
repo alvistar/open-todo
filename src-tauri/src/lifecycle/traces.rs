@@ -201,6 +201,7 @@ fn classify_new(_state: &State, effects: &[Effect]) -> Outcome {
 
 /// Maps an old call to its machine event(s), and records the design's expected
 /// coarse outcome for the mapping. Calls with no machine counterpart return None.
+/// `Event::Acknowledged` is bridge-only, so no old coordinator call maps to it.
 fn map_call(call: &OldCall, machine: &Machine) -> Option<(Vec<Event>, Outcome)> {
     let mapped = match call {
         OldCall::NewWindow

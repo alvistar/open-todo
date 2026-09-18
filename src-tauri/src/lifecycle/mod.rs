@@ -4,6 +4,7 @@ pub mod machine;
 mod properties; // slice 2: proptest invariants over Machine::step
 pub mod runtime;
 pub mod tauri_runner; // slice 4: EffectRunner over tauri::AppHandle
+pub mod terminate;
 #[cfg(test)]
 mod traces; // slice 3: trace equivalence old coordinator vs Machine
 

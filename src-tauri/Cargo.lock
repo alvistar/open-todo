@@ -2471,6 +2471,7 @@ version = "0.0.1"
 dependencies = [
  "env_logger",
  "log",
+ "objc2",
  "proptest",
  "serde",
  "serde_json",

@@ -68,6 +68,7 @@ pub enum State {
         attempt: Attempt,
         frontend: Token,
         recreate_pending: bool,
+        acknowledged: bool,
     },
     Recovering {
         attempt: Attempt,
@@ -103,6 +104,13 @@ pub enum Event {
         decision: Decision,
         dirty: bool,
         pending: bool,
+    },
+    /// The bridge mounted its dialog for this request and is waiting for the person.
+    /// The owner tuple follows `Decide`; a mismatch is stale.
+    Acknowledged {
+        attempt_id: u64,
+        generation: u64,
+        sequence: u64,
     },
     Finalized {
         attempt: Attempt,
@@ -212,7 +220,8 @@ impl Machine {
                 attempt,
                 frontend,
                 recreate_pending,
-            } => self.asking(attempt, frontend, recreate_pending, event),
+                acknowledged,
+            } => self.asking(attempt, frontend, recreate_pending, acknowledged, event),
             State::Recovering {
                 attempt,
                 recreate_pending,
@@ -335,6 +344,7 @@ impl Machine {
                     attempt,
                     frontend,
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 effects,
             )
@@ -401,6 +411,7 @@ impl Machine {
                         attempt: asking.clone(),
                         frontend: token.clone(),
                         recreate_pending,
+                        acknowledged: false,
                     },
                     vec![
                         Effect::ReplyToken(token.clone()),
@@ -474,6 +485,7 @@ impl Machine {
         attempt: Attempt,
         frontend: Token,
         recreate_pending: bool,
+        acknowledged: bool,
         event: Event,
     ) -> (State, Vec<Effect>) {
         match event {
@@ -487,6 +499,7 @@ impl Machine {
                     attempt,
                     frontend,
                     recreate_pending,
+                    acknowledged,
                 },
                 vec![Effect::Log("dup")],
             ),
@@ -497,6 +510,7 @@ impl Machine {
                     attempt,
                     frontend,
                     recreate_pending,
+                    acknowledged,
                 },
                 vec![Effect::Log("dup")],
             ),
@@ -509,6 +523,7 @@ impl Machine {
                         attempt: superseded.clone(),
                         frontend: frontend.clone(),
                         recreate_pending,
+                        acknowledged: false,
                     },
                     vec![
                         Effect::EmitRequest {
@@ -533,6 +548,7 @@ impl Machine {
                             attempt,
                             frontend,
                             recreate_pending,
+                            acknowledged,
                         },
                         vec![Effect::Log("stale")],
                     );
@@ -563,6 +579,7 @@ impl Machine {
                                 attempt: recheck.clone(),
                                 frontend: frontend.clone(),
                                 recreate_pending,
+                                acknowledged: false,
                             },
                             vec![
                                 Effect::EmitRequest {
@@ -590,6 +607,7 @@ impl Machine {
                             attempt,
                             frontend,
                             recreate_pending,
+                            acknowledged,
                         },
                         vec![Effect::ReplyToken(token), Effect::Log("ready")],
                     )
@@ -600,6 +618,7 @@ impl Machine {
                             attempt: replacement.clone(),
                             frontend: token.clone(),
                             recreate_pending,
+                            acknowledged: false,
                         },
                         vec![
                             Effect::ReplyToken(token.clone()),
@@ -620,6 +639,7 @@ impl Machine {
                             attempt,
                             frontend,
                             recreate_pending,
+                            acknowledged,
                         },
                         vec![Effect::Log("unready")],
                     )
@@ -629,6 +649,7 @@ impl Machine {
                             attempt,
                             frontend,
                             recreate_pending,
+                            acknowledged,
                         },
                         vec![Effect::Log("stale")],
                     )
@@ -645,6 +666,7 @@ impl Machine {
                             attempt,
                             frontend,
                             recreate_pending,
+                            acknowledged,
                         },
                         vec![
                             Effect::EmitError("lifecycle request emission failed".into()),
@@ -657,6 +679,34 @@ impl Machine {
                             attempt,
                             frontend,
                             recreate_pending,
+                            acknowledged,
+                        },
+                        vec![Effect::Log("stale")],
+                    )
+                }
+            }
+            Event::Acknowledged {
+                attempt_id,
+                generation,
+                sequence,
+            } => {
+                if owner_matches(&attempt, attempt_id, generation, sequence) {
+                    (
+                        State::Asking {
+                            attempt,
+                            frontend,
+                            recreate_pending,
+                            acknowledged: true,
+                        },
+                        vec![Effect::Log("acknowledged")],
+                    )
+                } else {
+                    (
+                        State::Asking {
+                            attempt,
+                            frontend,
+                            recreate_pending,
+                            acknowledged,
                         },
                         vec![Effect::Log("stale")],
                     )
@@ -669,8 +719,20 @@ impl Machine {
                             attempt,
                             frontend,
                             recreate_pending,
+                            acknowledged,
                         },
                         vec![Effect::Log("stale")],
+                    );
+                }
+                if acknowledged {
+                    return (
+                        State::Asking {
+                            attempt,
+                            frontend,
+                            recreate_pending,
+                            acknowledged,
+                        },
+                        vec![Effect::Log("acknowledged; waiting for the person")],
                     );
                 }
                 match self.frontend.as_ref() {
@@ -681,6 +743,7 @@ impl Machine {
                                 attempt: replacement.clone(),
                                 frontend: current.clone(),
                                 recreate_pending,
+                                acknowledged: false,
                             },
                             vec![
                                 Effect::EmitRequest {
@@ -715,6 +778,7 @@ impl Machine {
                     attempt,
                     frontend,
                     recreate_pending: true,
+                    acknowledged,
                 },
                 vec![Effect::Log("queued")],
             ),
@@ -724,6 +788,7 @@ impl Machine {
                         attempt,
                         frontend,
                         recreate_pending,
+                        acknowledged,
                     },
                     Event::Begin {
                         kind: Kind::Quit,
@@ -738,6 +803,7 @@ impl Machine {
                     attempt,
                     frontend,
                     recreate_pending,
+                    acknowledged,
                 },
                 vec![Effect::Log("unexpected")],
             ),
@@ -746,6 +812,7 @@ impl Machine {
                     attempt,
                     frontend,
                     recreate_pending,
+                    acknowledged,
                 },
                 vec![Effect::Log("stale")],
             ),
@@ -1131,6 +1198,7 @@ impl Machine {
                                     attempt: attempt.clone(),
                                     frontend: frontend.clone(),
                                     recreate_pending: false,
+                                    acknowledged: false,
                                 },
                                 vec![
                                     Effect::EmitRequest {
@@ -1383,6 +1451,7 @@ mod tests {
                     attempt: attempt.clone(),
                     frontend: token.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::ReplyToken(token.clone()),
@@ -1438,6 +1507,7 @@ mod tests {
                     attempt: current_attempt,
                     frontend: current_token,
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![Effect::Log("stale")],
             )
@@ -1538,6 +1608,7 @@ mod tests {
                     attempt: attempt.clone(),
                     frontend: token.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::EmitRequest {
@@ -1585,6 +1656,7 @@ mod tests {
                     attempt: attempt.clone(),
                     frontend: token.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::EmitRequest {
@@ -1628,6 +1700,7 @@ mod tests {
                     attempt: attempt.clone(),
                     frontend: token.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::EmitRequest {
@@ -1675,6 +1748,7 @@ mod tests {
                     attempt,
                     frontend: token,
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![Effect::Log("stale")],
             )
@@ -1774,6 +1848,7 @@ mod tests {
                     attempt: attempt.clone(),
                     frontend: token.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::ShowWindow,
@@ -1867,6 +1942,7 @@ mod tests {
                     attempt: close_attempt.clone(),
                     frontend: close_frontend.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::ShowWindow,
@@ -1934,6 +2010,7 @@ mod tests {
                     attempt: attempt.clone(),
                     frontend: token.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::EmitError("lifecycle finalization failed".into()),
@@ -2153,6 +2230,7 @@ mod tests {
                     attempt: attempt.clone(),
                     frontend: token.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::EmitRequest {
@@ -2256,6 +2334,7 @@ mod tests {
                     attempt: attempt.clone(),
                     frontend: token.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::ReplyToken(token.clone()),
@@ -2308,6 +2387,7 @@ mod tests {
                     attempt,
                     frontend: token,
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![Effect::Log("stale")],
             )
@@ -2527,6 +2607,7 @@ mod tests {
                     attempt,
                     frontend: token,
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![Effect::Log("stale")],
             )
@@ -2686,6 +2767,7 @@ mod tests {
                     attempt,
                     frontend: token,
                     recreate_pending: true,
+                    acknowledged: false,
                 },
                 vec![Effect::Log("queued")],
             )
@@ -2721,6 +2803,7 @@ mod tests {
                     attempt,
                     frontend: token,
                     recreate_pending: true,
+                    acknowledged: false,
                 },
                 vec![Effect::Log("queued")],
             )
@@ -2896,6 +2979,7 @@ mod tests {
                     attempt: attempt.clone(),
                     frontend: token.clone(),
                     recreate_pending: false,
+                    acknowledged: false,
                 },
                 vec![
                     Effect::ShowWindow,
@@ -2997,6 +3081,202 @@ mod tests {
                 Effect::PreventExit,
                 Effect::Log("unarmed exit request while exiting"),
             ]
+        );
+    }
+
+    #[test]
+    fn s7_ack_disarms_timeout() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let attempt = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        };
+
+        machine.step(Event::Acknowledged {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+        });
+        let effects = machine.step(Event::Timeout(attempt.clone()));
+
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt: attempt.clone(),
+                    frontend: Token {
+                        instance_id: "bridge".into(),
+                        generation: 1,
+                    },
+                    recreate_pending: false,
+                    acknowledged: true,
+                },
+                vec![Effect::Log("acknowledged; waiting for the person")],
+            )
+        );
+
+        let effects = machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Cancel,
+            dirty: true,
+            pending: false,
+        });
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Idle {
+                    hidden_by_close: false,
+                },
+                vec![Effect::Log("cancelled")],
+            )
+        );
+    }
+
+    #[test]
+    fn s7_stale_ack_is_logged() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+
+        let effects = machine.step(Event::Acknowledged {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 1,
+        });
+
+        assert_eq!(effects, vec![Effect::Log("stale")]);
+        assert!(matches!(
+            machine.state(),
+            State::Asking {
+                acknowledged: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn s7_recheck_needs_a_new_ack() {
+        let mut machine = Machine::new(1);
+        machine.step(Event::FrontendReady {
+            instance_id: "bridge".into(),
+        });
+        machine.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        machine.step(Event::Acknowledged {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+        });
+
+        let effects = machine.step(Event::Decide {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+            decision: Decision::Allow,
+            dirty: true,
+            pending: false,
+        });
+        let recheck = Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 1,
+        };
+        let frontend = Token {
+            instance_id: "bridge".into(),
+            generation: 1,
+        };
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Asking {
+                    attempt: recheck.clone(),
+                    frontend: frontend.clone(),
+                    recreate_pending: false,
+                    acknowledged: false,
+                },
+                vec![
+                    Effect::EmitRequest {
+                        attempt: recheck.clone(),
+                        frontend,
+                    },
+                    Effect::ScheduleTimeout(recheck.clone()),
+                ],
+            )
+        );
+
+        let effects = machine.step(Event::Timeout(recheck.clone()));
+        assert_eq!(
+            (machine.state(), effects),
+            (
+                &State::Recovering {
+                    attempt: recheck.clone(),
+                    recreate_pending: false,
+                },
+                vec![
+                    Effect::EmitError("lifecycle request timed out".into()),
+                    Effect::ShowRecoveryDialog(recheck),
+                ],
+            )
+        );
+    }
+
+    #[test]
+    fn s7_ack_outside_asking_is_stale() {
+        let attempt = Event::Acknowledged {
+            attempt_id: 1,
+            generation: 1,
+            sequence: 0,
+        };
+
+        let mut idle = Machine::new(1);
+        let idle_effects = idle.step(attempt.clone());
+
+        let mut awaiting = Machine::new(1);
+        awaiting.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        let awaiting_effects = awaiting.step(attempt.clone());
+
+        let mut recovering = Machine::new(1);
+        recovering.step(Event::Begin {
+            kind: Kind::Close,
+            window_exists: true,
+        });
+        recovering.step(Event::Timeout(Attempt {
+            id: 1,
+            generation: 1,
+            kind: Kind::Close,
+            sequence: 0,
+        }));
+        let recovering_effects = recovering.step(attempt);
+
+        assert_eq!(
+            (idle_effects, awaiting_effects, recovering_effects,),
+            (
+                vec![Effect::Log("stale")],
+                vec![Effect::Log("stale")],
+                vec![Effect::Log("stale")],
+            )
         );
     }
 }

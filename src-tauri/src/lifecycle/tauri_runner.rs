@@ -426,6 +426,14 @@ impl From<WireAttempt> for Attempt {
     }
 }
 
+pub fn acknowledged_event(attempt: WireAttempt) -> Event {
+    Event::Acknowledged {
+        attempt_id: attempt.attempt_id,
+        generation: attempt.generation,
+        sequence: attempt.request_sequence,
+    }
+}
+
 impl From<&Token> for WireToken {
     fn from(token: &Token) -> Self {
         Self {
