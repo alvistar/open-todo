@@ -7,7 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Quitting asks before it loses a draft.** Command-Q, File → Quit, Dock → Quit,
+  the App Switcher and `osascript … to quit` now go through the same lifecycle
+  machine as closing the window, so an unsaved draft or an in-flight write is
+  reported and you can stay instead of losing it. Previously every quit path ended
+  the process without asking.
+- **Escape kept reaching the right overlay.** The overlay stack rebuilt its
+  registrations on every app re-render, which reshuffled Escape precedence from
+  render recency instead of the order things were opened, so Escape could reach
+  the sidebar underneath an open picker.
+- **The close dialog no longer times out while you read it.** The web dialog now
+  tells the machine it is on screen, so taking more than five seconds to answer no
+  longer brings up the native "the application did not respond" dialog whose
+  default button was "Close anyway".
+
 ### Added
+- Desktop shell: `RUST_LOG` now enables `env_logger` on stderr in the packaged app, so the
+  lifecycle machine's steps can be read while driving the bundle (`.claude/skills/desktop-qa`).
+- **A Tauri desktop shell.** The existing React/Vite app can be developed with
+  `pnpm desktop:dev` and bundled from local `dist/` files with
+  `pnpm desktop:build`. The shell uses the stable `com.alvistar.open-todo`
+  identity, standard window decorations, an original open-todo icon, and
+  VERSION-derived native metadata. macOS is the first target; public signing,
+  notarization, installers and Windows/Linux runtime validation remain deferred.
+- **Desktop window safety.** Size and position are restored through Tauri's
+  official window-state plugin; invalid or off-monitor geometry falls back to a
+  centred usable window. The single-instance plugin activates one main window,
+  macOS close hides it for Dock/subsequent-launch reopening, and Command-Q
+  exits through the same guarded lifecycle path. A Rust coordinator owns every
+  close and quit: each attempt carries an id and a window generation, a quit
+  supersedes a pending close, a decision is finalised only if nothing newer
+  started meanwhile, a missing window is recreated on a separate thread and
+  never twice, and Command-Q with the window hidden exits directly. Unsaved
+  drafts and in-flight writes (editors, comments, sub-tasks, quick-add, pickers,
+  completion, setup) are registered in one shared registry, so closing or
+  quitting asks first; a pending save offers Stay or an explicit Exit anyway.
+  Verified on the packaged macOS app: second launch keeps one process, close
+  hides while the process lives, Command-Q then quits without a dialog.
+- **Responsive shared layouts.** At narrow widths the 280px sidebar overlays
+  the content with a dimmed backdrop and a toggle, task detail stacks and
+  scrolls, and quick-add/setup actions wrap without changing the browser path.
+  Escape is owned by one explicit overlay stack (picker above dialog above
+  sidebar): it closes the topmost layer only, a dialog declines it while you are
+  typing in a field, and the sidebar returns focus to its toggle.
+- **HTTP transport consent and redirect rejection.** HTTPS remains the default;
+  an explicitly configured HTTP origin needs an origin-bound confirmation before
+  any credential header or login body is sent. Requests reject redirects rather
+  than forwarding credentials to a destination that was not configured.
+- **Visible critical storage outcomes.** Server, credential and HTTP-consent
+  persistence now report failed writes/removals without pretending that a
+  restart will retain the value. Logout still ends the in-memory session even
+  when durable removal needs a retry.
 - **You can open a task.** Enter on a focused row, or a click, opens the detail
   at the geometry measured in `docs/layout-specs.md` §4: the project it belongs
   to, its description, its sub-tasks, and its date, priority, labels and
@@ -93,6 +144,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the task name, because you are rejecting the reading, not the words. The
   decision follows the line to the save, so what the composer shows is what
   gets created.
+
+### Changed (desktop shell, lifecycle coordinator)
+- **The close/quit coordinator is an explicit state machine.** One `State` enum, one
+  `match` over state and event returning effects, driven by a single-owner event loop;
+  `lib.rs` only maps Tauri events and commands onto it and runs effects. The five review
+  passes' races were all silent early returns between nine independent fields; the new
+  machine cannot drop an event (every step returns an effect), is checked by six property
+  invariants at 10 000 random sequences and by trace equivalence against the old
+  coordinator's 26 scenarios, and was preceded by a packaged spike that measured the
+  modal dialog, worker-thread window operations, the hidden bridge and `app.exit`
+  re-entrancy (`docs/designs/lifecycle-state-machine.md`, `lifecycle-spike.md`,
+  `lifecycle-traces.md`). Behaviour changes: a Command-Q before the bridge is ready waits
+  for it instead of alarming; a quit queued behind a successful close exits directly;
+  ⌘H then ⌘Q asks and shows the window; a recreation requested while a request is open
+  is queued; a failed recreation shows a native dialog. The bridge payloads are unchanged.
+
+### Fixed (desktop shell, review rounds 4 and 5)
+- **Lifecycle intents are queued, not dropped.** A Command-Q that arrives while
+  an authorised close is hiding the window, or while the window is being
+  recreated, is queued and replayed. The finalisation reservation is taken in
+  the same lock as the decision, so a recreation can no longer slip between
+  them. Readiness carries a native token (instance and window generation); a
+  timeout owned by a replaced bridge re-emits the request to the current one
+  instead of clearing its readiness.
+- **Rechecks are answerable.** Native requests carry a sequence number, so a
+  recheck of the same attempt is a distinct request: the user's answer to it
+  is sent, and the settling of the original response no longer hides it.
+- **Failed writes stay guarded.** A picker whose write is rejected keeps its
+  entry dirty until a retry succeeds or the error is dismissed; a write whose
+  detail unmounted keeps its pending state until the promise settles and
+  surfaces its failure in the lifecycle notice, which can dismiss it. Escape
+  returns focus to the picker trigger and does not hide a busy or failed write.
+- **Closed narrow sidebar is `inert`**, and the usable-geometry check requires
+  a minimum overlap with a monitor rather than one pixel.
 
 ### Changed
 - **A bare repeat adverb is now offered rather than applied.** `report
@@ -458,6 +543,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WebSocket task events runs in parallel, off the critical path.
 
 ### Known gaps
+- **Desktop shell (2026-09-18).** The old coordinator in
+  `src-tauri/src/lifecycle/mod.rs` is still compiled and unused until design slice 6
+  deletes it and its tests. One 5 s timeout still serves both the grace wait for a
+  late bridge and the ask; the design wants 2 s for the first. Detached native
+  threads have no cancellation on exit. The scripted re-run of smoke sequence 5b
+  (a slow answer must no longer raise the native dialog) is still pending;
+  slice 7 was confirmed by hand on the packaged app instead.
+- Only the packaged macOS app has been launched, closed, reopened and quit
+  with Vite stopped; signing in, the WebView transport (HTTP consent, CORS,
+  TLS, redirects) and storage-failure behaviour in the packaged WebView, monitor
+  changes and sleep/wake are unverified. Windows and Linux are portable source
+  only. The DMG step of `pnpm desktop:build` failed once in `bundle_dmg.sh`
+  on a repeated build (the `.app` was produced) and succeeded on the next run;
+  the cause was not identified.
 - Read-only: no task creation, editing, completion or reordering yet. The
   checkboxes render priority but do not toggle.
 - The TOTP error shape has not been seen against a real TOTP-enabled account;

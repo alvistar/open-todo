@@ -19,7 +19,8 @@ code_refs:
 - src/api/http.ts
 - src/auth/authStore.ts
 - vite.config.ts
-last_updated: 2026-09-16
+last_updated: 2026-09-17
+stale_after: 2026-12-17
 ---
 
 # Direct browser API
@@ -37,7 +38,7 @@ Authenticated task pages gain little from SSR. React supplies the ecosystem for 
 Proxy custody would add a runtime; Svelte was viable but weaker for the planned interaction libraries; Next.js would add unused SSR. Republishing Todoist with a Sync API shim was rejected for legal, telemetry and maintenance reasons.
 
 ## Consequences
-Operators must configure CORS and HTTPS. JWT expiry returns to login. MIT code uses public HTTP APIs: neither Todoist assets/code nor Vikunja AGPL source may be copied.
+Operators must configure CORS and HTTPS. HTTP instances require explicit consent tied to the exact server origin before a credential header or login body is sent; anonymous `/info` probes remain possible, and fetch rejects redirects, so configure the final URL. Browser persistence is localStorage and a storage failure can leave the current session active without restart durability. JWT expiry returns to login. MIT code uses public HTTP APIs: neither Todoist assets/code nor Vikunja AGPL source may be copied.
 
 ## Related
 - [Architecture](/architecture/architecture.md) — the browser-to-server flow

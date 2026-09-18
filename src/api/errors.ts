@@ -32,6 +32,21 @@ export class NetworkError extends ApiError {
   }
 }
 
+/** Sensitive requests must be explicitly approved for an HTTP instance. */
+export class InsecureTransportError extends ApiError {
+  readonly origin: string;
+
+  constructor(origin: string) {
+    super(
+      `Refusing to send credentials over unencrypted HTTP to ${origin}. ` +
+        "Confirm this server's HTTP connection before signing in.",
+      0,
+    );
+    this.name = "InsecureTransportError";
+    this.origin = origin;
+  }
+}
+
 /** The stored credential is not (or no longer) accepted. */
 export class UnauthorizedError extends VikunjaError {
   constructor(message: string, code?: number) {

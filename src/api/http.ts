@@ -1,4 +1,10 @@
-import { NetworkError, UnauthorizedError, VikunjaError } from "./errors";
+import { hasTransportConsent } from "../settings/transportPolicy";
+import {
+  InsecureTransportError,
+  NetworkError,
+  UnauthorizedError,
+  VikunjaError,
+} from "./errors";
 
 export interface HttpConfig {
   /** Instance root, e.g. "https://vikunja.example". No /api/v1 suffix. */
@@ -8,6 +14,8 @@ export interface HttpConfig {
   onUnauthorized?: () => void;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
+  /** Overrides the shared HTTP-consent policy in focused tests. */
+  allowSensitiveRequest?: (baseUrl: string) => boolean;
 }
 
 export interface RequestOptions {
@@ -78,9 +86,24 @@ export function createHttp(config: HttpConfig): Http {
 
     const headers: Record<string, string> = { Accept: "application/json" };
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
-    if (!options.anonymous) {
-      const token = config.getToken();
-      if (token) headers.Authorization = `Bearer ${token}`;
+    const token = options.anonymous ? null : config.getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    // An anonymous request with a body is still sensitive: `/login` carries a
+    // password or token in that body even though it has no bearer header.
+    const sensitive = token !== null || options.body !== undefined;
+    const transportAllowed = config.allowSensitiveRequest
+      ? config.allowSensitiveRequest(baseUrl)
+      : hasTransportConsent(baseUrl);
+    if (sensitive && !transportAllowed) {
+      let origin = baseUrl;
+      try {
+        origin = new URL(baseUrl).origin;
+      } catch {
+        // normalizeBaseUrl already validated the usual path; retain the safe
+        // diagnostic rather than turning a malformed URL into another error.
+      }
+      throw new InsecureTransportError(origin);
     }
 
     const url = apiUrl(baseUrl, path) + buildQuery(options.query);
@@ -90,6 +113,7 @@ export function createHttp(config: HttpConfig): Http {
       response = await doFetch(url, {
         method: options.method ?? "GET",
         headers,
+        redirect: "error",
         ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
         ...(options.signal ? { signal: options.signal } : {}),
       });
@@ -101,7 +125,7 @@ export function createHttp(config: HttpConfig): Http {
       // fetch rejects the same way for offline, DNS and a blocked CORS
       // preflight; the message points at the most actionable of the three.
       throw new NetworkError(
-        `Could not reach ${normalizeBaseUrl(baseUrl)}. Check the URL, that the server is running, and that this origin is listed in Vikunja's cors.origins.`,
+        `Could not reach ${normalizeBaseUrl(baseUrl)}. Configure the final Vikunja URL directly (redirects are not followed), check that the server is running, and that this origin is listed in Vikunja's cors.origins.`,
         { cause },
       );
     }

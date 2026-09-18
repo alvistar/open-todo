@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { TaskPatch } from "../../api/endpoints";
 import type { Label, Task, TaskComment, TaskReminder } from "../../api/types";
+import { useDraftSource, useDraftSummary } from "../../lifecycle/drafts";
 import { formatDueLabel, parseVikunjaDate } from "../../model/dates";
 import type { DuePhrase } from "../../model/duePhrase";
 import { priorityFromVikunja, priorityLabel } from "../../model/priority";
@@ -8,6 +9,7 @@ import { describeReminder } from "../../model/reminders";
 import { isRichHtml, stripHtml, toDescriptionHtml } from "../../model/taskRow";
 import type { TitleEdit } from "../../model/titleEdit";
 import { Icon } from "../icons/Icon";
+import { useOverlayLayer } from "../overlayStack";
 import { PriorityCheckbox } from "../PriorityCheckbox";
 import { Comments } from "./Comments";
 import { EditableField } from "./EditableField";
@@ -102,6 +104,8 @@ export function TaskDetail({
   onPrev,
   onNext,
 }: TaskDetailProps) {
+  const draftSummary = useDraftSummary();
+  const pendingSave = draftSummary.pending;
   /** At most one editor is open, so the dialog holds which. */
   const [editing, setEditing] = useState<"title" | "description" | null>(null);
   /*
@@ -112,11 +116,19 @@ export function TaskDetail({
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  // Read through a ref so the effects do not depend on a callback the parent
-  // recreates on every render - the 20s poll renders the parent, and
-  // ConfirmDialog has the scar from exactly that.
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const closeTaskDetail = () => {
+    if (pendingSave) return;
+    onClose();
+  };
+  useOverlayLayer("dialog", (event) => {
+    const target = event.target as HTMLElement | null;
+    const typing =
+      target !== null &&
+      (/^(INPUT|TEXTAREA)$/.test(target.tagName) || target.isContentEditable);
+    if (typing) return false;
+    closeTaskDetail();
+    return true;
+  });
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -135,23 +147,6 @@ export function TaskDetail({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing =
-        target !== null &&
-        (/^(INPUT|TEXTAREA)$/.test(target.tagName) || target.isContentEditable);
-
-      if (event.key === "Escape") {
-        /*
-         * Escape belongs to the dialog, not to an open editor. Todoist does
-         * not discard on Escape either, and if it did here the key would carry
-         * two destructive meanings at once - throw away the text AND close the
-         * pane it was in. Cancel is the only discard.
-         */
-        if (typing) return;
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
       /*
        * The focus trap ConfirmDialog does without. It can, being two buttons
        * over a list nobody can reach past; this one is a full pane over a page
@@ -203,7 +198,7 @@ export function TaskDetail({
         className={styles.backdrop}
         aria-label="Close the task"
         tabIndex={-1}
-        onClick={onClose}
+        onClick={closeTaskDetail}
       />
       <div
         ref={dialogRef}
@@ -223,7 +218,7 @@ export function TaskDetail({
                 type="button"
                 className={styles.iconButton}
                 aria-label="Previous task"
-                disabled={!onPrev}
+                disabled={!onPrev || pendingSave}
                 onClick={onPrev}
               >
                 <Icon name="chevronLeft" size={16} />
@@ -232,7 +227,7 @@ export function TaskDetail({
                 type="button"
                 className={styles.iconButton}
                 aria-label="Next task"
-                disabled={!onNext}
+                disabled={!onNext || pendingSave}
                 onClick={onNext}
               >
                 <Icon name="chevronRight" size={16} />
@@ -243,7 +238,8 @@ export function TaskDetail({
               type="button"
               className={styles.iconButton}
               aria-label="Close"
-              onClick={onClose}
+              disabled={pendingSave}
+              onClick={closeTaskDetail}
             >
               <Icon name="close" size={16} />
             </button>
@@ -482,6 +478,8 @@ function SubtaskComposer({ onAdd }: { onAdd: (title: string) => Promise<void> })
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useDraftSource("subtask", "Sub-task", draft.trim().length > 0, busy);
 
   const add = async () => {
     const title = draft.trim();

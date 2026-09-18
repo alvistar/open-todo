@@ -229,3 +229,26 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+@media (max-width: 600px) {
+  .wrapper {
+    padding: 8px;
+  }
+
+  .toolbar {
+    height: auto;
+    min-height: 32px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .chip {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .actions {
+    margin-left: auto;
+  }
+}

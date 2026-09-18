@@ -234,6 +234,35 @@ Cancelling with text present opens the confirmation modal (§5).
 
 ---
 
+## 5.1 Responsive behavior (D6–D9)
+
+This section defines the shared behavior used by the browser and Tauri window.
+The reference observation established the overlay shape at 390px, but not the
+exact breakpoint or focus behavior; those implementation choices are labelled
+rather than presented as measured Todoist values.
+
+| Surface | Wide state | Narrow state |
+|---|---|---|
+| Navigation | 280px sidebar in the document flow | 280px panel overlays the main content, with a dimmed backdrop and a top-left toggle |
+| Main list | 800px column with 55px side padding | Full available width with 16px side padding; rows retain their hit area and ellipsis |
+| Task detail | 864px modal with 604/260 split | Full-window dialog; main content and fields stack vertically and scroll together |
+| Quick add | Single toolbar row when content fits | Wrapping chips and actions; the input grows with its content |
+| Setup and confirmations | Centred card/modal | Same card with 16px outer padding and wrapped actions |
+
+The navigation collapses at `1050px`. That threshold follows the measured wide
+geometry (`280 + 800 + 110 = 1190px`) while retaining room for a usable list
+before the overlay is needed; it is not a measured Todoist breakpoint. The
+native window's tested floor is `360×420` CSS pixels, not a claim that every
+combination of content and zoom fits below that size.
+
+Escape closes the open navigation overlay and returns focus to its toggle. A
+focused task dialog, picker or confirmation is the topmost dismissible layer and
+therefore receives Escape first. Navigation closes after choosing a destination
+or clicking the backdrop. The wide state reopens the sidebar when a resize crosses
+back above the breakpoint.
+
+---
+
 ## 6. Where Todoist is bad and we will not copy it (D2 calls made here)
 
 - Upsell rows in the task sidebar (Scadenza, Posizione, Promemoria lock icon).

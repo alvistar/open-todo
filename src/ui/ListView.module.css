@@ -34,3 +34,13 @@
 .footer {
   margin-top: 4px;
 }
+
+@media (max-width: 1050px) {
+  .scroll {
+    padding: 0 16px 64px;
+  }
+
+  .column {
+    width: 100%;
+  }
+}

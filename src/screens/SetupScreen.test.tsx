@@ -1,7 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getUser } from "../api/endpoints";
+import { NetworkError, UnauthorizedError, VikunjaError } from "../api/errors";
+import { tokenValue } from "../auth/authStore";
 import { baseUrlValue } from "../settings/settingsStore";
-import { displayVersion, SetupScreen } from "./SetupScreen";
+import { transportConsentValue } from "../settings/transportPolicy";
+import { displayVersion, LoginStep, SetupScreen } from "./SetupScreen";
 
 // LoginStep probes /info on mount to show the version banner. Stubbed so the
 // tests below are about the form, not about the network.
@@ -12,6 +16,27 @@ vi.mock("../api/endpoints", () => ({
   getUser: vi.fn(async () => ({ id: 1 })),
   login: vi.fn(async () => ({ token: "t" })),
 }));
+
+function loginForm() {
+  const form = screen.getByRole("button", { name: "Log in" }).closest("form");
+  if (!form) throw new Error("login form not found");
+  return form;
+}
+
+function renderTokenLogin() {
+  render(<LoginStep baseUrl="https://vikunja.example" initialVersion="v2.5.0" />);
+  fireEvent.click(screen.getByRole("button", { name: "API token" }));
+  fireEvent.change(screen.getByLabelText("API token"), {
+    target: { value: "tk_candidate" },
+  });
+}
+
+async function submitToken() {
+  fireEvent.submit(loginForm());
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Log in" })).not.toBeDisabled(),
+  );
+}
 
 describe("displayVersion", () => {
   it("does not double the v Vikunja already sends", () => {
@@ -33,10 +58,14 @@ describe("displayVersion", () => {
 describe("LoginStep — the submit guard", () => {
   beforeEach(() => {
     baseUrlValue.set("https://vikunja.example");
+    vi.mocked(getUser).mockResolvedValue({ id: 1 } as never);
   });
   afterEach(() => {
+    tokenValue.clear();
+    transportConsentValue.clear();
     baseUrlValue.clear();
     localStorage.clear();
+    vi.clearAllMocks();
   });
 
   it("keeps Log in disabled until a credential is typed", () => {
@@ -82,5 +111,39 @@ describe("LoginStep — the submit guard", () => {
     fireEvent.click(screen.getByRole("button", { name: "API token" }));
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: "   " } });
     expect(screen.getByRole("button", { name: "Log in" })).toBeDisabled();
+  });
+
+  it("stores a token after a successful verification", async () => {
+    renderTokenLogin();
+    await submitToken();
+    expect(tokenValue.get()).toBe("tk_candidate");
+  });
+
+  it("retains the form after a 401 rejection", async () => {
+    vi.mocked(getUser).mockRejectedValueOnce(new UnauthorizedError("bad token"));
+    renderTokenLogin();
+    await submitToken();
+    expect(screen.getByText("bad token")).toBeInTheDocument();
+    expect(screen.getByLabelText("API token")).toHaveValue("tk_candidate");
+    expect(tokenValue.get()).toBeNull();
+  });
+
+  it("accepts the explicit 403 limited-token exception", async () => {
+    vi.mocked(getUser).mockRejectedValueOnce(new VikunjaError("scope", 403));
+    renderTokenLogin();
+    await submitToken();
+    expect(tokenValue.get()).toBe("tk_candidate");
+  });
+
+  it.each([
+    ["a network failure", new NetworkError("offline")],
+    ["a server failure", new VikunjaError("unavailable", 503)],
+    ["an invalid response", new SyntaxError("unexpected token")],
+  ])("retains the form after %s", async (_label, failure) => {
+    vi.mocked(getUser).mockRejectedValueOnce(failure);
+    renderTokenLogin();
+    await submitToken();
+    expect(screen.getByLabelText("API token")).toHaveValue("tk_candidate");
+    expect(tokenValue.get()).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { type FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useDraftSource } from "../lifecycle/drafts";
 import { classifySchedule, formatDueLabel } from "../model/dates";
 import { scheduleColorVar } from "../model/display";
 import { priorityFromVikunja, priorityLabel } from "../model/priority";
@@ -91,7 +92,10 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
      in the same turn would otherwise both read canSubmit === true and create
      the task twice. */
   const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useDraftSource("quick-add", "Quick add", text.trim().length > 0, busy || submitting);
 
   const parsed = useMemo(
     () =>
@@ -182,6 +186,7 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
     event.preventDefault();
     if (!canSubmit || submittingRef.current) return;
     submittingRef.current = true;
+    setSubmitting(true);
     const submitted = text;
     setError(null);
     setPostWarnings([]);
@@ -197,6 +202,7 @@ export function QuickAdd({ context, onSubmit, onCancel, busy }: QuickAddProps) {
       setError(e instanceof Error ? e.message : "Could not add the task.");
     } finally {
       submittingRef.current = false;
+      setSubmitting(false);
     }
   }
 

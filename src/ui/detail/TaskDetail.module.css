@@ -245,3 +245,60 @@
   font: 400 12px / 18px var(--font-sans);
   color: var(--schedule-overdue);
 }
+
+@media (max-width: 700px) {
+  .overlay {
+    align-items: stretch;
+  }
+
+  .dialog {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    margin-top: 0;
+    border-radius: 0;
+  }
+
+  .body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .main {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: none;
+    padding: 16px 16px 0;
+    overflow: visible;
+  }
+
+  .sidebar {
+    flex: 0 0 auto;
+    width: 100%;
+    padding: 16px;
+    overflow: visible;
+  }
+
+  .title {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 420px) {
+  .header {
+    padding-left: 8px;
+  }
+
+  .crumb {
+    min-width: 0;
+    max-width: calc(100% - 88px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .actions {
+    gap: 2px;
+  }
+}

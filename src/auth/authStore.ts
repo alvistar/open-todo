@@ -1,3 +1,7 @@
+import {
+  clearPersistenceNotice,
+  reportPersistenceFailure,
+} from "../store/persistenceNotice";
 import { createPersistentValue, usePersistentValue } from "../store/persistentValue";
 
 /**
@@ -13,13 +17,31 @@ export function getToken(): string | null {
   return tokenValue.get();
 }
 
-export function setToken(token: string): void {
-  tokenValue.set(token);
+export function setToken(token: string) {
+  const result = tokenValue.set(token);
+  if (result.persisted) {
+    clearPersistenceNotice("credential");
+  } else {
+    reportPersistenceFailure(
+      "credential",
+      "This session is active, but the credential could not be saved for the next restart. Check browser storage and try again.",
+    );
+  }
+  return result;
 }
 
 /** Clears the credential only; the server URL is kept so login is one step. */
-export function logOut(): void {
-  tokenValue.clear();
+export function logOut() {
+  const result = tokenValue.clear();
+  if (result.persisted) {
+    clearPersistenceNotice("credential");
+  } else {
+    reportPersistenceFailure(
+      "credential",
+      "You are signed out in this session, but removing the saved credential failed. Check browser storage and retry before sharing this device.",
+    );
+  }
+  return result;
 }
 
 export function useToken(): string | null {

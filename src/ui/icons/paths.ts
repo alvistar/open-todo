@@ -50,6 +50,9 @@ export const icons = {
   flag: {
     stroke: ["M6 20.5V4h11l-2.5 4L17 12H6"],
   },
+  warning: {
+    stroke: ["M12 3.5 21 20H3z", "M12 9v5", "M12 17.5h.01"],
+  },
   comment: {
     stroke: ["M4.5 5.5h15v10h-8.5L6.5 19v-3.5h-2z"],
   },

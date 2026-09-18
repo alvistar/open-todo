@@ -1,0 +1,16 @@
+.notice {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 50;
+  width: min(calc(100% - 32px), 640px);
+  margin: 0;
+  padding: 10px 14px;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--schedule-overdue) 30%, var(--border-idle));
+  border-radius: var(--radius-base);
+  background: color-mix(in srgb, var(--schedule-overdue) 12%, var(--bg-primary));
+  color: var(--schedule-overdue);
+  box-shadow: var(--shadow-modal);
+  font: 400 13px / 19px var(--font-sans);
+}

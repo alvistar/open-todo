@@ -1,0 +1,100 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: start center;
+  padding: 114px 16px 24px;
+  background: var(--overlay);
+}
+
+.dialog {
+  width: min(100%, 448px);
+  padding: 16px;
+  border-radius: var(--radius-card);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-modal);
+}
+
+.title {
+  margin: 0;
+  font: 600 16px / 23px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.body {
+  margin: 8px 0 0;
+  font: 400 14px / 21px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 24px;
+}
+
+.secondary,
+.primary {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-base);
+  font: 600 13px / 32px var(--font-sans);
+}
+
+.secondary {
+  background: var(--hover-fill);
+  color: var(--text-on-secondary-button);
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.error {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 70;
+  width: min(calc(100% - 32px), 640px);
+  margin: 0;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transform: translateX(-50%);
+  border-radius: var(--radius-base);
+  background: color-mix(in srgb, var(--schedule-overdue) 14%, var(--bg-primary));
+  color: var(--schedule-overdue);
+  box-shadow: var(--shadow-modal);
+  font: 400 13px / 19px var(--font-sans);
+}
+
+.errorDismiss {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-base);
+  background: transparent;
+  color: inherit;
+  font: 600 12px / 26px var(--font-sans);
+}
+
+@media (max-width: 480px) {
+  .overlay {
+    padding: 72px 16px 16px;
+  }
+
+  .actions {
+    flex-direction: column-reverse;
+  }
+
+  .secondary,
+  .primary {
+    width: 100%;
+  }
+}

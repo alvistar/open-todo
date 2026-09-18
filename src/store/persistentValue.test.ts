@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPersistentValue } from "./persistentValue";
 
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  vi.restoreAllMocks();
+  localStorage.clear();
+});
 
 describe("createPersistentValue", () => {
   it("starts from what is already stored", () => {
     localStorage.setItem("k", "stored");
-    expect(createPersistentValue("k").get()).toBe("stored");
+    const value = createPersistentValue("k");
+    expect(value.get()).toBe("stored");
+    expect(value.getStatus().durable).toBe(true);
   });
 
   it("writes through and notifies subscribers", () => {
@@ -14,7 +19,7 @@ describe("createPersistentValue", () => {
     const listener = vi.fn();
     value.subscribe(listener);
 
-    value.set("a");
+    expect(value.set("a")).toEqual({ persisted: true, error: null });
     expect(value.get()).toBe("a");
     expect(localStorage.getItem("k")).toBe("a");
     expect(listener).toHaveBeenCalledTimes(1);
@@ -33,12 +38,13 @@ describe("createPersistentValue", () => {
     const value = createPersistentValue("k", (v) => v.trim().toLowerCase());
     value.set("  HeLLo  ");
     expect(value.get()).toBe("hello");
+    expect(localStorage.getItem("k")).toBe("hello");
   });
 
   it("clears the key", () => {
     const value = createPersistentValue("k");
     value.set("a");
-    value.clear();
+    expect(value.clear()).toEqual({ persisted: true, error: null });
     expect(value.get()).toBeNull();
     expect(localStorage.getItem("k")).toBeNull();
   });
@@ -63,13 +69,64 @@ describe("createPersistentValue", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("still works when localStorage throws", () => {
-    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+  it("reports a failed write and retries the same value", () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    setItem.mockImplementationOnce(() => {
+      throw new Error("quota");
+    });
+    const value = createPersistentValue("k");
+
+    const first = value.set("a");
+    expect(first.persisted).toBe(false);
+    expect(value.get()).toBe("a");
+    expect(localStorage.getItem("k")).toBeNull();
+    expect(value.getStatus().durable).toBe(false);
+
+    const second = value.set("a");
+    expect(second).toEqual({ persisted: true, error: null });
+    expect(localStorage.getItem("k")).toBe("a");
+    expect(value.getStatus().durable).toBe(true);
+  });
+
+  it("retries a failed removal even when the cache is already empty", () => {
+    const value = createPersistentValue("k");
+    value.set("a");
+    const removeItem = vi.spyOn(Storage.prototype, "removeItem");
+    removeItem.mockImplementationOnce(() => {
+      throw new Error("blocked");
+    });
+
+    expect(value.clear().persisted).toBe(false);
+    expect(value.get()).toBeNull();
+    expect(localStorage.getItem("k")).toBe("a");
+
+    expect(value.clear()).toEqual({ persisted: true, error: null });
+    expect(localStorage.getItem("k")).toBeNull();
+  });
+
+  it("leaves a fresh consumer at the durable value after a failed write", () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => {
       throw new Error("blocked");
     });
     const value = createPersistentValue("k");
-    expect(() => value.set("a")).not.toThrow();
+    value.set("not-durable");
+    setItem.mockRestore();
+
+    expect(createPersistentValue("k").get()).toBeNull();
+  });
+
+  it("still runs when reading or writing storage throws", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const value = createPersistentValue("k");
+    expect(value.get()).toBeNull();
+    expect(value.getStatus().durable).toBe(false);
+
+    expect(value.set("a").persisted).toBe(false);
     expect(value.get()).toBe("a");
-    spy.mockRestore();
   });
 });
