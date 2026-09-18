@@ -52,6 +52,10 @@ export function DesktopLifecycleBridge() {
   const requestRef = useRef(request);
   const requestStateRef = useRef(requestState);
   const responseIdRef = useRef(0);
+  const acknowledgedRequestRef = useRef<Pick<
+    LifecycleRequest,
+    "attemptId" | "requestSequence"
+  > | null>(null);
   const instanceIdRef = useRef(
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
@@ -165,6 +169,22 @@ export function DesktopLifecycleBridge() {
       });
     }
   }).current;
+
+  useEffect(() => {
+    if (!request || (!summary.dirty && !summary.pending)) return;
+    const previous = acknowledgedRequestRef.current;
+    if (
+      previous?.attemptId === request.attemptId &&
+      previous.requestSequence === request.requestSequence
+    ) {
+      return;
+    }
+    acknowledgedRequestRef.current = {
+      attemptId: request.attemptId,
+      requestSequence: request.requestSequence,
+    };
+    void invoke("lifecycle_acknowledge", { attempt: request }).catch(() => undefined);
+  }, [request, summary.dirty, summary.pending]);
 
   useEffect(() => {
     if (!request || summary.pending || summary.dirty) return;
