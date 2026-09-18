@@ -1,4 +1,4 @@
-//! `EffectRunner` over `tauri::AppHandle` (slice 4). Coordinator-declared; filled by the worker.
+//! `EffectRunner` over `tauri::AppHandle`.
 
 use super::machine::{Attempt, Decision, Effect, Event, Kind, RecreationId, Token};
 use super::runtime::{EffectRunner, Envelope};
@@ -10,7 +10,11 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_window_state::AppHandleExt as WindowStateAppHandleExt;
 
-const MAIN_WINDOW: &str = "main";
+use crate::MAIN_WINDOW;
+
+/// How long the machine waits for the webview to answer an ask before it
+/// falls back to the native recovery dialog.
+const ASK_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug, Serialize)]
 struct LifecycleDiagnostic<'a> {
@@ -98,7 +102,7 @@ impl<R: Runtime> TauriRunner<R> {
     pub fn new(app: AppHandle<R>) -> Self {
         Self {
             app,
-            ask_timeout: Duration::from_secs(5),
+            ask_timeout: ASK_TIMEOUT,
             recreate: Arc::new(recreate_main_window),
             ops: Arc::new(AppRunnerOps),
         }
@@ -111,7 +115,7 @@ impl<R: Runtime> TauriRunner<R> {
     {
         Self {
             app,
-            ask_timeout: Duration::from_secs(5),
+            ask_timeout: ASK_TIMEOUT,
             recreate: Arc::new(recreate),
             ops: Arc::new(AppRunnerOps),
         }
@@ -125,7 +129,7 @@ impl<R: Runtime> TauriRunner<R> {
     {
         Self {
             app,
-            ask_timeout: Duration::from_secs(5),
+            ask_timeout: ASK_TIMEOUT,
             recreate: Arc::new(recreate),
             ops: Arc::new(ops),
         }

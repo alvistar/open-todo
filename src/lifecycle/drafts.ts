@@ -76,10 +76,7 @@ export function registerPendingDraft(
   sources.set(id, { id, label, dirty: false, pending: true });
   emit();
 
-  let released = false;
   const release = () => {
-    if (released) return;
-    released = true;
     if (sources.delete(id)) emit();
   };
   void promise.then(

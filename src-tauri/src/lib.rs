@@ -8,7 +8,7 @@ use lifecycle::tauri_runner::{RunnerOps, TauriRunner, WireAttempt, WireDecision,
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime, State, WebviewWindow};
 use tauri_plugin_window_state::{AppHandleExt as WindowStateAppHandleExt, StateFlags};
 
-const MAIN_WINDOW: &str = "main";
+pub(crate) const MAIN_WINDOW: &str = "main";
 const DEFAULT_WIDTH: u32 = 1180;
 const DEFAULT_HEIGHT: u32 = 760;
 const MIN_WIDTH: u32 = 360;

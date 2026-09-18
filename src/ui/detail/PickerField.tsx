@@ -48,17 +48,9 @@ export function PickerField<TChange>({
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const mountedRef = useRef(false);
   const pendingReleaseRef = useRef<(() => void) | null>(null);
 
   useDraftSource(`picker:${label}`, label, false, busy);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
 
   const closePicker = useCallback(() => {
     if (busy) return false;

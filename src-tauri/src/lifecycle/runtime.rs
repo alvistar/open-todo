@@ -49,16 +49,12 @@ impl LifecycleHandle {
 
     pub fn ready(&self, instance_id: String) -> Result<Token, RecvError> {
         let (reply_tx, reply_rx) = mpsc::channel();
-        if self
-            .tx
-            .send(Envelope {
-                event: Event::FrontendReady { instance_id },
-                reply: Some(Reply::Token(reply_tx)),
-            })
-            .is_err()
-        {
-            return reply_rx.recv();
-        }
+        // A send failure means the loop is gone; recv() then reports the same
+        // disconnect, so both paths are the one recv below.
+        let _ = self.tx.send(Envelope {
+            event: Event::FrontendReady { instance_id },
+            reply: Some(Reply::Token(reply_tx)),
+        });
         reply_rx.recv()
     }
 

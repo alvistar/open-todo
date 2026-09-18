@@ -11,7 +11,6 @@ import {
 } from "./requestState";
 import styles from "./useDesktopLifecycle.module.css";
 
-export type LifecycleKind = "close" | "quit";
 export type LifecycleDecision = "allow" | "discard" | "cancel" | "exit-anyway";
 
 export type { LifecycleRequest } from "./requestState";

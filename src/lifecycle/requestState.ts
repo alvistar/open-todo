@@ -59,10 +59,11 @@ export function transitionRequest(
   if (state.inFlight?.responseId !== event.responseId) {
     return state;
   }
+  const settled = sameRequest(state.current, event.request);
   return {
     ...state,
-    current: sameRequest(state.current, event.request) ? null : state.current,
+    current: settled ? null : state.current,
     inFlight: null,
-    responseError: sameRequest(state.current, event.request) ? event.error : null,
+    responseError: settled ? event.error : null,
   };
 }
