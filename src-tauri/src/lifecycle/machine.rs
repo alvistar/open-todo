@@ -3271,11 +3271,7 @@ mod tests {
         let recovering_effects = recovering.step(attempt);
 
         assert_eq!(
-            (
-                idle_effects,
-                awaiting_effects,
-                recovering_effects,
-            ),
+            (idle_effects, awaiting_effects, recovering_effects,),
             (
                 vec![Effect::Log("stale")],
                 vec![Effect::Log("stale")],

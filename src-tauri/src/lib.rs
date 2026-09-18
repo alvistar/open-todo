@@ -81,6 +81,7 @@ pub fn run() {
             app.manage(AppState {
                 lifecycle: spawn_loop(Machine::new(0), TauriRunner::new(app.handle().clone())),
             });
+            lifecycle::terminate::install(app.handle());
             if cfg!(debug_assertions) {
                 log::debug!("open-todo desktop shell started");
             }
@@ -504,19 +505,12 @@ mod lifecycle_mapping_tests {
             observed
                 .recv_timeout(Duration::from_secs(1))
                 .expect("acknowledgement effect was not observed");
-            if seen
-                .lock()
-                .unwrap()
-                .contains(&Effect::Log("acknowledged"))
-            {
+            if seen.lock().unwrap().contains(&Effect::Log("acknowledged")) {
                 break;
             }
         }
 
-        assert!(seen
-            .lock()
-            .unwrap()
-            .contains(&Effect::Log("acknowledged")));
+        assert!(seen.lock().unwrap().contains(&Effect::Log("acknowledged")));
     }
 
     #[test]
