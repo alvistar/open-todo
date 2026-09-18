@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
 } from "react";
 
@@ -73,10 +74,10 @@ export function OverlayStackProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, []);
 
+  const value = useMemo<OverlayStackValue>(() => ({ register }), [register]);
+
   return (
-    <OverlayStackContext.Provider value={{ register }}>
-      {children}
-    </OverlayStackContext.Provider>
+    <OverlayStackContext.Provider value={value}>{children}</OverlayStackContext.Provider>
   );
 }
 
