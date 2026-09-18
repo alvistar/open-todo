@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { transitionRequest } from "./requestState";
+import { sameRequest, transitionRequest } from "./requestState";
 
 const closeA = {
   attemptId: 4,
@@ -52,5 +52,66 @@ describe("lifecycle request reconciliation", () => {
     );
 
     expect(settled.current).toEqual(recheck);
+  });
+
+  it("ignores a settlement from a superseded response id", () => {
+    const state = {
+      current: closeA,
+      inFlight: { request: closeA, responseId: 2 },
+      responseError: null,
+    };
+    const settled = transitionRequest(state, {
+      type: "response-settled",
+      request: closeA,
+      responseId: 1,
+      error: "stale failure",
+    });
+
+    expect(settled).toBe(state);
+  });
+
+  it("surfaces a failed response for the request still on screen", () => {
+    const started = transitionRequest(
+      { current: closeA, inFlight: null, responseError: null },
+      { type: "response-started", request: closeA, responseId: 1 },
+    );
+    const settled = transitionRequest(started, {
+      type: "response-settled",
+      request: closeA,
+      responseId: 1,
+      error: "The desktop action could not be completed.",
+    });
+
+    expect(settled.current).toBeNull();
+    expect(settled.inFlight).toBeNull();
+    expect(settled.responseError).toBe("The desktop action could not be completed.");
+  });
+
+  it("clears a previous error when a new native request or response starts", () => {
+    const withError = {
+      current: null,
+      inFlight: null,
+      responseError: "old failure",
+    };
+    expect(
+      transitionRequest(withError, { type: "native-request", request: closeA })
+        .responseError,
+    ).toBeNull();
+    expect(
+      transitionRequest(withError, {
+        type: "response-started",
+        request: closeA,
+        responseId: 1,
+      }).responseError,
+    ).toBeNull();
+  });
+
+  it("never treats a missing request as the same request", () => {
+    expect(sameRequest(null, null)).toBe(false);
+    expect(sameRequest(closeA, null)).toBe(false);
+    expect(sameRequest(null, closeA)).toBe(false);
+    expect(sameRequest(closeA, closeA)).toBe(true);
+    expect(sameRequest(closeA, quitB)).toBe(false);
+    expect(sameRequest(closeA, { ...closeA, generation: 3 })).toBe(false);
   });
 });

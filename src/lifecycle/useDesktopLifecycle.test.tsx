@@ -30,8 +30,20 @@ const request = {
 
 beforeEach(() => {
   mocks.eventHandlers = {};
-  mocks.invoke.mockClear();
-  mocks.listen.mockClear();
+  // mockClear() keeps implementations, so re-establish the defaults here: a
+  // per-test mockImplementation (e.g. a rejecting lifecycle_decision) would
+  // otherwise leak into every later test and make the file order-dependent.
+  mocks.invoke.mockReset();
+  mocks.invoke.mockImplementation(async (_command: string, _args?: unknown) => undefined);
+  mocks.isTauri.mockReset();
+  mocks.isTauri.mockReturnValue(true);
+  mocks.listen.mockReset();
+  mocks.listen.mockImplementation(
+    async (name: string, callback: (event: { payload: unknown }) => void) => {
+      mocks.eventHandlers[name] = callback;
+      return vi.fn();
+    },
+  );
 });
 
 afterEach(() => {
@@ -328,5 +340,123 @@ describe("DesktopLifecycleBridge", () => {
       unmount();
       release();
     }
+  });
+
+  it("shows a native lifecycle error and keeps it undismissable", async () => {
+    render(<DesktopLifecycleBridge />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("lifecycle_ready", expect.anything()),
+    );
+
+    mocks.eventHandlers["lifecycle:error"]?.({
+      payload: { message: "The window could not be closed." },
+    });
+
+    expect(
+      await screen.findByText("The window could not be closed."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("reports a failed decision and leaves the window open", async () => {
+    mocks.invoke.mockImplementation((name: string) => {
+      if (name === "lifecycle_decision") return Promise.reject(new Error("ipc down"));
+      return Promise.resolve();
+    });
+    const remove = registerDraftSource({
+      id: "bridge-decision-failure",
+      label: "Task detail",
+      dirty: true,
+      pending: false,
+    });
+    const { unmount } = render(<DesktopLifecycleBridge />);
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("lifecycle_ready", expect.anything()),
+    );
+    mocks.eventHandlers["lifecycle:request"]?.({ payload: request });
+    fireEvent.click(await screen.findByRole("button", { name: "Discard and close" }));
+
+    expect(
+      await screen.findByText(
+        "The desktop action could not be completed. The window remains open.",
+      ),
+    ).toBeInTheDocument();
+
+    unmount();
+    remove();
+  });
+
+  it("reports a guard that could not connect to the native side", async () => {
+    mocks.listen.mockImplementationOnce(async () => {
+      throw new Error("no bridge");
+    });
+    const { unmount } = render(<DesktopLifecycleBridge />);
+
+    expect(
+      await screen.findByText(
+        "The desktop close guard could not connect. Try the action again.",
+      ),
+    ).toBeInTheDocument();
+    unmount();
+  });
+
+  it("does nothing outside the desktop shell", async () => {
+    mocks.isTauri.mockReturnValue(false);
+    const { unmount } = render(<DesktopLifecycleBridge />);
+    await waitFor(() => expect(mocks.listen).not.toHaveBeenCalled());
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    unmount();
+  });
+
+  it("releases the native readiness token when the bridge unmounts", async () => {
+    mocks.invoke.mockImplementation(async (name: string) => {
+      if (name === "lifecycle_ready") {
+        return { instanceId: "abc", generation: 1 } as unknown as undefined;
+      }
+      return undefined;
+    });
+    const { unmount } = render(<DesktopLifecycleBridge />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("lifecycle_ready", expect.anything()),
+    );
+
+    unmount();
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("lifecycle_unready", {
+        token: { instanceId: "abc", generation: 1 },
+      }),
+    );
+  });
+
+  it("cancels the guard with Escape when no overlay stack is mounted", async () => {
+    const remove = registerDraftSource({
+      id: "bridge-escape",
+      label: "Quick add",
+      dirty: true,
+      pending: false,
+    });
+    const { unmount } = render(<DesktopLifecycleBridge />);
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("lifecycle_ready", expect.anything()),
+    );
+    mocks.eventHandlers["lifecycle:request"]?.({ payload: request });
+    await screen.findByRole("alertdialog");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "lifecycle_decision",
+        expect.objectContaining({
+          payload: expect.objectContaining({ decision: "cancel" }),
+        }),
+      ),
+    );
+
+    unmount();
+    remove();
   });
 });

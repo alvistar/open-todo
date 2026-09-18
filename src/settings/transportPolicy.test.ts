@@ -57,4 +57,24 @@ describe("transport policy", () => {
     expect(clearTransportRisk().persisted).toBe(false);
     expect(hasTransportConsent(server)).toBe(false);
   });
+
+  it("refuses to approve a server that does not use HTTP", () => {
+    const result = acceptTransportRisk("https://vikunja.example");
+    expect(result.persisted).toBe(false);
+    expect(result.error).toBeInstanceOf(Error);
+    expect(transportConsentValue.get()).toBeNull();
+  });
+
+  it("refuses to approve an unparseable server address", () => {
+    expect(acceptTransportRisk("not a url").persisted).toBe(false);
+    expect(transportConsentValue.get()).toBeNull();
+  });
+
+  it("clears an approval so the origin needs confirming again", () => {
+    const server = "http://vikunja.lan:3456";
+    acceptTransportRisk(server);
+    expect(clearTransportRisk()).toEqual({ persisted: true, error: null });
+    expect(hasTransportConsent(server)).toBe(false);
+    expect(localStorage.getItem("open-todo.insecureTransportOrigin")).toBeNull();
+  });
 });

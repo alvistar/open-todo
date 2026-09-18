@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useOverlayLayer } from "./overlayStack";
+import { OverlayStackProvider, useOverlayLayer } from "./overlayStack";
 import { Shell } from "./Shell";
 import { Sidebar } from "./Sidebar";
 
@@ -178,5 +178,53 @@ describe("responsive shell", () => {
       "aria-expanded",
       "true",
     );
+  });
+
+  it("lets a layer decline Escape so a lower layer handles it", () => {
+    function DecliningDialog() {
+      useOverlayLayer("dialog", () => false);
+      return <div role="dialog" data-testid="declining" />;
+    }
+    render(
+      <Shell
+        sidebar={
+          <Sidebar userName="Alex" selected="inbox" projects={[]} onSelect={vi.fn()} />
+        }
+      >
+        <DecliningDialog />
+      </Shell>,
+    );
+    const toggle = screen.getByRole("button", { name: "Toggle navigation" });
+    fireEvent.click(toggle);
+    fireEvent.keyDown(screen.getByTestId("declining"), { key: "Escape" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("reuses an outer overlay stack instead of nesting a second one", () => {
+    render(
+      <OverlayStackProvider>
+        <Shell
+          sidebar={
+            <Sidebar userName="Alex" selected="inbox" projects={[]} onSelect={vi.fn()} />
+          }
+        >
+          <RegisteredPicker />
+        </Shell>
+      </OverlayStackProvider>,
+    );
+    const toggle = screen.getByRole("button", { name: "Toggle navigation" });
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "Open picker" }));
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "Picker choice" }), {
+      key: "Escape",
+    });
+    expect(
+      screen.queryByRole("button", { name: "Picker choice" }),
+    ).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.keyDown(toggle, { key: "Escape" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 });
