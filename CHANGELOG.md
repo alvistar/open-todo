@@ -25,8 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Desktop shell: `RUST_LOG` now enables `env_logger` on stderr in the packaged app, so the
   lifecycle machine's steps can be read while driving the bundle (`.claude/skills/desktop-qa`).
-
-### Added
 - **A Tauri desktop shell.** The existing React/Vite app can be developed with
   `pnpm desktop:dev` and bundled from local `dist/` files with
   `pnpm desktop:build`. The shell uses the stable `com.alvistar.open-todo`
