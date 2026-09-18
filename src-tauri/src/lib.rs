@@ -44,6 +44,9 @@ fn lifecycle_decision(state: State<'_, AppState>, payload: WireDecision) {
 }
 
 pub fn run() {
+    // Logs reach stderr only when `RUST_LOG` is set; the packaged smoke
+    // (.claude/skills/desktop-qa) reads the lifecycle lines from there.
+    env_logger::Builder::from_default_env().init();
     tauri::Builder::default()
         // The single-instance plugin must be registered first. Its callback
         // only activates or recreates the one main window; it never opens a

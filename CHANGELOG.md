@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Desktop shell: `RUST_LOG` now enables `env_logger` on stderr in the packaged app, so the
+  lifecycle machine's steps can be read while driving the bundle (`.claude/skills/desktop-qa`).
+
+### Added
 - **A Tauri desktop shell.** The existing React/Vite app can be developed with
   `pnpm desktop:dev` and bundled from local `dist/` files with
   `pnpm desktop:build`. The shell uses the stable `com.alvistar.open-todo`
@@ -526,13 +530,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WebSocket task events runs in parallel, off the critical path.
 
 ### Known gaps
-- **Desktop shell (2026-09-17).** The lifecycle machine has replaced the coordinator's
-  logic but the old coordinator is still compiled, unused, until the packaged smoke
-  (design slice 5) passes and slice 6 deletes it. One 5 s timeout serves both the grace
-  wait for a late bridge and the ask; the design wants 2 s for the first. The packaged
-  smoke of the new machine (Command-Q before the bridge is ready, close then Command-Q,
-  Dock reopen, ⌘H then ⌘Q with a dirty draft, bridge reload during a request) has not
-  been run yet. Detached native threads have no cancellation on exit.
+- **Desktop shell (2026-09-18).** The packaged smoke (`docs/designs/lifecycle-slice-5-smoke.md`)
+  found two defects the suites cannot see, both open until design slice 7 lands:
+  **no quit path reaches the lifecycle machine** (the default menu's Quit item is AppKit's
+  `terminate:`, which tao answers without raising `RunEvent::ExitRequested`, so ⌘Q,
+  File → Quit, Dock → Quit and `osascript … to quit` end the process without asking and a
+  dirty draft is lost), and **the 5 s ask timeout races the person** (the bridge never
+  acknowledges a request, so reading the close dialog for more than 5 s brings up the
+  native "did not respond" dialog with "Close anyway" as its default). Close (⌘W) behaves
+  as designed. The old coordinator is still compiled, unused, until slice 6 deletes it.
+  One 5 s timeout serves both the grace wait for a late bridge and the ask; the design
+  wants 2 s for the first. Detached native threads have no cancellation on exit.
 - Only the packaged macOS app has been launched, closed, reopened and quit
   with Vite stopped; signing in, the WebView transport (HTTP consent, CORS,
   TLS, redirects) and storage-failure behaviour in the packaged WebView, monitor

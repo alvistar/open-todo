@@ -288,7 +288,7 @@ sig = "cdf5cea10f354670"
 [[bindings]]
 doc = "knowledge/project/state.md"
 target = "src-tauri/src/lib.rs"
-sig = "52182a57deb6a3ce"
+sig = "8dc5dda9753f2ca6"
 
 [[bindings]]
 doc = "knowledge/project/state.md"

@@ -33,7 +33,7 @@ code_refs:
 - src-tauri/src/lifecycle/runtime.rs
 - src-tauri/src/lifecycle/tauri_runner.rs
 - src-tauri/tauri.conf.json
-last_updated: 2026-09-17
+last_updated: 2026-09-18
 stale_after: 2026-12-17
 ---
 
@@ -74,7 +74,8 @@ stale_after: 2026-12-17
 - The corpus-diff script defaults to git ref `d3d0a4a`, which is absent from this checkout; supply an existing compatible baseline explicitly.
 - The old coordinator in `lifecycle/mod.rs` is still compiled and unused until the packaged smoke of the machine passes (design slice 5) and slice 6 deletes it.
 - One 5 s timeout serves both the grace wait for a late bridge and the ask; the design asks 2 s for the first.
-- The packaged smoke of the new machine (Command-Q before ready, close then Command-Q, Dock reopen, ⌘H then ⌘Q dirty, bridge reload during a request) is not run yet.
+- The packaged smoke ran on 2026-09-18 (`docs/designs/lifecycle-slice-5-smoke.md`): close (⌘W) passes; every quit path (⌘Q, File → Quit, Dock → Quit, `osascript … to quit`) bypasses the machine because the default menu's Quit item is AppKit's `terminate:` and tao does not implement `applicationShouldTerminate:`, so a dirty draft is lost; and the 5 s ask timeout races the person because the bridge never acknowledges a request. Both are design slice 7, before slice 6.
+- The packaged bundle logs to stderr with `RUST_LOG` (`env_logger`); `.claude/skills/desktop-qa/SKILL.md` drives it through System Events.
 
 ## Related
 - [Architecture](/architecture/architecture.md) — how the working features connect
