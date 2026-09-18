@@ -53,8 +53,15 @@ pub enum State {
     /// (a ⌘Q right after launch, or a quit queued across a window rebuild). A grace
     /// timeout is armed; the bridge's ready turns this into Asking. (D1, D4)
     AwaitingFrontend { attempt: Attempt, recreate_pending: bool },
-    /// The bridge `frontend` was asked; an ask timeout is armed.
-    Asking { attempt: Attempt, frontend: Token, recreate_pending: bool },
+    /// The bridge `frontend` was asked; an ask timeout is armed until the bridge
+    /// acknowledges that its dialog is mounted. While `acknowledged` is true, the
+    /// person is deciding and a timeout only logs that it is waiting.
+    Asking {
+        attempt: Attempt,
+        frontend: Token,
+        recreate_pending: bool,
+        acknowledged: bool,
+    },
     /// No usable bridge; the native recovery dialog is open for `attempt`. The
     /// spike (Q1) showed ⌘Q does not reach `ExitRequested` while the dialog is
     /// modal, so there is no quit-upgrade here: the dialog is the only input.
@@ -82,6 +89,7 @@ pub struct Machine {
 pub enum Event {
     Begin { kind: Kind, window_exists: bool },
     Decide { attempt_id, generation, sequence, decision, dirty, pending },
+    Acknowledged { attempt_id, generation, sequence }, // bridge dialog mounted; owner tuple follows Decide
     Finalized { attempt: Attempt, ok: bool },               // D10/7
     FrontendReady { instance_id: String },                  // bridge API unchanged (D12)
     FrontendUnready { token: Token },
@@ -138,21 +146,22 @@ Rules that hold in every arm:
 ## 3. Transition table
 
 Rows are states, columns are events. `→X` is the next state; effects follow in order.
-"stale" means the owner tuple does not match: `Log`. `rp` = `recreate_pending`.
+"stale" means the owner tuple does not match: `Log`. `rp` = `recreate_pending`; `ack` =
+`acknowledged`.
 Composition: when a transition lands in `Idle` with `rp == true`, the same step
 continues as `Idle × RecreationStarted` and appends those effects (D13); when it lands
 in `Idle` from `Finalizing{queued_quit: true, ok: true}` it continues as
 `Idle{hidden_by_close: true} × Begin(Quit)` (D2).
 
-| State \ Event | Begin(kind, exists) | Decide | Finalized{ok} | FrontendReady | FrontendUnready | EmitFailed | Timeout | Recovered | RecreationStarted | RecreationFinished{id, ok} | ExitRequested | Exited |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Idle{hbc}** | Quit & (!exists ∨ hbc) → **Exiting{None}**, ArmExitBypass(gen), Exit. Close & !exists: Log(no window). Else new attempt a: `frontend` Some → **Asking{a, f, rp:false}**, ShowWindow, EmitRequest{a,f}, ScheduleTimeout(a) (ShowWindow always: the machine cannot know whether ⌘H hid the window; the runner makes it a no-op when the window is already visible); `frontend` None → **AwaitingFrontend{a, rp:false}**, ScheduleTimeout(a) | Log(stale) | Log(stale) | mint t; record; ReplyToken(t); Log | clear if equal; Log | Log(stale) | Log(stale) | Log(stale) | id=next; → **Recreating{id, reserved: gen+1, queued_quit:false, ready:None}**, Recreate(id) | Log(stale) | bypass==Some(gen) → clear, AllowExit. Else: PreventExit, then as Begin(Quit, exists:true) | Log(unexpected) |
-| **AwaitingFrontend{a, rp}** | Close: Log(dup). Quit & a.Close → a′ = a{Quit, seq+1}; → **AwaitingFrontend{a′, rp}**, ScheduleTimeout(a′) (D9/1). Quit & a.Quit: Log(dup) | Log(stale) | Log(stale) | mint t; record; ReplyToken(t); → **Asking{a.seq+1, t, rp}**, EmitRequest, ScheduleTimeout | clear if equal; Log | Log(stale) | ≠a: Log. ==a → **Recovering{a, false, rp}**, ShowRecoveryDialog(a) | Log(stale) | → same state with rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
-| **Asking{a, f, rp}** | Close: Log(dup). Quit & a.Close → supersede: a′ new Quit attempt → **Asking{a′, f, rp}**, EmitRequest{a′,f}, ScheduleTimeout(a′) (old a stale by tuple). Quit & a.Quit: Log(dup) | ≠a: Log. Cancel → **Idle{false}** (+rp composition). Allow&(dirty∨pending) ∨ Discard&pending → **Asking{a.seq+1, f, rp}**, EmitRequest, ScheduleTimeout (recheck). Otherwise authorised: Close → **Finalizing{a, false, rp}**, (ArmExitBypass on non-macOS), Finalize(a); Quit → **Exiting{a}**, ArmExitBypass(gen), Exit | Log(stale) | mint t; record; ReplyToken(t); t==f: Log. t≠f → **Asking{a.seq+1, t, rp}**, EmitRequest{·,t}, ScheduleTimeout | t==f: clear `frontend`, keep Asking, Log (timeout will recover). else Log | {a,f} match → clear `frontend`, keep Asking, EmitError, Log. else Log(stale) | ≠a: Log. ==a: `frontend`==Some(f) → **Recovering{a,false,rp}**, EmitError, ShowRecoveryDialog; `frontend`==Some(other) → **Asking{a.seq+1, other, rp}**, EmitRequest, ScheduleTimeout; None → **Recovering{a,false,rp}**, ShowRecoveryDialog | Log(stale) | rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
-| **Recovering{a, rp}** | Log(dup: the modal dialog owns input; spike Q1 shows ⌘Q cannot arrive) | Log(stale: dialog owns a) | Log(stale) | mint; record; ReplyToken; Log(dialog is the authority) | clear if equal; Log | Log(stale) | Log(stale) | ≠a: Log. allow: a.Close → **Finalizing{a, false, rp}**, (ArmExitBypass on non-macOS), Finalize; a.Quit → **Exiting{a}**, ArmExitBypass, Exit. !allow → **Idle{false}** (+rp) | rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
-| **Finalizing{a, qq, rp}** | Quit → qq:true, Log(queued). Close: Log(finalizing) | Log(stale) | ≠a: Log. ok:true → **Idle{hidden_by_close: a.Close}**; qq → compose Begin(Quit) (→ Exiting); else rp composition. ok:false → **Idle{false}**, EmitError; qq → compose Begin(Quit, exists) through the normal path (D10/7); rp composition | mint; record; ReplyToken; Log | clear if equal; Log | Log(stale) | Log(stale) | Log(stale) | rp:true, Log(queued) | Log(stale) | PreventExit, then Log(finalizing; quit queued) with qq:true | Log(unexpected) |
-| **Recreating{id, res, qq, ready}** | Quit → qq:true, Log(queued). Close: Log(no window) | Log(stale) | Log(stale) | mint t in `res`; ready:Some(t); ReplyToken(t); Log | clear ready if equal; Log | Log(stale) | Log(stale) | Log(stale) | Log(already recreating) | ≠id: Log(stale). ok: gen=res, `frontend`=ready; qq → new Quit attempt: ready Some → **Asking**, EmitRequest, ScheduleTimeout; ready None → **AwaitingFrontend**, ScheduleTimeout (D4/D12); !qq → **Idle{false}**, Log. !ok → **Idle{false}**, EmitError; qq → **Exiting{None}**, ArmExitBypass, Exit (no window to protect) | PreventExit, qq:true, Log | Log(unexpected) |
-| **Exiting{a, gen}** | Log(exiting) | Log(stale) | Log(stale) | Log(exiting) | Log | Log | Log | Log | Log(exiting) | Log(stale) | bypass==Some(gen) → clear, AllowExit. else PreventExit, Log(unarmed exit request while exiting) | terminal: Log(exited) |
+| State \ Event | Begin(kind, exists) | Decide | Acknowledged | Finalized{ok} | FrontendReady | FrontendUnready | EmitFailed | Timeout | Recovered | RecreationStarted | RecreationFinished{id, ok} | ExitRequested | Exited |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Idle{hbc}** | Quit & (!exists ∨ hbc) → **Exiting{None}**, ArmExitBypass(gen), Exit. Close & !exists: Log(no window). Else new attempt a: `frontend` Some → **Asking{a, f, rp:false, ack:false}**, ShowWindow, EmitRequest{a,f}, ScheduleTimeout(a) (ShowWindow always: the machine cannot know whether ⌘H hid the window; the runner makes it a no-op when the window is already visible); `frontend` None → **AwaitingFrontend{a, rp:false}**, ScheduleTimeout(a) | Log(stale) | Log(stale) | Log(stale) | mint t; record; ReplyToken(t); Log | clear if equal; Log | Log(stale) | Log(stale) | Log(stale) | id=next; → **Recreating{id, reserved: gen+1, queued_quit:false, ready:None}**, Recreate(id) | Log(stale) | bypass==Some(gen) → clear, AllowExit. Else: PreventExit, then as Begin(Quit, exists:true) | Log(unexpected) |
+| **AwaitingFrontend{a, rp}** | Close: Log(dup). Quit & a.Close → a′ = a{Quit, seq+1}; → **AwaitingFrontend{a′, rp}**, ScheduleTimeout(a′) (D9/1). Quit & a.Quit: Log(dup) | Log(stale) | Log(stale) | Log(stale) | mint t; record; ReplyToken(t); → **Asking{a.seq+1, t, rp, ack:false}**, EmitRequest, ScheduleTimeout | clear if equal; Log | Log(stale) | ≠a: Log. ==a → **Recovering{a, false, rp}**, ShowRecoveryDialog(a) | Log(stale) | → same state with rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
+| **Asking{a, f, rp, ack}** | Close: Log(dup). Quit & a.Close → supersede: a′ new Quit attempt → **Asking{a′, f, rp, ack:false}**, EmitRequest{a′,f}, ScheduleTimeout(a′) (old a stale by tuple). Quit & a.Quit: Log(dup) | ≠a: Log. Cancel → **Idle{false}** (+rp composition). Allow&(dirty∨pending) ∨ Discard&pending → **Asking{a.seq+1, f, rp, ack:false}**, EmitRequest, ScheduleTimeout (recheck). Otherwise authorised: Close → **Finalizing{a, false, rp}**, (ArmExitBypass on non-macOS), Finalize(a); Quit → **Exiting{a}**, ArmExitBypass(gen), Exit | matching a → **Asking{a, f, rp, ack:true}**, Log(acknowledged); otherwise Log(stale) | Log(stale) | mint t; record; ReplyToken(t); t==f: Log. t≠f → **Asking{a.seq+1, t, rp, ack:false}**, EmitRequest{·,t}, ScheduleTimeout | t==f: clear `frontend`, keep Asking, Log (timeout will recover). else Log | {a,f} match → clear `frontend`, keep Asking, EmitError, Log. else Log(stale) | ack:true and ==a: keep **Asking{a, f, rp, ack:true}**, Log(acknowledged; waiting for the person). ack:false and ≠a: Log. ack:false and ==a: `frontend`==Some(f) → **Recovering{a,false,rp}**, EmitError, ShowRecoveryDialog; `frontend`==Some(other) → **Asking{a.seq+1, other, rp, ack:false}**, EmitRequest, ScheduleTimeout; None → **Recovering{a,false,rp}**, ShowRecoveryDialog | Log(stale) | rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
+| **Recovering{a, rp}** | Log(dup: the modal dialog owns input; spike Q1 shows ⌘Q cannot arrive) | Log(stale: dialog owns a) | Log(stale) | Log(stale) | mint; record; ReplyToken; Log(dialog is the authority) | clear if equal; Log | Log(stale) | Log(stale) | ≠a: Log. allow: a.Close → **Finalizing{a, false, rp}**, (ArmExitBypass on non-macOS), Finalize; a.Quit → **Exiting{a}**, ArmExitBypass, Exit. !allow → **Idle{false}** (+rp) | rp:true, Log(queued) | Log(stale) | PreventExit, then as Begin(Quit) | Log(unexpected) |
+| **Finalizing{a, qq, rp}** | Quit → qq:true, Log(queued). Close: Log(finalizing) | Log(stale) | Log(stale) | ≠a: Log. ok:true → **Idle{hidden_by_close: a.Close}**; qq → compose Begin(Quit) (→ Exiting); else rp composition. ok:false → **Idle{false}**, EmitError; qq → compose Begin(Quit, exists) through the normal path (D10/7); rp composition | mint; record; ReplyToken; Log | clear if equal; Log | Log(stale) | Log(stale) | Log(stale) | rp:true, Log(queued) | Log(stale) | PreventExit, then Log(finalizing; quit queued) with qq:true | Log(unexpected) |
+| **Recreating{id, res, qq, ready}** | Quit → qq:true, Log(queued). Close: Log(no window) | Log(stale) | Log(stale) | Log(stale) | mint t in `res`; ready:Some(t); ReplyToken(t); Log | clear ready if equal; Log | Log(stale) | Log(stale) | Log(stale) | Log(already recreating) | ≠id: Log(stale). ok: gen=res, `frontend`=ready; qq → new Quit attempt: ready Some → **Asking**, EmitRequest, ScheduleTimeout; ready None → **AwaitingFrontend**, ScheduleTimeout (D4/D12); !qq → **Idle{false}**, Log. !ok → **Idle{false}**, EmitError; qq → **Exiting{None}**, ArmExitBypass, Exit (no window to protect) | PreventExit, qq:true, Log | Log(unexpected) |
+| **Exiting{a, gen}** | Log(exiting) | Log(stale) | Log(stale) | Log(stale) | Log(exiting) | Log | Log | Log | Log | Log(exiting) | Log(stale) | bypass==Some(gen) → clear, AllowExit. else PreventExit, Log(unarmed exit request while exiting) | terminal: Log(exited) |
 
 Choices that differ from today, each tied to the finding it resolves:
 
@@ -236,8 +245,8 @@ Tauri events / commands / callbacks / threads
 ```
 
 - `lifecycle_ready` sends `FrontendReady{instance_id}` with a oneshot; the loop answers
-  it with the `ReplyToken` effect. `lifecycle_unready` and `lifecycle_decision` are
-  fire-and-forget.
+  it with the `ReplyToken` effect. `lifecycle_unready`, `lifecycle_decision`, and the
+  bridge's `lifecycle_acknowledge` are fire-and-forget.
 - `CloseRequested` → `api.prevent_close()` then `Begin(Close, exists:true)`.
   `ExitRequested` → `api.prevent_exit()` is decided by the machine: the runner maps
   `AllowExit` to "do nothing" and `PreventExit` to `api.prevent_exit()`; because the
@@ -252,6 +261,7 @@ Codex 9):
 | Effect | Ok → event | Error → event |
 |---|---|---|
 | EmitRequest{a, f} | none (the bridge answers with Decide) | EmitFailed{a, f} + EmitError |
+| Bridge dialog mount | Acknowledged{a} | none (the bridge ignores invoke errors) |
 | ScheduleTimeout(a) | Timeout(a) after the delay (2 s grace in AwaitingFrontend, 5 s in Asking) | `thread::Builder::spawn` error → Timeout(a) immediately |
 | ShowRecoveryDialog(a) | Recovered{a, allow} from the plugin callback | the callback API has no error path; a missing window → Recovered{a, allow:false} + EmitError |
 | ShowWindow | none (no-op when already visible) | EmitError only (asking proceeds) |
@@ -265,7 +275,8 @@ Codex 9):
 `schedule_recovery_timeout`, `show_native_recovery`'s gate, `prepare_frontend_reemit` and
 the mutex disappear.
 
-The React bridge (`useDesktopLifecycle.tsx`, `requestState.ts`) does not change: the
+The React bridge (`useDesktopLifecycle.tsx`, `requestState.ts`) acknowledges each dirty or
+pending dialog once per `(attemptId, requestSequence)` via `lifecycle_acknowledge`; the
 payloads (`attemptId`, `generation`, `requestSequence`, `instanceId`, token) are the same.
 
 ## 6. Migration plan (worker slices, order from Codex 11)
@@ -349,6 +360,19 @@ No critical gaps: every row has a test and handling.
 
 ### Worktree parallelization
 Sequential implementation, no parallelization opportunity: slices 0–6 all touch `src-tauri/src/` and each depends on the previous.
+
+## 10. Slice 7
+
+The packaged slice-5 smoke found two quit-path defects:
+
+- **S5-1:** AppKit quit paths used `terminate:` without an
+  `applicationShouldTerminate:` delegate hook, so the process exited before the machine
+  could protect a dirty draft. The macOS delegate now sends `ExitRequested` through the
+  machine and answers synchronously from its verdict.
+- **S5-2:** The bridge mounted its close dialog without telling the machine, so the ask
+  timeout could open the native recovery dialog while a person was still deciding. The
+  bridge now sends `Acknowledged` for each dirty or pending request, disarming that
+  timeout until the person responds.
 
 ## Implementation Tasks
 Synthesized from this review's findings. Each task derives from a specific finding above.
